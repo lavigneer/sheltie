@@ -1,135 +1,14 @@
-// Settings: <Herdr app home>/sheltie.json, merged over the defaults below.
+// Settings: <Herdr app home>/sheltie.json, merged over the defaults (src/defaults.js).
 // Every mod awaits configReady() before using them; `C` holds the result.
-// See config.example.json for what each setting does; sheltie.schema.json
-// describes them for editors (keep it in step with DEFAULTS).
+// What each setting does: types/settings.d.ts (and sheltie.schema.json, made
+// from it); the defaults: src/defaults.js.
 
 import { appHome, exec, home } from "herdr";
+import { DEFAULTS } from "./defaults.js";
 
-export const DEFAULTS = {
-  // Where your git repos are: folders `depth` levels below each root.
-  roots: ["~/workspace"],
-  depth: 1,
+export { DEFAULTS };
 
-  // Programs, found on your login shell's PATH unless given as absolute paths.
-  // Each is needed only by what uses it: jira only with the Jira tracker,
-  // sqlite3 only once opencode has a database to read, claude for
-  // the Usage sidebar's plan limits.
-  programs: {
-    git: "git",
-    gh: "gh",
-    jira: "jira",
-    hc: "hc",
-    jq: "jq",
-    curl: "curl",
-    sqlite3: "sqlite3",
-    claude: "claude",
-  },
-
-  // Where tickets come from: "jira" (jira-cli) or "github" (GitHub issues, gh).
-  tracker: "jira",
-  jira: {
-    // Which tickets to list (jira-cli adds the ORDER BY). Naming `project`
-    // makes jira-cli search every project, not just its default one.
-    jql: "project IS NOT EMPTY AND assignee = currentUser() AND resolution = Unresolved",
-    // Jira transitions at each step, or null for none.
-    transitions: { start: null, review: null, done: "Resolved" },
-    // Resolution set with the `done` transition, if its screen asks for one.
-    resolution: null,
-  },
-  github: {
-    // Which issues to list: open ones assigned to `assignee` ("@me": you),
-    // in `repos` (owner/repo) or, if empty, anywhere you can see.
-    repos: /** @type {string[]} */ ([]),
-    assignee: "@me",
-    // Extra GitHub search terms, e.g. "label:bug" (optional).
-    search: "",
-    // The issue's part of a branch name; {number} is the issue number.
-    ref: "issue-{number}",
-    // Close the issue at Finish if merging its PR didn't already.
-    closeOnFinish: true,
-  },
-
-  // GitHub orgs/users searched for pull requests that mention a ticket, in
-  // addition to the owners of your local repos and of the repos in repoRules.
-  githubOwners: /** @type {string[]} */ ([]),
-
-  // Where new work on a ticket goes. Each rule matches a ticket by any of
-  // `component`, `label` or `project` (the Jira project key, or the issue's
-  // owner/repo) and names a `repo`: "owner/repo" on GitHub (cloned into the
-  // first root if needed) or a local path. Component and label rules win over
-  // project rules.
-  repoRules:
-    /** @type {{ component?: string, label?: string, project?: string, repo: string }[]} */ ([]),
-
-  // A ticket's branch: {ref} is the tracker's part (WEB-142, issue-12).
-  branch: "{ref}",
-  // Where ticket worktrees go, relative to the repo's main checkout.
-  worktreeDir: ".worktrees",
-
-  agent: {
-    // The agent started in a ticket's space; its first message is the last
-    // argument (as with `claude "<task>"`).
-    argv: ["claude"],
-    // First message for new work. {key}, {summary}, {url}, {branch} and
-    // {viewCommand} (how to read the ticket) are filled in.
-    // Both say how to tell the Work sidebar the PR is done (see
-    // workflow.readyWhen).
-    task: 'Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label "$HC_TERMINAL_ID" pr=ready`.',
-    // First message when asking for another branch of a ticket in a repo
-    // that already has one: the agent names and creates it itself.
-    extraBranchTask:
-      'Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label "$HC_TERMINAL_ID" pr=ready`.',
-    // First message for ad-hoc work (not tied to a ticket), started from the
-    // tickets popup in a new worktree on {branch}; {description} is what you
-    // typed.
-    adhocTask:
-      '{description}\n\nThis is ad-hoc work, not tied to a ticket: you\'re in a new worktree on branch {branch}. When the pull request is complete, run `hc label "$HC_TERMINAL_ID" pr=ready`.',
-    // What each Work sidebar step sends to the agent.
-    steps: {
-      "draft-pr": "/draft-pr",
-      "fix-ci": "/fix-ci",
-      "address-comments": "/address-comments",
-      "resolve-conflicts": "/resolve-conflicts",
-    },
-  },
-
-  usage: {
-    // Whose session logs count toward the Usage sidebar and each Work row's
-    // cost: `type` "claude-code", "codex" or "opencode", in `home`
-    // (CLAUDE_CONFIG_DIR, CODEX_HOME, opencode's data folder). An agent you don't use costs nothing to list.
-    agents: [
-      { type: "claude-code", home: "~/.claude" },
-      { type: "codex", home: "~/.codex" },
-      { type: "opencode", home: "~/.local/share/opencode" },
-    ],
-    // Model prices: LiteLLM's list (downloaded when it changes, at most hourly).
-    prices:
-      "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
-  },
-
-  workflow: {
-    // At Ready: turn on auto-merge "when-reviews-required" (it then merges
-    // on approval and never at once), or "never" (merge with the Merge step).
-    autoMerge: "when-reviews-required",
-    // When a draft PR is offered Ready: "green" (CI passed, no conflicts with
-    // its base and nothing unresolved; a PR with no checks isn't green), or
-    // "agent" (also only once its agent says the PR is done, by labelling
-    // its terminal: `hc label "$HC_TERMINAL_ID" pr=ready`; the
-    // label is cleared whenever a step is sent to the agent). Use "agent"
-    // with agents that know this (the skills in skills/ do).
-    readyWhen: "green",
-    // Offer Merge for a ready, green PR that needs no review (a repo without
-    // required reviews), not only for an approved one; false: merge those in
-    // the browser.
-    mergeWithoutReview: true,
-    // Merge asks for a second click.
-    confirmMerge: true,
-    // Finish and Clean up ask for a second click.
-    confirmFinish: true,
-  },
-};
-
-/** The settings in use, or a repo's (repoSettings). @typedef {typeof DEFAULTS & { problem?: string | null }} Settings */
+/** The settings in use, or a repo's (repoSettings). @typedef {import("../types/settings.js").Settings & { problem?: string | null }} Settings */
 
 export const SETTINGS_FILE = "sheltie.json";
 

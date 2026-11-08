@@ -1,7 +1,7 @@
 # Development
 
 ```sh
-npm run build      # src/ -> mods/ (commit the result)
+npm run build      # src/ -> mods/, types/settings.d.ts -> sheltie.schema.json (commit both)
 npm test           # node --test against throwaway demos
 npm run e2e        # the real Herdr with the mods, on throwaway demos
 npm run e2e:shots  # screenshots of the mods at a few sizes, in e2e-results/shots/
@@ -72,3 +72,7 @@ demo/herdr-demo status
 
 The demo uses its own app home and herdr-core session, so your spaces and
 settings are untouched.
+
+A new setting goes in `types/settings.d.ts` (with what it does) and
+`src/defaults.js` (its default); the type checker keeps the two in step and
+`npm run build` regenerates `sheltie.schema.json` from them.
