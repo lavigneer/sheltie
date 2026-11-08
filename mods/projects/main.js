@@ -7,12 +7,12 @@
 //
 // Keys: type to filter, Up/Down or Ctrl+N/Ctrl+P to move, Enter to open, Esc to close.
 
-import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { exec, home, run, theme, props, closeOverlay } from "herdr";
+import { h_flex, Input, InputState, v_flex } from "gpui-base";
+import { div, svg, View } from "gpui-kit";
+import { closeOverlay, exec, home, props, run, theme } from "herdr";
 import { C, configReady } from "./config.js";
-import { basename, pool, score, spaceFor, moveKey } from "./lib.js";
 import { hubExcept, listWorktrees } from "./git.js";
+import { basename, moveKey, pool, score, spaceFor } from "./lib.js";
 
 // Repos at exactly DEPTH below a root: <root>/<repo>/.git (a dir, or a file for
 // worktrees). Returns { repos, problems }: a root that couldn't be read (missing,
@@ -131,7 +131,7 @@ export default class Projects extends View {
     this.at = Math.max(0, Math.min(this.at, rows.length - 1));
     const sel = rows[this.at];
     const tilde = (p) =>
-      p.startsWith(home()) ? "~" + p.slice(home().length) : p;
+      p.startsWith(home()) ? `~${p.slice(home().length)}` : p;
 
     const row = (r) =>
       h_flex()

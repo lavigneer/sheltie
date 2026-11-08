@@ -12,7 +12,12 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-const AGENT_STEPS = ["draft-pr", "fix-ci", "address-comments", "resolve-conflicts"];
+const AGENT_STEPS = [
+  "draft-pr",
+  "fix-ci",
+  "address-comments",
+  "resolve-conflicts",
+];
 export const root = path.resolve(import.meta.dirname, "../..");
 const run = promisify(execFile);
 const NEEDS = ["herdr-app", "hc", "Xvfb", "xdotool", "jq", "git"];
@@ -38,7 +43,11 @@ export function missingTools() {
 // Polls `check` (sync or async) until it returns something truthy, and returns
 // that. Throws after `timeout` ms, saying what it waited for and what it last
 // saw.
-export async function waitFor(what, check, { timeout = 20_000, every = 250 } = {}) {
+export async function waitFor(
+  what,
+  check,
+  { timeout = 20_000, every = 250 } = {},
+) {
   const end = Date.now() + timeout;
   let last;
   for (;;) {
@@ -69,10 +78,14 @@ function shortTmp() {
 
 // Starts Xvfb on a free display (it picks one and tells us through fd 3).
 async function startXvfb() {
-  const x = spawn("Xvfb", ["-displayfd", "3", "-screen", "0", "2560x1600x24", "-nolisten", "tcp"], {
-    stdio: ["ignore", "ignore", "pipe", "pipe"],
-    detached: false,
-  });
+  const x = spawn(
+    "Xvfb",
+    ["-displayfd", "3", "-screen", "0", "2560x1600x24", "-nolisten", "tcp"],
+    {
+      stdio: ["ignore", "ignore", "pipe", "pipe"],
+      detached: false,
+    },
+  );
   let err = "";
   x.stderr.on("data", (d) => (err += d));
   const display = await new Promise((resolve, reject) => {
@@ -82,7 +95,9 @@ async function startXvfb() {
       if (out.includes("\n")) resolve(`:${out.trim()}`);
     });
     x.on("exit", (code) =>
-      reject(new Error(`Xvfb exited (${code}): ${err.trim().split("\n").pop()}`)),
+      reject(
+        new Error(`Xvfb exited (${code}): ${err.trim().split("\n").pop()}`),
+      ),
     );
     setTimeout(() => reject(new Error("Xvfb didn't start")), 10_000);
   });
@@ -144,19 +159,36 @@ export class Herdr {
     const x = await startXvfb();
     this.xvfb = x.proc;
     this.display = x.display;
-    await this.sh(path.join(root, "demo/herdr-demo"), ["--tracker", this.tracker], {
-      timeout: 90_000,
-    });
+    await this.sh(
+      path.join(root, "demo/herdr-demo"),
+      ["--tracker", this.tracker],
+      {
+        timeout: 90_000,
+      },
+    );
     this.window = (
-      await this.sh("xdotool", ["search", "--sync", "--name", "^Herdr$"], { timeout: 30_000 })
+      await this.sh("xdotool", ["search", "--sync", "--name", "^Herdr$"], {
+        timeout: 30_000,
+      })
     )
       .trim()
       .split("\n")[0];
-    await waitFor("the sheltie layout", async () => (await this.status()).layout === "sheltie");
+    await waitFor(
+      "the sheltie layout",
+      async () => (await this.status()).layout === "sheltie",
+    );
     // Keys only reach the window after a click (focusing it isn't enough
     // without a window manager). The middle of an empty window is safe.
     await this.sh("xdotool", ["windowfocus", "--sync", this.window]);
-    await this.sh("xdotool", ["mousemove", "--window", this.window, "700", "600", "click", "1"]);
+    await this.sh("xdotool", [
+      "mousemove",
+      "--window",
+      this.window,
+      "700",
+      "600",
+      "click",
+      "1",
+    ]);
   }
 
   async stop() {
@@ -165,7 +197,9 @@ export class Herdr {
       // Ends the app and herdr-core of this session only.
       await quiet(this.sh(path.join(root, "demo/herdr-demo"), ["--stop"]));
       await quiet(
-        waitFor("the demo's processes to end", () => !this.pids().length, { timeout: 10_000 }),
+        waitFor("the demo's processes to end", () => !this.pids().length, {
+          timeout: 10_000,
+        }),
       );
     }
     this.xvfb?.kill();
@@ -176,10 +210,14 @@ export class Herdr {
     );
     fs.rmSync(path.join(state, this.session), { recursive: true, force: true });
     const runtime =
-      process.env.XDG_RUNTIME_DIR && path.join(process.env.XDG_RUNTIME_DIR, "herdr-core");
+      process.env.XDG_RUNTIME_DIR &&
+      path.join(process.env.XDG_RUNTIME_DIR, "herdr-core");
     if (runtime && fs.existsSync(runtime))
       for (const f of fs.readdirSync(runtime))
-        if (f === `${this.session}.sock` || f.startsWith(`${this.session}.holder.`))
+        if (
+          f === `${this.session}.sock` ||
+          f.startsWith(`${this.session}.holder.`)
+        )
           fs.rmSync(path.join(runtime, f), { force: true });
     fs.rmSync(this.tmp, { recursive: true, force: true });
   }
@@ -214,9 +252,11 @@ export class Herdr {
     const log = fs.readFileSync(path.join(this.demo, "app.log"), "utf8");
     const fresh = log.slice(this.logOffset);
     this.logOffset = log.length;
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: strips ANSI colour codes.
     for (const line of fresh.replace(/\x1b\[[0-9;]*m/g, "").split("\n"))
       if (/ERROR gpui_shell::script/.test(line)) problems.push(line);
-    if (problems.length) throw new Error(`errors ${when}:\n  ${problems.join("\n  ")}`);
+    if (problems.length)
+      throw new Error(`errors ${when}:\n  ${problems.join("\n  ")}`);
   }
 
   async spaces() {
@@ -265,7 +305,9 @@ export class Herdr {
   }
 
   state() {
-    return JSON.parse(fs.readFileSync(path.join(this.demo, "state.json"), "utf8"));
+    return JSON.parse(
+      fs.readFileSync(path.join(this.demo, "state.json"), "utf8"),
+    );
   }
 
   // The demo's open or merged PR for a branch.
@@ -285,7 +327,9 @@ export class Herdr {
   }
 
   async worktrees(repo) {
-    return (await this.sh("git", ["-C", repo, "worktree", "list", "--porcelain"]))
+    return (
+      await this.sh("git", ["-C", repo, "worktree", "list", "--porcelain"])
+    )
       .split("\n")
       .filter((l) => l.startsWith("worktree "))
       .map((l) => l.slice(9));
@@ -316,7 +360,13 @@ export class Herdr {
 
   // The window's size, in px (there's no window manager to refuse it).
   resize(width, height) {
-    return this.sh("xdotool", ["windowsize", "--sync", this.window, String(width), String(height)]);
+    return this.sh("xdotool", [
+      "windowsize",
+      "--sync",
+      this.window,
+      String(width),
+      String(height),
+    ]);
   }
 
   // Merges `patch` into the app home's settings.json (applied live).
@@ -326,7 +376,10 @@ export class Herdr {
     try {
       old = JSON.parse(fs.readFileSync(file, "utf8"));
     } catch {}
-    fs.writeFileSync(file, `${JSON.stringify({ ...old, ...patch }, null, 2)}\n`);
+    fs.writeFileSync(
+      file,
+      `${JSON.stringify({ ...old, ...patch }, null, 2)}\n`,
+    );
   }
 
   key(...keys) {
@@ -351,7 +404,9 @@ export class Herdr {
       `${worktree} selected, offering ${id}`,
       worktree,
       (r) =>
-        r.selected && r.steps.some((s) => s.id === id) && (!AGENT_STEPS.includes(id) || r.agent),
+        r.selected &&
+        r.steps.some((s) => s.id === id) &&
+        (!AGENT_STEPS.includes(id) || r.agent),
     );
     let row = before;
     for (let i = 0; row.steps[row.step]?.id !== id; i++) {
@@ -373,7 +428,9 @@ export class Herdr {
     return waitFor(`${id} to finish`, async () => {
       const r = await this.row(worktree);
       if (!r) return { gone: true };
-      return r.last && r.last.phase !== "running" && (r.last.at ?? 0) > since && r;
+      return (
+        r.last && r.last.phase !== "running" && (r.last.at ?? 0) > since && r
+      );
     });
   }
 
@@ -381,7 +438,10 @@ export class Herdr {
   // sidebar's report and the demo's state, under e2e-results/<name>-*.
   async saveFailure(name) {
     fs.mkdirSync(RESULTS, { recursive: true });
-    const base = path.join(RESULTS, `${this.tracker}-${name.replace(/[^\w-]+/g, "_")}`);
+    const base = path.join(
+      RESULTS,
+      `${this.tracker}-${name.replace(/[^\w-]+/g, "_")}`,
+    );
     await this.sh("herdr-app", ["shot", `${base}.png`]).catch(() => {});
     const copy = (from, to) => fs.existsSync(from) && fs.copyFileSync(from, to);
     copy(path.join(this.demo, "app.log"), `${base}-app.log`);

@@ -5,14 +5,21 @@ import { test } from "node:test";
 const { joinWork } = await import("../src/work.js");
 
 // A tracker whose keys are "#<n>" in a branch name like "me/issue-<n>".
-const tracker = { keysIn: (text) => [...text.matchAll(/issue-(\d+)/g)].map((m) => `#${m[1]}`) };
+const tracker = {
+  keysIn: (text) => [...text.matchAll(/issue-(\d+)/g)].map((m) => `#${m[1]}`),
+};
 const repo = { slug: "me/app", path: "/src/app", name: "app", tracker };
 const state = (worktrees, branches) => ({
   repo,
   worktrees,
   branches: new Map(branches.map((b) => [b, { local: true }])),
 });
-const pr = (number, branch, slug = "me/app") => ({ number, branch, slug, state: "OPEN" });
+const pr = (number, branch, slug = "me/app") => ({
+  number,
+  branch,
+  slug,
+  state: "OPEN",
+});
 
 test("joinWork: a branch in both the worktree and branch lists is one item", () => {
   const work = joinWork(
@@ -31,10 +38,15 @@ test("joinWork: a linked PR already attached by branch is not added again", () =
     ["#1"],
     [state([], ["issue-1"])],
     new Map([["#1", [{ slug: "ME/app", number: 7 }]]]),
-    new Map([["me/app#issue-1", p], ["ME/app#7", p]]),
+    new Map([
+      ["me/app#issue-1", p],
+      ["ME/app#7", p],
+    ]),
     [repo],
   );
-  assert.deepEqual(work.get("#1"), [{ repo, branch: "issue-1", worktree: null, pr: p }]);
+  assert.deepEqual(work.get("#1"), [
+    { repo, branch: "issue-1", worktree: null, pr: p },
+  ]);
 });
 
 test("joinWork: a linked PR with no local branch is its own item", () => {
@@ -64,5 +76,7 @@ test("joinWork: a failed lookup leaves the item without a PR and adds nothing", 
     new Map(),
     [repo],
   );
-  assert.deepEqual(work.get("#1"), [{ repo, branch: "issue-1", worktree: null, pr: null }]);
+  assert.deepEqual(work.get("#1"), [
+    { repo, branch: "issue-1", worktree: null, pr: null },
+  ]);
 });

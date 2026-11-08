@@ -3,10 +3,10 @@
 // use (tracker.js).
 
 import { C, REPO_FILE } from "./config.js";
+import { repoState, sameSlug } from "./git.js";
 import { basename, pool } from "./lib.js";
-import { tracker, trackerOf } from "./tracker.js";
-import { localRepos, repoState, sameSlug } from "./git.js";
 import { prDetails } from "./prs.js";
+import { tracker, trackerOf } from "./tracker.js";
 
 /** @typedef {import("./types.js").Ticket} Ticket */
 /** @typedef {import("./types.js").Repo} Repo */
@@ -38,7 +38,7 @@ export async function listTickets(repos) {
   const out = new Map();
   /** @type {[import("./types.js").Tracker, Repo[], Ticket[]][]} */
   const lists = [[global, [], first]];
-  own.forEach(([t, homes], i) => lists.push([t, homes, rest[i]]));
+  for (const [i, [t, homes]] of own.entries()) lists.push([t, homes, rest[i]]);
   for (const [t, homes, tickets] of lists)
     for (const ticket of tickets) {
       const seen = out.get(ticket.key);
@@ -86,7 +86,13 @@ const prRef = (slug, ref) => `${slug}#${ref}`;
  * @param {Repo[]} [repos]
  * @returns {Map<string, WorkItem[]>}
  */
-export function joinWork(keys, states, linked = new Map(), details = new Map(), repos = []) {
+export function joinWork(
+  keys,
+  states,
+  linked = new Map(),
+  details = new Map(),
+  repos = [],
+) {
   /** @type {Map<string, WorkItem[]>} */
   const work = new Map(keys.map((k) => [k, []]));
   /** @param {string} key @param {WorkItem} item */
@@ -154,7 +160,9 @@ export async function workFor(tickets, repos, { prs = true } = {}) {
   const keys = tickets.map((t) => t.key);
   const states = await pool(
     repos
-      .filter(/** @returns {r is Repo & { path: string }} */ (r) => r.path !== null)
+      .filter(
+        /** @returns {r is Repo & { path: string }} */ (r) => r.path !== null,
+      )
       .map((repo) => async () => ({ repo, ...(await repoState(repo)) })),
   );
   const local = joinWork(keys, states);
@@ -166,23 +174,33 @@ export async function workFor(tickets, repos, { prs = true } = {}) {
     byTracker.set(t.tracker, [...(byTracker.get(t.tracker) ?? []), t.key]);
   const linked = new Map();
   for (const found of await Promise.all(
-    [...byTracker].map(([t, ks]) => t.linkedPRs(ks, repos).catch(() => new Map())),
+    [...byTracker].map(([t, ks]) =>
+      t.linkedPRs(ks, repos).catch(() => new Map()),
+    ),
   ))
     for (const [k, v] of found) linked.set(k, v);
   const lookups = new Map();
   for (const [key, items] of local) {
     for (const item of items)
       if (item.repo.slug)
-        lookups.set(prRef(item.repo.slug, item.branch), [item.repo.slug, item.branch]);
+        lookups.set(prRef(item.repo.slug, item.branch), [
+          item.repo.slug,
+          item.branch,
+        ]);
     for (const p of linked.get(key) ?? [])
       lookups.set(prRef(p.slug, p.number), [p.slug, p.number]);
   }
   // A failed lookup just leaves that item without PR details.
   const found = await pool(
-    [...lookups.values()].map(([slug, ref]) => () => prDetails(slug, ref)),
+    [...lookups.values()].map(
+      ([slug, ref]) =>
+        () =>
+          prDetails(slug, ref),
+    ),
   );
   const details = new Map();
-  [...lookups.keys()].forEach((k, i) => found[i] && details.set(k, found[i]));
+  for (const [i, k] of [...lookups.keys()].entries())
+    if (found[i]) details.set(k, found[i]);
   return joinWork(keys, states, linked, details, repos);
 }
 

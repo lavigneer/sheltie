@@ -22,7 +22,11 @@ test("merge: objects key by key, everything else replaced", () => {
     jira: { transitions: { start: "In Progress" } },
     roots: ["/src"],
   });
-  assert.deepEqual(m.jira.transitions, { start: "In Progress", review: null, done: "Resolved" });
+  assert.deepEqual(m.jira.transitions, {
+    start: "In Progress",
+    review: null,
+    done: "Resolved",
+  });
   assert.deepEqual(m.roots, ["/src"]);
   assert.equal(m.jira.jql, config.DEFAULTS.jira.jql);
 });

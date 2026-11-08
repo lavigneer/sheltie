@@ -68,6 +68,19 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
+          # `nix develop`: Node and Biome. Biome's npm package ships a prebuilt
+          # binary that NixOS can't run, so point it at nixpkgs' (same version
+          # as package.json's pin).
+          default = pkgs.mkShellNoCC {
+            packages = [
+              pkgs.nodejs_22
+              pkgs.biome
+            ];
+            shellHook = ''
+              export BIOME_BINARY=${pkgs.biome}/bin/biome
+            '';
+          };
+
           e2e = pkgs.mkShellNoCC {
             packages = [
               pkgs.herdr-desktop

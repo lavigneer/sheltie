@@ -4,18 +4,26 @@
 // refreshes every 2 minutes. Narrower than RAIL, it shows today's cost only.
 // The Work sidebar shows each row's cost from the same data.
 
-import { View, div } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { h_flex, v_flex } from "gpui-base";
+import { div, View } from "gpui-kit";
 import { theme } from "herdr";
 import { C, configReady } from "./config.js";
-import { LOADING, dollars, settled, tokenCount, total, usageGroups } from "./usage.js";
+import {
+  dollars,
+  LOADING,
+  settled,
+  tokenCount,
+  total,
+  usageGroups,
+} from "./usage.js";
 
 const DAY_MS = 86_400_000;
 const REFRESH_MS = 120_000;
 const RAIL = 160;
 const TOP = 5;
 
-const dayAgo = (n) => new Date(Date.now() - n * DAY_MS).toISOString().slice(0, 10);
+const dayAgo = (n) =>
+  new Date(Date.now() - n * DAY_MS).toISOString().slice(0, 10);
 
 const AGENTS = { "claude-code": "Claude Code", codex: "Codex" };
 
@@ -55,7 +63,7 @@ export default class Usage extends View {
     });
   }
 
-  render(cx) {
+  render(_cx) {
     const t = theme();
     const rail = this.width !== null && this.width < RAIL;
     const { phase, error } = this.state;
@@ -63,7 +71,8 @@ export default class Usage extends View {
     const since = (d) => groups.filter((g) => g.day >= d);
     const recent = since(dayAgo(29));
     const today = total(since(dayAgo(0)));
-    const amount = (s) => (s.unpriced && !s.cost ? "no price" : dollars(s.cost));
+    const amount = (s) =>
+      s.unpriced && !s.cost ? "no price" : dollars(s.cost);
 
     const line = (id, label, s, strong = false, tip = null) =>
       h_flex()
@@ -145,7 +154,10 @@ export default class Usage extends View {
         ? (problem ?? message("Reading session logs…", t.dim))
         : !groups.length
           ? (problem ??
-            message(`No sessions yet in ${C.usage.agents.map((a) => a.home).join(", ")}`, t.dim))
+            message(
+              `No sessions yet in ${C.usage.agents.map((a) => a.home).join(", ")}`,
+              t.dim,
+            ))
           : v_flex()
               .pb(6)
               .child(line("usage-today", "Today", today, true))
@@ -197,12 +209,20 @@ export default class Usage extends View {
               .text_size(9.5)
               .text_color(t.dim)
               .tooltip(error ?? `Agents today: ${amount(today)}`)
-              .child(this.state.groups === null ? (error ? "!" : "…") : amount(today))
+              .child(
+                this.state.groups === null
+                  ? error
+                    ? "!"
+                    : "…"
+                  : amount(today),
+              )
           : v_flex()
               .size_full()
               .min_h(0)
               .child(header)
-              .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().child(body)),
+              .child(
+                v_flex().flex_1().min_h(0).overflow_y_scrollbar().child(body),
+              ),
       );
   }
 }

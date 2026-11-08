@@ -157,7 +157,9 @@ async function prices() {
 // A model's price: its own, else without a [1m]-style tag or date suffix.
 export function priceOf(table, model) {
   const bare = model.replace(/\[.*\]$/, "");
-  return table[model] ?? table[bare] ?? table[bare.replace(/-\d{8}$/, "")] ?? null;
+  return (
+    table[model] ?? table[bare] ?? table[bare.replace(/-\d{8}$/, "")] ?? null
+  );
 }
 
 // One group's cost in $, or null for a model without a price. A cache write
@@ -194,7 +196,11 @@ export async function settled(state, read) {
   try {
     return { phase: "ready", groups: await read(), error: null };
   } catch (e) {
-    return { phase: "failed", groups: state.groups, error: e?.message ?? String(e) };
+    return {
+      phase: "failed",
+      groups: state.groups,
+      error: e?.message ?? String(e),
+    };
   }
 }
 
@@ -220,7 +226,11 @@ export function costIn(groups, dir) {
 }
 
 export const dollars = (n) =>
-  n >= 100 ? `$${Math.round(n)}` : n >= 0.01 || n === 0 ? `$${n.toFixed(2)}` : "<$0.01";
+  n >= 100
+    ? `$${Math.round(n)}`
+    : n >= 0.01 || n === 0
+      ? `$${n.toFixed(2)}`
+      : "<$0.01";
 
 export const tokenCount = (n) =>
   n >= 1e9

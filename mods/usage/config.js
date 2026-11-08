@@ -12,7 +12,15 @@ export const DEFAULTS = {
   // Programs, found on your login shell's PATH unless given as absolute paths.
   // Each is needed only by what uses it: jira only with the Jira tracker,
   // sqlite3 only once opencode has a database to read.
-  programs: { git: "git", gh: "gh", jira: "jira", hc: "hc", jq: "jq", curl: "curl", sqlite3: "sqlite3" },
+  programs: {
+    git: "git",
+    gh: "gh",
+    jira: "jira",
+    hc: "hc",
+    jq: "jq",
+    curl: "curl",
+    sqlite3: "sqlite3",
+  },
 
   // Where tickets come from: "jira" (jira-cli) or "github" (GitHub issues, gh).
   tracker: "jira",
@@ -47,7 +55,8 @@ export const DEFAULTS = {
   // owner/repo) and names a `repo`: "owner/repo" on GitHub (cloned into the
   // first root if needed) or a local path. Component and label rules win over
   // project rules.
-  repoRules: /** @type {{ component?: string, label?: string, project?: string, repo: string }[]} */ ([]),
+  repoRules:
+    /** @type {{ component?: string, label?: string, project?: string, repo: string }[]} */ ([]),
 
   // A ticket's branch: {ref} is the tracker's part (WEB-142, issue-12).
   branch: "{ref}",
@@ -62,16 +71,16 @@ export const DEFAULTS = {
     // {viewCommand} (how to read the ticket) are filled in.
     // Both say how to tell the Work sidebar the PR is done (see
     // workflow.readyWhen).
-    task: "Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`.",
+    task: 'Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label "$HC_TERMINAL_ID" pr=ready`.',
     // First message when asking for another branch of a ticket in a repo
     // that already has one: the agent names and creates it itself.
     extraBranchTask:
-      "Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`.",
+      'Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label "$HC_TERMINAL_ID" pr=ready`.',
     // First message for ad-hoc work (not tied to a ticket), started from the
     // tickets popup in a new worktree on {branch}; {description} is what you
     // typed.
     adhocTask:
-      "{description}\n\nThis is ad-hoc work, not tied to a ticket: you're in a new worktree on branch {branch}. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`.",
+      '{description}\n\nThis is ad-hoc work, not tied to a ticket: you\'re in a new worktree on branch {branch}. When the pull request is complete, run `hc label "$HC_TERMINAL_ID" pr=ready`.',
     // What each Work sidebar step sends to the agent.
     steps: {
       "draft-pr": "/draft-pr",
@@ -130,7 +139,8 @@ const isObject = (v) => v && typeof v === "object" && !Array.isArray(v);
 
 // `over` merged into `base`: objects key by key, everything else replaced.
 export function merge(base, over) {
-  if (!isObject(base) || !isObject(over)) return over === undefined ? base : over;
+  if (!isObject(base) || !isObject(over))
+    return over === undefined ? base : over;
   const out = { ...base };
   for (const [k, v] of Object.entries(over)) out[k] = merge(base[k], v);
   return out;
@@ -156,7 +166,11 @@ async function load() {
 // A settings file: { over (its JSON object, {} if missing or bad), problem }.
 /** @param {string} path @returns {Promise<{ over: Record<string, any>, problem: string | null }>} */
 export async function readSettings(path) {
-  const r = await exec("cat", [path]).catch((e) => ({ code: 1, stdout: "", stderr: `${e}` }));
+  const r = await exec("cat", [path]).catch((e) => ({
+    code: 1,
+    stdout: "",
+    stderr: `${e}`,
+  }));
   if (r.code !== 0)
     return {
       over: {},
@@ -169,7 +183,10 @@ export async function readSettings(path) {
     if (!isObject(over)) throw new Error("not a JSON object");
     return { over, problem: null };
   } catch (e) {
-    return { over: {}, problem: `${path}: ${e.message ?? e}; using the defaults` };
+    return {
+      over: {},
+      problem: `${path}: ${e.message ?? e}; using the defaults`,
+    };
   }
 }
 
@@ -177,7 +194,13 @@ export async function readSettings(path) {
 // global ones. Only REPO_SETTINGS apply there: where its tickets come from,
 // its branch names and its PR workflow.
 export const REPO_FILE = ".sheltie.json";
-export const REPO_SETTINGS = ["tracker", "jira", "github", "branch", "workflow"];
+export const REPO_SETTINGS = [
+  "tracker",
+  "jira",
+  "github",
+  "branch",
+  "workflow",
+];
 
 // The settings for a repo whose REPO_FILE holds `over`, or null when it sets
 // none of REPO_SETTINGS (the global ones apply). `problem` names keys that
@@ -219,6 +242,7 @@ async function resolvePrograms(programs) {
     'for p in "$@"; do printf "%s=%s\\n" "$p" "$(command -v "$p")"; done';
   const r = await exec("/bin/sh", [
     "-c",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion, not a template.
     '"${SHELL:-/bin/sh}" -lc "$0" sh "$@"',
     script,
     ...names,

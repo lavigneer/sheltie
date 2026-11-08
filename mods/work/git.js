@@ -2,7 +2,13 @@
 // branch names come from the tracker in use (tracker.js).
 
 import { exec } from "herdr";
-import { C, REPO_FILE, readSettings, repoSettings, settingsOf } from "./config.js";
+import {
+  C,
+  REPO_FILE,
+  readSettings,
+  repoSettings,
+  settingsOf,
+} from "./config.js";
 import { basename, fill, firstLine, must, pool, tool } from "./lib.js";
 import { tracker, trackerOf } from "./tracker.js";
 
@@ -57,7 +63,9 @@ export async function localRepos() {
       };
     }),
   );
-  return repos.filter((r) => r !== null).sort((a, b) => a.name.localeCompare(b.name));
+  return repos
+    .filter((r) => r !== null)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function ownSettings(repoPath) {
@@ -135,8 +143,9 @@ export const hubExcept = (repoPath, linked) => [
 /** @param {import("./types.js").Repo & { path: string }} repo @returns {Promise<RepoState>} */
 export async function repoState(repo) {
   const { mainBranch, linked } = await listWorktrees(repo.path);
-  const worktrees = linked
-    .flatMap((w) => (w.branch ? [{ path: w.path, branch: w.branch }] : []));
+  const worktrees = linked.flatMap((w) =>
+    w.branch ? [{ path: w.path, branch: w.branch }] : [],
+  );
   const branches = new Map(); // name -> { local, remote }
   const refs = await git(
     repo.path,
@@ -298,4 +307,3 @@ export async function removeWorktree(repo, path, branch, prHead) {
   await git(repo.path, "branch", "-D", branch);
   await git(repo.path, "fetch", "--quiet", "--prune", "origin");
 }
-

@@ -4,7 +4,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const root = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  "..",
+);
 const src = path.join(root, "src");
 const shared = new Set(fs.readdirSync(src).filter((f) => f.endsWith(".js")));
 const importsOf = (file) =>
@@ -21,7 +24,8 @@ for (const mod of mods) {
   const out = path.join(root, "mods", mod);
   fs.mkdirSync(out, { recursive: true });
   const own = fs.readdirSync(path.join(src, mod));
-  for (const f of own) fs.copyFileSync(path.join(src, mod, f), path.join(out, f));
+  for (const f of own)
+    fs.copyFileSync(path.join(src, mod, f), path.join(out, f));
   const needed = new Set();
   const todo = own
     .filter((f) => f.endsWith(".js"))

@@ -28,8 +28,8 @@
 import { agents, panes, run, spaces, terminals } from "herdr";
 import { C, settingsOf } from "./config.js";
 import { assertClean, removeWorktree } from "./git.js";
-import { markReady, mergePr, prDetails } from "./prs.js";
 import { basename, inside, spaceFor, tool } from "./lib.js";
+import { markReady, mergePr, prDetails } from "./prs.js";
 import { trackerOf } from "./tracker.js";
 
 const AGENT_STEPS = [
@@ -161,7 +161,9 @@ export function agentIn(space) {
       .filter((t) => t.labels?.agent)
       .map((t) => t.address),
   );
-  return here.find((p) => p.terminal && labelled.has(p.terminal))?.terminal ?? null;
+  return (
+    here.find((p) => p.terminal && labelled.has(p.terminal))?.terminal ?? null
+  );
 }
 
 // Whether the agent terminal in a space says its PR is done: it has the

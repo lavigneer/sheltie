@@ -1,7 +1,7 @@
 // Jira (Cloud or Server/Data Center) through jira-cli. Keys look like WEB-142
 // and are their own branch part. Settings: C.jira.
 
-import { NOT_FOUND, firstLine, must, pool, tool } from "./lib.js";
+import { firstLine, must, NOT_FOUND, pool, tool } from "./lib.js";
 
 // A tracker using settings `s` (the global ones, or a repo's: config.js).
 /** @param {import("./config.js").Settings} s @returns {import("./types.js").Tracker} */
@@ -71,7 +71,9 @@ export function create(s) {
   }
 
   async function url(key) {
-    const r = await tool("jira", ["open", key, "--no-browser"]).catch(() => null);
+    const r = await tool("jira", ["open", key, "--no-browser"]).catch(
+      () => null,
+    );
     return r?.code === 0 ? r.stdout.trim() || null : null;
   }
 
@@ -80,7 +82,9 @@ export function create(s) {
 
   // Jira keys in a branch name or PR text: "me/WEB-142-fix" -> ["WEB-142"].
   const keysIn = (text) => [
-    ...new Set((text || "").toUpperCase().match(/\b[A-Z][A-Z0-9]+-\d+\b/g) ?? []),
+    ...new Set(
+      (text || "").toUpperCase().match(/\b[A-Z][A-Z0-9]+-\d+\b/g) ?? [],
+    ),
   ];
 
   // The orgs/users to search for PRs: s.githubOwners plus owners of known repos.
@@ -121,7 +125,9 @@ export function create(s) {
       const mentioned = keysIn(`${p.title}\n${p.body ?? ""}`);
       for (const k of keys)
         if (mentioned.includes(k))
-          out.get(k).push({ slug: p.repository?.nameWithOwner, number: p.number });
+          out
+            .get(k)
+            .push({ slug: p.repository?.nameWithOwner, number: p.number });
     }
     return out;
   }
@@ -129,5 +135,16 @@ export function create(s) {
   // Jira has no repo of its own: repoRules decide.
   const suggest = () => [];
 
-  return { name, list, view, move, url, viewCommand, labelOf, keysIn, linkedPRs, suggest };
+  return {
+    name,
+    list,
+    view,
+    move,
+    url,
+    viewCommand,
+    labelOf,
+    keysIn,
+    linkedPRs,
+    suggest,
+  };
 }
