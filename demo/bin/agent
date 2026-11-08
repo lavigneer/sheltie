@@ -10,6 +10,9 @@ here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 #   /draft-pr          commit, push, open a draft PR (CI starts)
 #   /fix-ci            commit a fix, push (CI starts again, and passes)
 #   /address-comments  commit, push, resolve the review threads (CI starts)
+#   /resolve-conflicts merge the base in, push (CI starts again)
+# Like the Claude commands, each of them first resolves the PR's conflicts
+# with its base, if it has any (`herdr-demo conflict`), before CI starts.
 # After each of those it labels its terminal pr=ready: the PR is done (for
 # workflow.readyWhen "agent"). Anything else is just echoed. It labels its
 # terminal agent=herdr-demo so the sidebar can find it (a real Claude Code
@@ -39,12 +42,21 @@ pr_done() { hc label "${HC_TERMINAL_ID:-}" pr=ready >/dev/null 2>&1 || true; }
 pr_filter='.repo == $repo and .branch == $branch and (.state // "OPEN") == "OPEN"'
 has_pr() { state_jq -e --arg repo "$slug" --arg branch "$branch" "any(.prs[]; $pr_filter)" >/dev/null; }
 
+# Merges the base in if the PR conflicts with it (then CI can run), and says so.
+resolve_conflicts() {
+  state_jq -e --arg repo "$slug" --arg branch "$branch" "any(.prs[]; $pr_filter and .mergeable == \"CONFLICTING\")" >/dev/null || return 0
+  work "merge main"
+  state_set --arg repo "$slug" --arg branch "$branch" "(.prs[] | select($pr_filter)).mergeable = \"MERGEABLE\""
+  echo "Merged main in and resolved the conflicts."
+}
+
 handle() {
   case "$1" in
   /draft-pr*)
     work "the change"
     if has_pr; then
       echo "Pushed to the existing PR."
+      resolve_conflicts
     else
       if [ -n "$key" ]; then
         title="$key: $(state_jq -r --arg key "$key" '([.tickets // [] | .[] | select(.key == $key) | .summary] | first) // "demo change"')"
@@ -59,7 +71,7 @@ handle() {
         .prs += [{repo: $repo, number: ((([.prs[].number] | max) // 0) + 1), branch: $branch,
                   title: $title, body: $body, draft: true, review: "REVIEW_REQUIRED",
                   checks: "IN_PROGRESS", checksDoneAt: (now + 600), checksResult: "SUCCESS",
-                  state: "OPEN", unresolved: 0}]'
+                  state: "OPEN", mergeable: "MERGEABLE", unresolved: 0}]'
       echo "Opened a draft PR: $(state_jq -r --arg repo "$slug" --arg branch "$branch" "[.prs[] | select($pr_filter)][0] | \"https://github.com/\(.repo)/pull/\(.number)\"")"
     fi
     ci_start ".repo == \"$slug\" and .branch == \"$branch\""
@@ -67,17 +79,25 @@ handle() {
     echo "CI is running; it takes ${DEMO_CI_SECONDS}s here."
     ;;
   /fix-ci*)
+    resolve_conflicts
     work "fix CI"
     ci_start ".repo == \"$slug\" and .branch == \"$branch\""
     pr_done
     echo "Pushed a fix; CI is running again."
     ;;
   /address-comments*)
+    resolve_conflicts
     work "address review comments"
     state_set --arg repo "$slug" --arg branch "$branch" "(.prs[] | select($pr_filter)).unresolved = 0"
     ci_start ".repo == \"$slug\" and .branch == \"$branch\""
     pr_done
     echo "Addressed the comments, replied and pushed; CI is running."
+    ;;
+  /resolve-conflicts*)
+    resolve_conflicts
+    ci_start ".repo == \"$slug\" and .branch == \"$branch\""
+    pr_done
+    echo "Pushed the merge; CI is running."
     ;;
   "") ;;
   *) echo "(fake agent) $1" ;;

@@ -8,7 +8,8 @@
 #                       ~/.config/herdr-app). Start Herdr once first: this adds
 #                       to the keys.json and layouts it writes.
 #   --claude-commands   also copy the Claude Code commands (/draft-pr,
-#                       /address-comments, /fix-ci) into ~/.claude/commands,
+#                       /address-comments, /fix-ci, /resolve-conflicts) into
+#                       ~/.claude/commands,
 #                       keeping any that you changed (--force-commands: replace)
 #
 # What it does:

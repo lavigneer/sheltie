@@ -46,7 +46,11 @@ case "${1:-} ${2:-}" in
      state: (.state // "OPEN"), isDraft: .draft, reviewDecision: .review,
      headRefName: .branch, headRefOid: $head,
      autoMergeRequest: (if .autoMerge then {enabledAt: "now"} else null end),
-     statusCheckRollup: [(if .checks == "IN_PROGRESS" then {status: .checks} else {conclusion: .checks} end)]}
+     mergeable: (.mergeable // "MERGEABLE"),
+     mergeStateStatus: (if .mergeable == "CONFLICTING" then "DIRTY" else "CLEAN" end),
+     statusCheckRollup: (if .checks == null then []
+                         elif .checks == "IN_PROGRESS" then [{status: .checks}]
+                         else [{conclusion: .checks}] end)}
   ' <<<"$pr"
   ;;
 "pr ready")
