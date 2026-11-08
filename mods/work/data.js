@@ -432,7 +432,7 @@ export function prLabel(pr) {
     else if (pr.review === "CHANGES_REQUESTED") parts.push("changes requested");
     else if (!pr.draft && !pr.review) parts.push("no review needed");
     if (pr.checks)
-      parts.push({ failed: "✗", pending: "…", passed: "✓" }[pr.checks]);
+      parts.push({ failed: "✗", pending: "◌", passed: "✓" }[pr.checks]);
   }
   const conflicts = pr.state === "OPEN" && pr.mergeable === "CONFLICTING";
   if (conflicts) parts.push("conflicts");
