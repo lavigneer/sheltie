@@ -27,7 +27,9 @@ const gen = (r) => {
     Array.from({ length: min + int(max - min + 1) }, () => pick(alphabet)).join(
       "",
     );
-  const NAME = [..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."];
+  const NAME = [
+    ..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.",
+  ];
   const JUNK = [...NAME, ..."/:@ \t\n.git", "é", "\u{1F600}", "\0"];
   // GitHub-legal-ish names: never empty, never ending in ".git", not "." / "..".
   const name = () => {
@@ -64,13 +66,30 @@ const fail = (msg) => `${msg} (SLUG_FUZZ_SEED=${SEED})`;
 
 const checkShape = (url, slug) => {
   if (slug === null) return;
-  assert.equal(typeof slug, "string", fail(`non-string for ${JSON.stringify(url)}`));
+  assert.equal(
+    typeof slug,
+    "string",
+    fail(`non-string for ${JSON.stringify(url)}`),
+  );
   const parts = slug.split("/");
-  assert.equal(parts.length, 2, fail(`bad slug ${JSON.stringify(slug)} for ${JSON.stringify(url)}`));
+  assert.equal(
+    parts.length,
+    2,
+    fail(`bad slug ${JSON.stringify(slug)} for ${JSON.stringify(url)}`),
+  );
   for (const p of parts) {
-    assert.ok(p.length > 0, fail(`empty part in ${JSON.stringify(slug)} from ${JSON.stringify(url)}`));
-    assert.ok(!/\s/.test(p), fail(`whitespace in ${JSON.stringify(slug)} from ${JSON.stringify(url)}`));
-    assert.ok(!/\.git$/i.test(p), fail(`.git in ${JSON.stringify(slug)} from ${JSON.stringify(url)}`));
+    assert.ok(
+      p.length > 0,
+      fail(`empty part in ${JSON.stringify(slug)} from ${JSON.stringify(url)}`),
+    );
+    assert.ok(
+      !/\s/.test(p),
+      fail(`whitespace in ${JSON.stringify(slug)} from ${JSON.stringify(url)}`),
+    );
+    assert.ok(
+      !/\.git$/i.test(p),
+      fail(`.git in ${JSON.stringify(slug)} from ${JSON.stringify(url)}`),
+    );
   }
 };
 
@@ -80,7 +99,11 @@ test("slugOf: a GitHub URL built from owner/repo gives that slug back", () => {
     const owner = g.name();
     const repo = g.name();
     const url = g.githubUrl(owner, repo);
-    assert.equal(slugOf(url), `${owner}/${repo}`, fail(`for ${JSON.stringify(url)}`));
+    assert.equal(
+      slugOf(url),
+      `${owner}/${repo}`,
+      fail(`for ${JSON.stringify(url)}`),
+    );
   }
 });
 
@@ -90,7 +113,17 @@ test("slugOf: any input gives null or a clean owner/repo", () => {
     const url = g.otherUrl();
     checkShape(url, slugOf(url));
   }
-  for (const url of [null, undefined, "", " ", "github.com", "github.com/", "github.com/o/.git", "github.com/o/x.git.git", "https://github.com//"]) {
+  for (const url of [
+    null,
+    undefined,
+    "",
+    " ",
+    "github.com",
+    "github.com/",
+    "github.com/o/.git",
+    "github.com/o/x.git.git",
+    "https://github.com//",
+  ]) {
     checkShape(url, slugOf(url));
   }
 });
