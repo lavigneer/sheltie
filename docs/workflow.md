@@ -83,3 +83,19 @@ For scripts: `herdr-app do work.refresh` refreshes the sidebar now, like its
 `<Herdr app home>/work-report.json`: rows, hubs (marked `hub: true`), their PRs
 (with `mergeable`) and next steps, the selected row and step, and the PR and
 ticket URLs `work.open-pr` and `work.open-ticket` would open.
+
+## Starting tickets from an agent or script
+
+`herdr-app do work.start` starts the tickets each request in
+`<Herdr app home>/work-start/` names, like Enter in the tickets popup. A
+request is its own `<id>.json` (write it as `<id>.json.tmp` and rename it), so
+several callers can ask at once: `{"tickets": ["WEB-142", {"ticket":
+"acme/web#12", "repo": "acme/web"}]}` (a key or the label the sidebar shows;
+`repo`, a slug or path, overrides its best suggested repo). Requests run one
+at a time; each is removed once read, and what happened to each ticket is
+written to `<id>.result.json` for the caller to read and delete (results left
+over a day are removed). Tickets that already have a branch, worktree or PR
+are skipped. The `start-work` skill
+(`./install.sh --skills`) teaches an agent, such as one in a repo's hub, to
+pick tickets, order them by their dependencies and start the ready ones this
+way, then the rest once what they wait on merges.

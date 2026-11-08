@@ -69,7 +69,7 @@ herdr-app do layout.switch --name sheltie
 This copies the mods into Herdr's app home (`$HERDR_APP_HOME`, else
 `~/.config/herdr-app`), binds the keys below, adds a `sheltie` layout and a
 starter `sheltie.json`. `--skills` also installs the agent skills in
-`skills/` (draft-pr, fix-ci, address-comments, resolve-conflicts) into
+`skills/` (draft-pr, fix-ci, address-comments, resolve-conflicts, start-work) into
 `~/.agents/skills` and `~/.claude/skills`. Re-run after pulling to update.
 
 With Nix, `packages.default` provides the same files plus `sheltie-install`
@@ -89,9 +89,11 @@ and `herdr-demo`.
 | Alt+Shift+T | `work.open-ticket` | open the row's ticket |
 
 Rebind them in `<Herdr app home>/keys.json`. They also work from the command
-line (`herdr-app do work.step`), as do `work.refresh` and `work.report`
-(writes the sidebar state to `<Herdr app home>/work-report.json`). More in
-[docs/workflow.md](docs/workflow.md#keyboard).
+line (`herdr-app do work.step`), as do `work.refresh`, `work.report` (writes
+the sidebar state to `<Herdr app home>/work-report.json`) and `work.start`
+(starts the tickets requested in `work-start/`, for agents; see
+[docs/workflow.md](docs/workflow.md#starting-tickets-from-an-agent-or-script)).
+More in [docs/workflow.md](docs/workflow.md#keyboard).
 
 ## Settings
 

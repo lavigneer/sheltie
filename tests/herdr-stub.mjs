@@ -29,3 +29,18 @@ export const agents = () => live.agents;
 export const terminals = () => live.terminals;
 export const run = () => null;
 export const notify = () => "";
+const sharedDoc = new Map();
+export const shared = (key) => sharedDoc.get(key);
+export const setShared = (key, value) => {
+  sharedDoc.set(key, value);
+  return null;
+};
+export const readTextFile = async (path) => {
+  const fs = await import("node:fs/promises");
+  return fs.readFile(path, "utf8").catch(() => null);
+};
+export const writeTextFile = async (path, text) => {
+  const fs = await import("node:fs/promises");
+  await fs.writeFile(path, text);
+  return null;
+};
