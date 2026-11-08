@@ -10,6 +10,9 @@
 //                the cwd and model; each token_count event's last_token_usage
 //                is one model call (input_tokens includes cached ones). An
 //                event repeating the same total is not a new call.
+//   opencode     <home>/opencode.db (sqlite3): each assistant row of the
+//                message table has its modelID, tokens and path.cwd;
+//                reasoning tokens are billed as output.
 //
 // Prices (settings: usage.prices) are downloaded to <app home>/usage-prices.json
 // when newer, at most hourly; offline, the last download is used. A model
@@ -28,9 +31,16 @@ const GROUP = `
     input: (map(.i) | add), output: (map(.o) | add), read: (map(.r) | add),
     write5m: (map(.w5) | add), write1h: (map(.w1) | add) }`;
 
+// Shell scripts printing an agent's records for jq, given $1 = its home and
+// $2 = sqlite3. A missing folder or database (agent never used) prints none.
+// JSONL: awk tags each line with its file and ends a half-written last line,
+// so it can't run into the next file's first.
+const JSONL = (dir) =>
+  `[ -d "$1/${dir}" ] || exit 0; find "$1/${dir}" -name "*.jsonl" -type f -exec awk '{ print FILENAME "\\t" $0 }' {} +`;
+
 const READERS = {
   "claude-code": {
-    dir: "projects",
+    source: JSONL("projects"),
     jq: `
 [inputs | index("\\t") as $t | .[$t + 1:] | fromjson?
  | select(.type == "assistant" and .message.id and .message.usage
@@ -46,7 +56,7 @@ const READERS = {
 | unique_by(.id) ${GROUP}`,
   },
   codex: {
-    dir: "sessions",
+    source: JSONL("sessions"),
     jq: `
 [foreach (inputs | index("\\t") as $t
           | { f: .[:$t], j: (.[$t + 1:] | fromjson? // null) } | select(.j)) as $x
@@ -69,6 +79,17 @@ const READERS = {
      else $s + { out: null } end;
    .out // empty)] ${GROUP}`,
   },
+  opencode: {
+    source: `[ -f "$1/opencode.db" ] || exit 0; command -v "$2" >/dev/null || { echo "opencode needs sqlite3 (settings: programs.sqlite3)" >&2; exit 127; }; "$2" -readonly "$1/opencode.db" "SELECT json_object('id', id, 'data', json(data)) FROM message WHERE json_extract(data, '$.role') = 'assistant'"`,
+    jq: `
+[inputs | fromjson? | .data as $m | select($m.modelID and $m.tokens)
+ | $m.tokens as $u
+ | { id, dir: ($m.path.cwd // ""), m: $m.modelID, fast: false,
+     d: ($m.time.created // 0 | ./1000 | strftime("%Y-%m-%d")),
+     i: ($u.input // 0), o: (($u.output // 0) + ($u.reasoning // 0)),
+     r: ($u.cache.read // 0), w5: ($u.cache.write // 0), w1: 0 }]
+| unique_by(.id) ${GROUP}`,
+  },
 };
 
 const expandHome = (p) => p.replace(/^~(?=\/|$)/, home());
@@ -78,13 +99,12 @@ const expandHome = (p) => p.replace(/^~(?=\/|$)/, home());
 async function scan(agent) {
   const reader = READERS[agent.type];
   if (!reader) throw new Error(`usage: unknown agent type ${agent.type}`);
-  // awk tags each line with its file and ends a half-written last line, so
-  // it can't run into the next file's first.
   const r = await exec("/bin/sh", [
     "-c",
-    '[ -d "$1" ] || exit 0; find "$1" -name "*.jsonl" -type f -exec awk \'{ print FILENAME "\\t" $0 }\' {} + | "$2" -R -n -c "$3"',
+    `(set -o pipefail) 2>/dev/null && set -o pipefail; { ${reader.source}; } | "$3" -R -n -c "$4"`,
     "sh",
-    `${expandHome(agent.home)}/${reader.dir}`,
+    expandHome(agent.home),
+    C.programs.sqlite3,
     C.programs.jq,
     reader.jq,
   ]);

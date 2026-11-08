@@ -10,7 +10,9 @@ export const DEFAULTS = {
   depth: 1,
 
   // Programs, found on your login shell's PATH unless given as absolute paths.
-  programs: { git: "git", gh: "gh", jira: "jira", hc: "hc", jq: "jq", curl: "curl" },
+  // Each is needed only by what uses it: jira only with the Jira tracker,
+  // sqlite3 only once opencode has a database to read.
+  programs: { git: "git", gh: "gh", jira: "jira", hc: "hc", jq: "jq", curl: "curl", sqlite3: "sqlite3" },
 
   // Where tickets come from: "jira" (jira-cli) or "github" (GitHub issues, gh).
   tracker: "jira",
@@ -81,11 +83,12 @@ export const DEFAULTS = {
 
   usage: {
     // Whose session logs count toward the Usage sidebar and each Work row's
-    // cost: `type` "claude-code" or "codex", in `home` (CLAUDE_CONFIG_DIR,
-    // CODEX_HOME). An agent you don't use costs nothing to list.
+    // cost: `type` "claude-code", "codex" or "opencode", in `home`
+    // (CLAUDE_CONFIG_DIR, CODEX_HOME, opencode's data folder). An agent you don't use costs nothing to list.
     agents: [
       { type: "claude-code", home: "~/.claude" },
       { type: "codex", home: "~/.codex" },
+      { type: "opencode", home: "~/.local/share/opencode" },
     ],
     // Model prices: LiteLLM's list (downloaded when it changes, at most hourly).
     prices:
