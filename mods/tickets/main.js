@@ -143,8 +143,12 @@ export default class Tickets extends View {
       let base = null;
       try {
         await configReady();
-        const [repos, here] = await Promise.all([localRepos(), repoRoot(cwd)]);
-        const tickets = await listTickets(repos);
+        const scan = localRepos();
+        const [repos, here, tickets] = await Promise.all([
+          scan,
+          repoRoot(cwd),
+          listTickets(scan),
+        ]);
         if (!current()) return;
         base = { gen, tickets, repos, here };
         this.setData({ ...base, phase: "work", work: new Map() }, cx);

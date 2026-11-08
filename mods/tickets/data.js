@@ -85,16 +85,19 @@ async function ownSettings(repoPath) {
 // Your tickets from every tracker in use: the global one, then each one repos
 // pick for themselves. Each ticket carries its `tracker` and `homes`: the repos
 // whose own tracker listed it. A repo's tracker that fails leaves its tickets
-// out; the global one failing throws.
+// out; the global one failing throws. `repos` may be a promise (of
+// localRepos()): the global tracker is asked without waiting for it.
 export async function listTickets(repos) {
   const global = tracker();
+  const globalList = global.list();
+  globalList.catch(() => {}); // awaited below, unless the repo scan fails first
   const sources = new Map([[global, []]]);
-  for (const r of repos)
+  for (const r of await repos)
     if (r.tracker && r.tracker !== global)
       sources.set(r.tracker, [...(sources.get(r.tracker) ?? []), r]);
   const own = [...sources].slice(1);
   const [first, ...rest] = await Promise.all([
-    global.list(),
+    globalList,
     ...own.map(([t]) => t.list().catch(() => [])),
   ]);
   const out = new Map();
