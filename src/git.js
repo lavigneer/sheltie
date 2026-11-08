@@ -19,7 +19,7 @@ export function slugOf(url) {
   const m = (url || "")
     .trim()
     .match(/github\.com[:/]+([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i);
-  return m ? `${m[1]}/${m[2]}` : null;
+  return m && !/\.git$/i.test(m[2]) ? `${m[1]}/${m[2]}` : null;
 }
 
 /** @param {string | null | undefined} a @param {string | null | undefined} b */
