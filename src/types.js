@@ -52,6 +52,7 @@
  * @property {string} head
  * @property {boolean} autoMerge
  * @property {"MERGEABLE" | "CONFLICTING" | "UNKNOWN"} mergeable
+ * @property {number | null} unresolved unresolved review threads (open PRs)
  */
 
 /** A PR a tracker links to a ticket. @typedef {{ slug: string, number: number }} PRRef */

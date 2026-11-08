@@ -77,7 +77,7 @@ test("PR details, review threads, check results", async () => {
   const p34 = await D.prDetails("acme/web-app", 34);
   assert.equal(p34.checks, "failed");
   assert.equal(p34.checksTotal, p34.checksPassed + 1);
-  assert.equal(await D.unresolvedThreads("acme/web-app", 34), 2);
+  assert.equal((await D.prDetails("acme/web-app", 34)).unresolved, 2);
 });
 
 test("workFor: worktrees, branches and PRs per ticket, fork PRs included", async () => {

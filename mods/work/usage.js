@@ -23,26 +23,50 @@ import { C } from "./config.js";
 
 const PRICES_MS = 3_600_000;
 
-// Per (agent, cwd, UTC day, model, fast) token sums, from lines tagged
-// "<file>\t<json>" (see scan()).
+// Shared with the other sidebar: a scan younger than this is reused (each
+// sidebar refreshes every 2 minutes, so together they scan once per interval).
+export const SHARE_MS = 100_000;
+
+// Per (agent, cwd, UTC day, model, fast) token sums from record lines
+// { id?, dir, d, m, fast, i, o, r, w5, w1 }, grouped as they stream. Records
+// sharing an id are one message (the first is kept), across files too: a
+// resumed session repeats its history in a new log.
 const GROUP = `
-| group_by([.d, .m, .fast, .dir])[]
-| { dir: .[0].dir, day: .[0].d, model: .[0].m, fast: .[0].fast,
-    input: (map(.i) | add), output: (map(.o) | add), read: (map(.r) | add),
-    write5m: (map(.w5) | add), write1h: (map(.w1) | add) }`;
+reduce inputs as $r ({ seen: {}, g: {} };
+  if $r.id and .seen[$r.id] then . else
+    (if $r.id then .seen[$r.id] = true else . end)
+    | ([$r.d, $r.m, $r.fast, $r.dir] | tojson) as $k
+    | .g[$k] |= { dir: $r.dir, day: $r.d, model: $r.m, fast: $r.fast,
+        input: ((.input // 0) + $r.i), output: ((.output // 0) + $r.o),
+        read: ((.read // 0) + $r.r), write5m: ((.write5m // 0) + $r.w5),
+        write1h: ((.write1h // 0) + $r.w1) } end)
+| [.g[]] | sort_by(.day, .model, .fast, .dir)[]`;
 
-// Shell scripts printing an agent's records for jq, given $1 = its home and
-// $2 = sqlite3. A missing folder or database (agent never used) prints none.
-// JSONL: awk tags each line with its file and ends a half-written last line,
-// so it can't run into the next file's first.
-const JSONL = (dir) =>
-  `[ -d "$1/${dir}" ] || exit 0; find "$1/${dir}" -name "*.jsonl" -type f -exec awk '{ print FILENAME "\\t" $0 }' {} +`;
+// Shell scripts printing an agent's records, given $1 = its home, $2 =
+// sqlite3, $3 = jq, $4 = the reader's jq and $5 = its cache folder. A missing
+// folder or database (agent never used) prints none.
+// JSONL: each log's records are kept in $5/<log's path>, made again only when
+// the log is newer. The cache takes the log's mtime from before it was read,
+// so a line written meanwhile makes it stale. A half-written last line is
+// skipped until the log grows.
+const JSONL = (dir) => `[ -d "$1/${dir}" ] || exit 0
+find "$1/${dir}" -name "*.jsonl" -type f | while IFS= read -r f; do
+  c="$5$f"
+  if [ ! -f "$c" ] || [ "$f" -nt "$c" ]; then
+    mkdir -p "\${c%/*}" && : > "$c.s$$" && touch -r "$f" "$c.s$$" \\
+      && "$3" -R -n -c "$4" "$f" > "$c.t$$" && touch -r "$c.s$$" "$c.t$$" \\
+      && mv "$c.t$$" "$c" || { rm -f "$c.s$$" "$c.t$$"; exit 1; }
+    rm -f "$c.s$$"
+  fi
+  cat "$c"
+done`;
 
+// Each reader's jq turns its source's lines (one log's, for JSONL) into records.
 const READERS = {
   "claude-code": {
     source: JSONL("projects"),
     jq: `
-[inputs | index("\\t") as $t | .[$t + 1:] | fromjson?
+[inputs | fromjson?
  | select(.type == "assistant" and .message.id and .message.usage
      and .message.model and .message.model != "<synthetic>")
  | .message as $m | $m.usage as $u
@@ -53,16 +77,14 @@ const READERS = {
      w5: (if $u.cache_creation then $u.cache_creation.ephemeral_5m_input_tokens // 0
           else $u.cache_creation_input_tokens // 0 end),
      w1: ($u.cache_creation.ephemeral_1h_input_tokens // 0) }]
-| unique_by(.id) ${GROUP}`,
+| unique_by(.id)[]`,
   },
   codex: {
     source: JSONL("sessions"),
     jq: `
-[foreach (inputs | index("\\t") as $t
-          | { f: .[:$t], j: (.[$t + 1:] | fromjson? // null) } | select(.j)) as $x
+foreach (inputs | fromjson? // null | select(.)) as $j
   ({};
-   (if $x.f != .f then { f: $x.f } else . end) as $s
-   | $x.j as $j | $j.payload as $p
+   . as $s | $j.payload as $p
    | if $j.type == "session_meta" then $s + { cwd: ($p.cwd // $s.cwd), out: null }
      elif $j.type == "turn_context" then
        $s + { cwd: ($p.cwd // $s.cwd), model: ($p.model // $s.model), out: null }
@@ -77,36 +99,50 @@ const READERS = {
                        r: ($u.cached_input_tokens // 0), o: ($u.output_tokens // 0),
                        w5: 0, w1: 0 } }
      else $s + { out: null } end;
-   .out // empty)] ${GROUP}`,
+   .out // empty)`,
   },
   opencode: {
-    source: `[ -f "$1/opencode.db" ] || exit 0; command -v "$2" >/dev/null || { echo "opencode needs sqlite3 (settings: programs.sqlite3)" >&2; exit 127; }; "$2" -readonly "$1/opencode.db" "SELECT json_object('id', id, 'data', json(data)) FROM message WHERE json_extract(data, '$.role') = 'assistant'"`,
+    source: `[ -f "$1/opencode.db" ] || exit 0; command -v "$2" >/dev/null || { echo "opencode needs sqlite3 (settings: programs.sqlite3)" >&2; exit 127; }; "$2" -readonly "$1/opencode.db" "SELECT json_object('id', id, 'data', json(data)) FROM message WHERE json_extract(data, '$.role') = 'assistant'" | "$3" -R -n -c "$4"`,
     jq: `
-[inputs | fromjson? | .data as $m | select($m.modelID and $m.tokens)
- | $m.tokens as $u
- | { id, dir: ($m.path.cwd // ""), m: $m.modelID, fast: false,
-     d: ($m.time.created // 0 | ./1000 | strftime("%Y-%m-%d")),
-     i: ($u.input // 0), o: (($u.output // 0) + ($u.reasoning // 0)),
-     r: ($u.cache.read // 0), w5: ($u.cache.write // 0), w1: 0 }]
-| unique_by(.id) ${GROUP}`,
+inputs | fromjson? | .data as $m | select($m.modelID and $m.tokens)
+| $m.tokens as $u
+| { id, dir: ($m.path.cwd // ""), m: $m.modelID, fast: false,
+    d: ($m.time.created // 0 | ./1000 | strftime("%Y-%m-%d")),
+    i: ($u.input // 0), o: (($u.output // 0) + ($u.reasoning // 0)),
+    r: ($u.cache.read // 0), w5: ($u.cache.write // 0), w1: 0 }`,
   },
 };
 
 const expandHome = (p) => p.replace(/^~(?=\/|$)/, home());
 
 // One agent's groups: [{ dir, day, model, fast, input, output, read, write5m,
-// write1h }]. An agent that was never used (no folder) gives none.
-async function scan(agent) {
+// write1h }]. An agent that was never used (no folder) gives none. The groups
+// are kept in <cache>/<home>.groups after a "<scan time in ms>" line, and a
+// scan younger than maxAge ms is reused from there.
+async function scan(agent, maxAge) {
   const reader = READERS[agent.type];
   if (!reader) throw new Error(`usage: unknown agent type ${agent.type}`);
   const r = await exec("/bin/sh", [
     "-c",
-    `(set -o pipefail) 2>/dev/null && set -o pipefail; { ${reader.source}; } | "$3" -R -n -c "$4"`,
+    `(set -o pipefail) 2>/dev/null && set -o pipefail
+out="$5$1.groups"
+if [ -f "$out" ] && read -r at < "$out"; then
+  case $at in ''|*[!0-9]*) ;; *) [ $(($6 - at)) -lt "$7" ] && { tail -n +2 "$out"; exit 0; } ;; esac
+fi
+mkdir -p "\${out%/*}" || exit 1
+{ ${reader.source}
+} | "$3" -n -c "$8" > "$out.t$$" || { rm -f "$out.t$$"; exit 1; }
+{ echo "$6"; cat "$out.t$$"; } > "$out.u$$" && mv "$out.u$$" "$out"
+cat "$out.t$$"; rm -f "$out.t$$" "$out.u$$"`,
     "sh",
-    expandHome(agent.home),
+    expandHome(agent.home).replace(/(.)\/+$/, "$1"),
     C.programs.sqlite3,
     C.programs.jq,
     reader.jq,
+    `${appHome()}/usage-cache/${agent.type}`,
+    String(Date.now()),
+    String(maxAge),
+    GROUP,
   ]);
   if (r.code !== 0)
     throw new Error(`usage: ${(r.stderr ?? "").trim().split("\n")[0]}`);
@@ -178,11 +214,12 @@ export function costOf(table, u) {
 }
 
 // Every configured agent's groups, priced: [{ agent, dir, day, model, fast,
-// input, output, read, write5m, write1h, cost }]. A failed scan throws.
-export async function usageGroups() {
+// input, output, read, write5m, write1h, cost }]. A scan younger than maxAge
+// ms (by either sidebar) is reused. A failed scan throws.
+export async function usageGroups(maxAge = SHARE_MS) {
   const [table, ...scans] = await Promise.all([
     prices(),
-    ...C.usage.agents.map(scan),
+    ...C.usage.agents.map((a) => scan(a, maxAge)),
   ]);
   return scans.flat().map((g) => ({ ...g, cost: costOf(table, g) }));
 }

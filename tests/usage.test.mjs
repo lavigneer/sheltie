@@ -121,6 +121,36 @@ test("usageGroups: Claude Code and Codex, by folder, priced", async () => {
   near(costIn(groups, "/work/repo"), (4000 * 1 + 2000 * 0.1 + 1000 * 10) * M);
 });
 
+test("usageGroups: only changed logs are read again; scans are shared", async () => {
+  const home = path.join(tmp, "cached");
+  const proj = path.join(home, "projects", "-p");
+  const u = (n) => ({ input_tokens: n, output_tokens: 0 });
+  write(path.join(proj, "old.jsonl"), [claude("a", "/p", u(1))]);
+  write(path.join(proj, "new.jsonl"), [claude("b", "/p", u(10))]);
+  useConfig({
+    usage: {
+      agents: [{ type: "claude-code", home }],
+      prices: `file://${tmp}/prices.json`,
+    },
+  });
+  const input = async (maxAge) => total(await usageGroups(maxAge)).tokens;
+  assert.equal(await input(0), 11);
+  const kept = path.join(tmp, "usage-cache", "claude-code", proj, "old.jsonl");
+  const before = fs.statSync(kept).mtimeMs;
+
+  // A resumed session repeats "a" in its new log: still counted once.
+  write(path.join(proj, "new.jsonl"), [
+    claude("a", "/p", u(1)),
+    claude("b", "/p", u(10)),
+    claude("c", "/p", u(100)),
+  ]);
+  const later = new Date(Date.now() + 2000);
+  fs.utimesSync(path.join(proj, "new.jsonl"), later, later);
+  assert.equal(await input(), 11, "a recent scan is reused");
+  assert.equal(await input(0), 111);
+  assert.equal(fs.statSync(kept).mtimeMs, before, "unchanged log not re-read");
+});
+
 test("costOf: unknown models have no price; dated ids match; totals", () => {
   const table = { "claude-haiku-4-5": { i: 1 * M, o: 5 * M } };
   const base = { input: 1e6, output: 0, read: 0, write5m: 0, write1h: 0 };

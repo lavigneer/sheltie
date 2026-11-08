@@ -62,7 +62,7 @@ import { C, configReady } from "./config.js";
 import { agentIn, agentSaysDone, nextSteps, prLabel, runStep } from "./flow.js";
 import { hubExcept, keyOfBranch, localRepos, repoState } from "./git.js";
 import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
-import { prDetails, unresolvedThreads } from "./prs.js";
+import { prDetails } from "./prs.js";
 import { trackerOf } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
 import { Cache, serial } from "./watch.js";
@@ -78,6 +78,9 @@ const USAGE_MS = 120_000; // agent costs (see usage.js)
 const RETRY_MS = 60_000; // after a failed tracker/GitHub lookup
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
 const WATCH_TRIES = 3;
+// Between finds of the local repos (and reads of their settings); the git
+// scans in between reuse the last list. ↻ and new space folders find now.
+const REPOS_MS = 300_000;
 // Narrower than this, the sidebar draws a rail (as Herdr's own sidebar mods
 // do): a status per row, its details on hover.
 const RAIL = 160;
@@ -102,6 +105,7 @@ export default class Work extends View {
     this.prs = new Cache({ retryMs: RETRY_MS }); // by worktree path
     this.folded = new Set();
     this.watched = new Map(); // space folder -> tries
+    this.repos = null; // the last localRepos(), and when: { list, at }
     this.steps = new Map(); // worktree path -> { phase, text }
     // The step waiting for its second click: null | { id: `${path}:${step id}`,
     // byKey: whether a key press asked for it }.
@@ -309,7 +313,7 @@ export default class Work extends View {
   // so slow tracker/GitHub calls never hold up the next git refresh.
   async scan(cx, force) {
     await configReady();
-    const repos = (await localRepos()).filter((r) => r.path);
+    const repos = await this.localRepos(force);
     const states = await pool(
       repos.map((repo) => async () => ({
         repo,
@@ -334,6 +338,20 @@ export default class Work extends View {
     this.recheckWatched(cx);
     cx.notify();
     this.details(cx, force);
+  }
+
+  // The local repos, found again when forced, when a watched space folder is
+  // still unknown (it may be a new clone), or every REPOS_MS.
+  async localRepos(force) {
+    const pending = [...this.watched.values()].some((t) => t < WATCH_TRIES);
+    if (
+      force ||
+      pending ||
+      !this.repos ||
+      Date.now() - this.repos.at >= REPOS_MS
+    )
+      this.repos = { list: await localRepos(), at: Date.now() };
+    return this.repos.list;
   }
 
   async lookups(cx, force) {
@@ -380,11 +398,6 @@ export default class Work extends View {
                 pr.mergeable === "UNKNOWN"
                   ? (before?.settled ?? null)
                   : pr.mergeable;
-            if (pr?.state === "OPEN")
-              pr.unresolved = await unresolvedThreads(
-                w.repo.slug,
-                pr.number,
-              ).catch(() => before?.unresolved ?? null);
             return pr;
           });
           if (entry.state === "found" && before)
