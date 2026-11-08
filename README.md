@@ -42,7 +42,7 @@ logs and [LiteLLM's prices](https://github.com/BerriAI/litellm). The Work
 sidebar shows each row's cost too, so you can see what each PR cost.
 On a Claude Pro or Max plan, which is billed by usage quotas rather than per
 token, it also shows how much of the 5-hour session and the week's limits is
-used and when each resets, as Claude Code's `/usage` does (from the account
+used and when each resets, from Claude Code's `/usage` (for the account
 Claude Code is signed in with).
 
 > **What it runs.** The mods run `git`, `gh`, `jira` and `hc` as you, to

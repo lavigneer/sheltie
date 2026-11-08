@@ -10,7 +10,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { div, View } from "gpui-kit";
 import { theme } from "herdr";
 import { C, configReady } from "./config.js";
-import { planLimits, resetsIn } from "./limits.js";
+import { planLimits } from "./limits.js";
 import {
   dollars,
   LOADING,
@@ -174,7 +174,7 @@ export default class Usage extends View {
         .child(text);
 
     const limitList = this.limits.list ?? [];
-    const session = limitList[0]?.windows.find((w) => w.key === "five_hour");
+    const session = limitList[0]?.windows.find((w) => w.key === "session");
     const percent = (n) => `${Math.round(n)}%`;
     const limits = !limitList.length
       ? this.limits.error
@@ -192,7 +192,7 @@ export default class Usage extends View {
                 h_flex()
                   .id(`usage-limit-${l.home}-${w.key}`)
                   .when(Boolean(w.resets), (el) =>
-                    el.tooltip(`Resets ${w.resets.toLocaleString()}`),
+                    el.tooltip(`Resets ${w.resets}`),
                   )
                   .px(14)
                   .h(20)
@@ -212,7 +212,7 @@ export default class Usage extends View {
                       .flex_none()
                       .text_size(11)
                       .text_color(t.dim)
-                      .child(w.resets ? resetsIn(w.resets) : ""),
+                      .child(w.resets ?? ""),
                   )
                   .child(
                     div()

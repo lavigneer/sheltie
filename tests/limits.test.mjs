@@ -1,4 +1,4 @@
-// Plan limits of a Claude subscription, from the OAuth usage endpoint.
+// Plan limits of a Claude subscription, from `claude -p /usage`.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -6,73 +6,72 @@ import path from "node:path";
 import { test } from "node:test";
 
 const { useConfig, DEFAULTS } = await import("../src/config.js");
-const { planLimits, resetsIn, windows } = await import("../src/limits.js");
+const { planLimits, windows } = await import("../src/limits.js");
+
+const USAGE = `You are currently using your subscription to power your Claude Code usage
+
+Current session: 26% used · resets Nov 8, 4:39pm (America/Edmonton)
+Current week (all models): 91% used · resets Nov 14, 5:59pm (America/Edmonton)
+
+Last 24h · 2313 requests · 65 sessions
+  43%  Start fresh when you switch tasks · run /clear
+`;
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "limits-"));
-const signedIn = path.join(tmp, "signed-in");
-const apiKey = path.join(tmp, "api-key");
-fs.mkdirSync(signedIn);
-fs.mkdirSync(apiKey);
+const sub = path.join(tmp, "sub");
+const api = path.join(tmp, "api");
+fs.mkdirSync(sub);
+fs.mkdirSync(api);
+fs.writeFileSync(path.join(sub, "usage.txt"), USAGE);
+fs.writeFileSync(path.join(api, "usage.txt"), "You are using an API key\n");
+// A stand-in claude: prints its CLAUDE_CONFIG_DIR's usage.txt, or fails.
+const claude = path.join(tmp, "claude");
 fs.writeFileSync(
-  path.join(signedIn, ".credentials.json"),
-  JSON.stringify({
-    claudeAiOauth: { accessToken: "tok", subscriptionType: "pro" },
-  }),
+  claude,
+  '#!/bin/sh\n[ "$*" = "-p --no-session-persistence /usage" ] || exit 2\ncat "$CLAUDE_CONFIG_DIR/usage.txt"\n',
 );
-const response = path.join(tmp, "usage.json");
-fs.writeFileSync(
-  response,
-  JSON.stringify({
-    five_hour: { utilization: 42.4, resets_at: "2026-11-08T15:00:00Z" },
-    seven_day: { utilization: 91, resets_at: "2026-11-12T08:00:00Z" },
-    seven_day_opus: null,
-    seven_day_sonnet: { utilization: "?" },
-  }),
-);
+fs.chmodSync(claude, 0o755);
 
 const use = (...homes) =>
   useConfig({
     ...DEFAULTS,
+    programs: { ...DEFAULTS.programs, claude },
     usage: {
       ...DEFAULTS.usage,
       agents: [
         ...homes.map((home) => ({ type: "claude-code", home })),
-        { type: "codex", home: signedIn },
+        { type: "codex", home: sub },
       ],
     },
   });
 
-test("planLimits: signed-in Claude Code homes only, with their windows", async () => {
-  use(signedIn, apiKey);
-  const list = await planLimits(`file://${response}`);
-  assert.equal(list.length, 1);
-  assert.equal(list[0].home, signedIn);
-  assert.deepEqual(
-    list[0].windows.map((w) => [w.key, w.used, w.resets.toISOString()]),
-    [
-      ["five_hour", 42.4, "2026-11-08T15:00:00.000Z"],
-      ["seven_day", 91, "2026-11-12T08:00:00.000Z"],
-    ],
-  );
+test("planLimits: Claude Code homes on a subscription, with their windows", async () => {
+  use(sub, api);
+  assert.deepEqual(await planLimits(), [
+    {
+      home: sub,
+      windows: [
+        { key: "session", label: "Session", used: 26, resets: "Nov 8, 4:39pm" },
+        {
+          key: "Current week (all models)",
+          label: "Week (all models)",
+          used: 91,
+          resets: "Nov 14, 5:59pm",
+        },
+      ],
+    },
+  ]);
 });
 
-test("planLimits: a failed request throws", async () => {
-  use(signedIn);
-  await assert.rejects(planLimits(`file://${tmp}/missing.json`), /Plan limits/);
+test("planLimits: a failed run throws", async () => {
+  use(path.join(tmp, "missing"));
+  await assert.rejects(planLimits(), /Plan limits/);
 });
 
-test("windows: malformed bodies give none", () => {
-  for (const b of [null, "x", {}, { five_hour: { utilization: null } }])
-    assert.deepEqual(windows(b), []);
-  assert.equal(
-    windows({ five_hour: { utilization: 1, resets_at: "bad" } })[0].resets,
-    null,
-  );
-});
-
-test("resetsIn", () => {
-  const now = new Date("2026-11-08T12:00:00Z");
-  assert.equal(resetsIn(new Date("2026-11-08T12:30:00Z"), now), "in 30m");
-  assert.equal(resetsIn(new Date("2026-11-08T14:05:00Z"), now), "in 2h 5m");
-  assert.equal(resetsIn(new Date("2026-11-08T11:00:00Z"), now), "in 0m");
+test("windows: text without limits gives none", () => {
+  for (const t of [null, "", "43%  Start fresh", "x: 5% used"].slice(0, 3))
+    assert.deepEqual(windows(t), []);
+  assert.deepEqual(windows("Weekly: 5% used"), [
+    { key: "Weekly", label: "Weekly", used: 5, resets: null },
+  ]);
 });
