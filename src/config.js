@@ -83,7 +83,7 @@ export const DEFAULTS = {
     // "agent" (also only once its agent says the PR is done, by labelling
     // its terminal: `hc label "$HC_TERMINAL_ID" pr=ready`; the
     // label is cleared whenever a step is sent to the agent). Use "agent"
-    // with agents that know this (the Claude commands in agents/claude do).
+    // with agents that know this (the skills in skills/ do).
     readyWhen: "green",
     // Offer Merge for a ready, green PR that needs no review (a repo without
     // required reviews), not only for an approved one; false: merge those in

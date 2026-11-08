@@ -1,6 +1,6 @@
 ---
+name: address-comments
 description: Address the unresolved review comments on this branch's PR and push
-argument-hint: "[which comments, or extra guidance]"
 ---
 
 Address the open review feedback on this branch's pull request.
@@ -71,5 +71,3 @@ Don't change the PR's draft or ready state, request reviews or merge.
 When the pull request is complete (nothing left that you planned for it), run
 `hc label "$HC_TERMINAL_ID" pr=ready` so the Work sidebar offers Ready. If
 there's still more to do, don't.
-
-$ARGUMENTS

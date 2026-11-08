@@ -1,6 +1,6 @@
 ---
+name: resolve-conflicts
 description: Merge the base branch into this branch's PR, resolve the conflicts, and push
-argument-hint: "[extra guidance on the conflicts]"
 ---
 
 This branch's pull request conflicts with its base branch, so GitHub won't run
@@ -42,5 +42,3 @@ Don't change the PR's draft or ready state, request reviews or merge.
 When the pull request is complete (nothing left that you planned for it), run
 `hc label "$HC_TERMINAL_ID" pr=ready` so the Work sidebar offers Ready. If
 there's still more to do, don't.
-
-$ARGUMENTS
