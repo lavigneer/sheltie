@@ -23,7 +23,7 @@ shows every setting with its default, and `src/config.js` documents each one.
 | `worktreeDir` | `".worktrees"` | relative to the repo's main checkout |
 | `agent.argv` | `["claude"]` | the agent; its first message is the last argument |
 | `agent.task`, `agent.extraBranchTask` | see example | first messages; `{key}`, `{summary}`, `{branch}`, `{viewCommand}` |
-| `agent.steps` | the Claude commands | what each sidebar step sends |
+| `agent.steps` | `/draft-pr` etc. (the skills in `skills/`) | what each sidebar step sends; change for agents that invoke skills differently |
 | `workflow.autoMerge` | `"when-reviews-required"` | or `"never"` |
 | `workflow.readyWhen` | `"green"` | when Ready is offered: CI passed, no conflicts and nothing unresolved; `"agent"`: also once the agent runs `hc label "$HC_TERMINAL_ID" pr=ready` |
 | `workflow.mergeWithoutReview` | `true` | offer Merge for a ready, green PR needing no review; `false`: only once approved |

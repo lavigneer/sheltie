@@ -1,7 +1,7 @@
 ---
+name: draft-pr
 description:
   Push this branch, open a draft PR for its ticket, and get CI green
-argument-hint: "[anything to mention in the PR]"
 ---
 
 Open a draft pull request for the work on this branch, then make CI pass.
@@ -53,5 +53,3 @@ me.
 When the pull request is complete (nothing left that you planned for it), run
 `hc label "$HC_TERMINAL_ID" pr=ready` so the Work sidebar offers Ready. If
 there's still more to do, don't.
-
-$ARGUMENTS

@@ -53,14 +53,15 @@ Start Herdr once, then:
 ```sh
 git clone https://github.com/lavigneer/sheltie
 cd sheltie
-./install.sh --claude-commands
+./install.sh --skills
 herdr-app do layout.switch --name work
 ```
 
 This copies the mods into Herdr's app home (`$HERDR_APP_HOME`, else
 `~/.config/herdr-app`), binds the keys below, adds a `work` layout and a
-starter `sheltie.json`. `--claude-commands` also installs the Claude Code
-commands into `~/.claude/commands`. Re-run after pulling to update.
+starter `sheltie.json`. `--skills` also installs the agent skills in
+`skills/` (draft-pr, fix-ci, address-comments, resolve-conflicts) into
+`~/.agents/skills` and `~/.claude/skills`. Re-run after pulling to update.
 
 With Nix, `packages.default` provides the same files plus `sheltie-install`
 and `herdr-demo`.
