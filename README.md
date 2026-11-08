@@ -33,7 +33,7 @@ offered, the safety checks and how repos are suggested.
 Trackers: **Jira** (via jira-cli) and **GitHub issues**. Code hosting: GitHub.
 A third mod, **projects** (Ctrl+Shift+F), is a plain project switcher, and
 **usage**, at the bottom of the sidebar, shows what your agents (Claude Code,
-Codex) cost: today, the last 7 and 30 days, and by model, from their session
+Codex, opencode) cost: today, the last 7 and 30 days, and by model, from their session
 logs and [LiteLLM's prices](https://github.com/BerriAI/litellm). The Work
 sidebar shows each row's cost too, so you can see what each PR cost.
 
@@ -48,6 +48,7 @@ sidebar shows each row's cost too, so you can see what each PR cost.
 - git, [gh](https://cli.github.com) (logged in), jq
 - For Jira: [jira-cli](https://github.com/ankitpokhrel/jira-cli), set up with
   `jira init`
+- For opencode's usage: sqlite3
 - An agent; the defaults expect [Claude Code](https://claude.com/claude-code)
 
 ## Install
