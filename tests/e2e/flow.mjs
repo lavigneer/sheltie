@@ -1,6 +1,6 @@
 // The end-to-end scenarios, once per tracker: the mods load, a fresh ticket
-// starts from the tickets popup, and its whole flow runs from the Work
-// sidebar's keys, through to Finish. With `failures`, CI fails once (Fix CI)
+// starts from the tickets popup, its repo's hub row opens a space of its own,
+// and its whole flow runs from the Work sidebar's keys, through to Finish. With `failures`, CI fails once (Fix CI)
 // and Finish first refuses a worktree with uncommitted changes.
 
 import assert from "node:assert/strict";
@@ -94,6 +94,45 @@ export function flow(t, { failures = false } = {}) {
     await waitFor("the ticket to open", () => h.opened().includes(t.ticketUrl));
     assert.deepEqual(h.opened(), [t.ticketUrl], "only the ticket opened");
     await h.assertNoErrors("after opening the ticket");
+  });
+
+  scenario("the repo's hub row: above the worktree, a space of its own", async () => {
+    const own = await h.spaceAt(worktree());
+    const { rows } = await h.report();
+    const hubAt = rows.findIndex((r) => r.path === repo());
+    const at = rows.findIndex((r) => r.path === worktree());
+    assert.ok(hubAt >= 0, "a row for the repo's main checkout");
+    const hub = rows[hubAt];
+    assert.equal(hub.hub, true, "marked as the hub");
+    assert.equal(rows[at].hub, false, "the worktree isn't a hub");
+    assert.ok(hubAt < at, "the hub comes first");
+    assert.ok(
+      rows.slice(hubAt + 1, at).every((r) => !r.hub),
+      "the worktree's group is the hub's",
+    );
+    assert.deepEqual(hub.steps, [], "no steps");
+    assert.equal(hub.pr, null, "no PR");
+    assert.notEqual(hub.space, own.id, "not the worktree's space");
+    assert.equal(rows[at].selected, true, "the focused worktree's row is selected");
+
+    // Up to the hub; nothing to open in the browser; open its space.
+    for (let i = hubAt; i < at; i++) await h.key("alt+shift+Up");
+    await h.waitRow("the hub selected", repo(), (r) => r.selected);
+    await h.key("alt+shift+p", "alt+shift+t");
+    await h.key("alt+shift+o");
+    const space = await waitFor("the hub's space", () => h.spaceAt(repo()));
+    assert.notEqual(space.id, own.id, "a space of its own");
+    await h.waitRow("the hub's space", repo(), (r) => r.space === space.id && r.selected);
+    assert.equal((await h.row(worktree())).space, own.id, "the worktree keeps its space");
+    assert.deepEqual(h.opened(), [t.ticketUrl], "nothing opened for the hub");
+
+    // Back to the worktree's space, for the rest of the flow.
+    for (let i = hubAt; i < at; i++) await h.key("alt+shift+Down");
+    await h.waitRow("the worktree selected", worktree(), (r) => r.selected);
+    await h.key("alt+shift+o");
+    await waitFor("its space shown", async () => (await h.spaceAt(worktree()))?.active);
+    await h.waitRow("its row selected", worktree(), (r) => r.selected && r.space === own.id);
+    await h.assertNoErrors("after opening the hub");
   });
 
   scenario("the whole flow, from the sidebar's keys", async () => {

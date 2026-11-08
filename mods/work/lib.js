@@ -76,15 +76,26 @@ export function score(text, query) {
   return 100 + gaps;
 }
 
-// The local space already working in `dir`: its start folder, else any of its terminals.
-export function spaceFor(dir) {
+// The local space already working in `dir`: its start folder, else any of its
+// terminals. Folders inside `except` don't count as in `dir` (a repo's main
+// checkout holds its worktrees: see hubExcept in data.js). A space started in
+// a folder above `dir` or inside `except` belongs there, wherever its
+// terminals are: a hub's space is never one of its worktrees', nor the other
+// way round.
+export function spaceFor(dir, except = []) {
+  const ok = (p) =>
+    Boolean(p) && inside(p, dir) && !except.some((e) => inside(p, e));
   const local = spaces().filter((s) => !s.machine);
-  const byFolder = local.find((s) => s.folder && inside(s.folder, dir));
+  const byFolder = local.find((s) => ok(s.folder));
   if (byFolder) return byFolder;
+  const elsewhere = (f) =>
+    Boolean(f) &&
+    ((f !== dir && inside(dir, f)) || except.some((e) => inside(f, e)));
   const live = panes();
   return local.find((s) => {
+    if (elsewhere(s.folder)) return false;
     const tabs = new Set(s.tabs.map((t) => t.id));
-    return live.some((p) => tabs.has(p.tab) && p.cwd && inside(p.cwd, dir));
+    return live.some((p) => tabs.has(p.tab) && ok(p.cwd));
   });
 }
 

@@ -1,7 +1,8 @@
 // Projects: a sessionizer for the Herdr app.
 //
 // Lists the git repos under the configured roots (settings: roots, depth),
-// filtered as you type. Enter goes to the space already open on that repo, or
+// filtered as you type. Enter goes to the space already open on that repo (its
+// main checkout, not one of its worktrees, which live inside it), or
 // opens a new space there. Opened with mod.open:projects (prefix+f).
 //
 // Keys: type to filter, Up/Down or Ctrl+N/Ctrl+P to move, Enter to open, Esc to close.
@@ -10,7 +11,8 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { exec, home, run, theme, props, closeOverlay } from "herdr";
 import { C, configReady } from "./config.js";
-import { basename, score, spaceFor, moveKey } from "./lib.js";
+import { basename, pool, score, spaceFor, moveKey } from "./lib.js";
+import { hubExcept, listWorktrees } from "./data.js";
 
 // Repos at exactly DEPTH below a root: <root>/<repo>/.git (a dir, or a file for
 // worktrees). Returns { repos, problems }: a root that couldn't be read (missing,
@@ -54,6 +56,7 @@ export default class Projects extends View {
     this.filter = "";
     this.at = 0;
     this.repos = null; // null while the first scan runs
+    this.linked = new Map(); // repo path -> its worktrees' paths
     this.problems = [];
     this.input = InputState.new({ placeholder: "Open a project…" });
     this.input.on("change", (_e, cx) => {
@@ -70,7 +73,25 @@ export default class Projects extends View {
       this.repos = repos;
       this.problems = problems;
       cx.notify();
+      // Each repo's worktrees, to tell its own space from theirs.
+      await pool(
+        repos.map((path) => async () => {
+          const { linked } = await listWorktrees(path);
+          this.linked.set(
+            path,
+            linked.map((w) => w.path),
+          );
+        }),
+      );
+      cx.notify();
     });
+  }
+
+  // The space open on repo `path` (its main checkout), not one of its
+  // worktrees' (they live inside it). Until its worktrees are listed, only
+  // C.worktreeDir is left out.
+  spaceAt(path) {
+    return spaceFor(path, hubExcept(path, this.linked.get(path) ?? []));
   }
 
   // Not named close(): Herdr calls a View's close() itself when the overlay goes.
@@ -84,7 +105,7 @@ export default class Projects extends View {
       const name = basename(path);
       const s = score(name, this.filter) ?? score(path, this.filter);
       if (s === null) continue;
-      rows.push({ path, name, score: s, space: spaceFor(path) });
+      rows.push({ path, name, score: s, space: this.spaceAt(path) });
     }
     // Best match first; among equals, repos with an open space, then by name.
     rows.sort(
@@ -99,7 +120,7 @@ export default class Projects extends View {
   go(r) {
     if (!r) return;
     this.dismiss();
-    const open = spaceFor(r.path);
+    const open = this.spaceAt(r.path);
     if (open) run("space.select", { id: open.id });
     else run("space.new", { name: r.name, folder: r.path });
   }

@@ -1,6 +1,9 @@
 // Work: a repo -> worktree outline for the Herdr sidebar.
 //
 // Every worktree of your local repos (open in a space or not), grouped by repo.
+// Each group starts with the repo's hub: its main checkout, with a space of its
+// own for the repo's longer-running agents (no ticket, PR or steps). A repo
+// shows while it has worktrees or its hub has a space.
 // A row shows the ticket its branch names (key, summary, status), its pull
 // request (review and checks) and the agent status of its space. Click a row to
 // go to its space, or to open one there with the agent; click its PR label to
@@ -18,7 +21,8 @@
 // next steps (the first by default), work.step runs that step (Finish and
 // Clean up: press twice) and work.open opens the row's space, like a click.
 // work.open-pr / work.open-ticket open the row's PR / ticket in the browser,
-// like clicking its PR label / its ticket key or status.
+// like clicking its PR label / its ticket key or status (a hub: says there's
+// nothing to open).
 // work.refresh refreshes everything now, like ↻. work.report writes what the
 // sidebar shows to <app home>/work-report.json, for scripts and tests.
 //
@@ -54,6 +58,7 @@ import {
 import { C, configReady } from "./config.js";
 import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
 import {
+  hubExcept,
   keyOfBranch,
   localRepos,
   prDetails,
@@ -125,9 +130,20 @@ async function lookup(cache, id, f) {
   }
 }
 
+// A row's space: a hub's leaves out its worktrees' folders (see spaceFor).
+const spaceOf = (w) => spaceFor(w.path, w.except);
+
+// A group's rows: its hub, then its worktrees.
+const rowsOf = (g) => [
+  { ...g.hub, repo: g.repo },
+  ...g.worktrees.map((w) => ({ ...w, repo: g.repo })),
+];
+
 export default class Work extends View {
   init(_props, cx) {
-    this.groups = null; // null until the first scan; [{ repo, worktrees: [{ path, branch, key }] }]
+    // null until the first scan; else every local repo:
+    // [{ repo, hub: { path, branch, hub: true, except }, worktrees: [{ path, branch, key }] }]
+    this.groups = null;
     this.mainCheckouts = new Set();
     this.tickets = new Map(); // key -> entry (see lookup)
     this.prs = new Map(); // worktree path -> entry
@@ -160,15 +176,22 @@ export default class Work extends View {
 
   // --- Keyboard ---------------------------------------------------------------
 
+  // The groups shown: repos with worktrees, or whose hub has a space.
+  shownGroups() {
+    return (this.groups ?? []).filter(
+      (g) => g.worktrees.length || spaceOf(g.hub),
+    );
+  }
+
   // The rows shown (unfolded groups), in order, with their next steps.
   shownRows() {
-    return (this.groups ?? [])
+    return this.shownGroups()
       .filter((g) => !this.folded.has(g.repo.path))
-      .flatMap((g) => g.worktrees.map((w) => ({ ...w, repo: g.repo })))
+      .flatMap(rowsOf)
       .map((w) => {
-        const space = spaceFor(w.path);
+        const space = spaceOf(w);
         const steps =
-          this.steps.get(w.path)?.phase === "running"
+          w.hub || this.steps.get(w.path)?.phase === "running"
             ? []
             : nextSteps(this.prs.get(w.path)?.value ?? null, {
                 working: space?.status === "working",
@@ -259,6 +282,7 @@ export default class Work extends View {
           : null;
         return {
           path: r.w.path,
+          hub: Boolean(r.w.hub),
           branch: r.w.branch,
           key: r.w.key ?? null,
           repo: r.w.repo.slug ?? r.w.repo.name,
@@ -303,15 +327,19 @@ export default class Work extends View {
       })),
     );
     this.mainCheckouts = new Set(repos.map((r) => r.path));
-    this.groups = states
-      .filter((s) => s?.worktrees.length)
-      .map((s) => ({
-        repo: s.repo,
-        worktrees: s.worktrees.map((w) => ({
-          ...w,
-          key: keyOfBranch(w.branch, s.repo),
-        })),
-      }));
+    this.groups = states.filter(Boolean).map((s) => ({
+      repo: s.repo,
+      hub: {
+        path: s.repo.path,
+        branch: s.mainBranch,
+        hub: true,
+        except: hubExcept(s.repo.path, s.linked),
+      },
+      worktrees: s.worktrees.map((w) => ({
+        ...w,
+        key: keyOfBranch(w.branch, s.repo),
+      })),
+    }));
     this.recheckWatched(cx);
     cx.notify();
     this.details(cx, force);
@@ -410,7 +438,7 @@ export default class Work extends View {
   // A notification when something you'd wait for changes on a PR.
   tell(w, was, pr) {
     const who = this.who(w);
-    const space = spaceFor(w.path);
+    const space = spaceOf(w);
     const action = space
       ? { name: "space.select", args: { id: space.id } }
       : undefined;
@@ -494,11 +522,15 @@ export default class Work extends View {
   }
 
   open(w) {
-    const space = spaceFor(w.path);
+    const space = spaceOf(w);
     if (space) run("space.select", { id: space.id });
     else
       run("space.new", {
-        name: w.key ? tracker().labelOf(w.key) : w.branch.split("/").pop(),
+        name: w.hub
+          ? w.repo.name
+          : w.key
+            ? tracker().labelOf(w.key)
+            : w.branch.split("/").pop(),
         folder: w.path,
         argv: C.agent.argv,
       });
@@ -518,13 +550,24 @@ export default class Work extends View {
 
   // Opens `w`'s PR in the browser; without one, says so.
   openPR(w) {
+    if (w.hub) return this.nothingToOpen(w);
     const url = this.prs.get(w.path)?.value?.url;
     if (url) return openUrl(url);
     notify({ title: `${this.who(w)}: no pull request`, level: "info" });
   }
 
+  // A hub has no ticket or PR.
+  nothingToOpen(w) {
+    notify({
+      title: `${w.repo.name} hub: nothing to open`,
+      body: "The main checkout has no ticket or pull request.",
+      level: "info",
+    });
+  }
+
   // Opens `w`'s ticket in the browser; for a branch that isn't one, says so.
   openTicket(cx, w) {
+    if (w.hub) return this.nothingToOpen(w);
     cx.spawn(async () => {
       const url = await this.ticketUrl(w).catch(() => null);
       if (url) return openUrl(url);
@@ -637,7 +680,7 @@ export default class Work extends View {
 
     // What a row shows, for the full row and the rail.
     const look = (w) => {
-      const space = spaceFor(w.path);
+      const space = spaceOf(w);
       const isSelected = w.path === selected;
       const entry = w.key ? this.tickets.get(w.key) : null;
       const ticket = entry?.value ?? null;
@@ -646,10 +689,12 @@ export default class Work extends View {
       const extras = [
         prValue?.state === "OPEN" && prValue.autoMerge ? "auto-merge" : null,
       ].filter(Boolean);
-      const steps = nextSteps(prValue, {
-        working: space?.status === "working",
-        agentDone: agentSaysDone(space),
-      });
+      const steps = w.hub
+        ? []
+        : nextSteps(prValue, {
+            working: space?.status === "working",
+            agentDone: agentSaysDone(space),
+          });
       const step = this.steps.get(w.path);
       // A success note fades after a minute; a failure stays until the next step.
       const last =
@@ -676,7 +721,11 @@ export default class Work extends View {
             cx.stop_propagation();
             open(cx);
           });
-      const title = isTicket ? tracker().labelOf(w.key) : w.branch;
+      const title = w.hub
+        ? (w.branch ?? "detached")
+        : isTicket
+          ? tracker().labelOf(w.key)
+          : w.branch;
       const sub = ticket
         ? ticket.summary
         : isTicket
@@ -705,7 +754,7 @@ export default class Work extends View {
     const dot = (w) => {
       const { space, isSelected, pr, steps, last, title, sub } = look(w);
       const tip = [
-        title,
+        w.hub ? `${w.repo.name} hub: ${title}` : title,
         sub,
         pr?.text,
         last?.phase === "running"
@@ -795,6 +844,19 @@ export default class Work extends View {
                   "pr",
                   () => this.openPR(w),
                 ).child(pr.text),
+              ),
+            )
+            .when(Boolean(w.hub), (el) =>
+              el.child(
+                div()
+                  .flex_none()
+                  .px(5)
+                  .rounded(4)
+                  .border_1()
+                  .border_color(t.border ?? t.dim)
+                  .text_size(10)
+                  .text_color(t.dim)
+                  .child("hub"),
               ),
             ),
         )
@@ -913,11 +975,7 @@ export default class Work extends View {
                 ),
             ),
         )
-        .when(open, (el) =>
-          el.children(
-            g.worktrees.map((w) => (rail ? dot : row)({ ...w, repo: g.repo })),
-          ),
-        );
+        .when(open, (el) => el.children(rowsOf(g).map(rail ? dot : row)));
     };
 
     // Messages: in full on the rail too, on hover.
@@ -934,11 +992,12 @@ export default class Work extends View {
             .child(id === "problem" ? "!" : "…")
         : div().px(14).py(4).text_size(11.5).text_color(color).child(text);
     const problem = C.problem ? message("problem", C.problem, t.blocked) : null;
+    const shown = this.shownGroups();
     const body =
       this.groups === null
         ? message("loading", "Loading worktrees…", t.dim)
-        : this.groups.length
-          ? v_flex().gap(4).children(this.groups.map(group))
+        : shown.length
+          ? v_flex().gap(4).children(shown.map(group))
           : message(
               "empty",
               "No worktrees yet. Press + to start a ticket.",
