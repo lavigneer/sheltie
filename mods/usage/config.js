@@ -11,7 +11,8 @@ export const DEFAULTS = {
 
   // Programs, found on your login shell's PATH unless given as absolute paths.
   // Each is needed only by what uses it: jira only with the Jira tracker,
-  // sqlite3 only once opencode has a database to read.
+  // sqlite3 only once opencode has a database to read, claude for
+  // the Usage sidebar's plan limits.
   programs: {
     git: "git",
     gh: "gh",
@@ -20,6 +21,7 @@ export const DEFAULTS = {
     jq: "jq",
     curl: "curl",
     sqlite3: "sqlite3",
+    claude: "claude",
   },
 
   // Where tickets come from: "jira" (jira-cli) or "github" (GitHub issues, gh).
