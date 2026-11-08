@@ -17,6 +17,9 @@
 // Keys: type to filter, Up/Down or Ctrl+N/Ctrl+P to move, Enter to choose,
 // Backspace (in an empty search) or the header's ‹ to go back, Esc to close,
 // Ctrl+O to open the ticket in the browser, Ctrl+R to reload.
+// Several at once: Tab marks tickets on the list; Enter then starts each
+// marked ticket in its best suggested repo (as "Start in" would), one space
+// each, once all their work is known.
 // Opened with mod.open:tickets (prefix+t).
 //
 // State, each in one field and changed only through its setter (which redraws):
@@ -81,13 +84,18 @@ export default class Tickets extends View {
     this.action = { phase: "idle" }; // | { phase: "running", message } | { phase: "failed", error }
     this.filter = "";
     this.at = 0;
+    this.marked = new Set(); // ticket keys to start together (Tab)
     this.input = InputState.new({ placeholder: "Find a ticket…" });
     this.input.on("change", (_e, cx) => {
       this.filter = this.input.value();
       this.at = 0;
       cx.notify();
     });
-    this.input.on("submit", (_e, cx) => this.choose(this.selected(), cx));
+    this.input.on("submit", (_e, cx) =>
+      this.screen.name === "list" && this.marked.size
+        ? this.startMarked(cx)
+        : this.choose(this.selected(), cx),
+    );
     this.input.focus();
     cx.timer.after(600, () => this.input.focus());
     this.handle = cx.focus_handle();
@@ -411,16 +419,22 @@ export default class Tickets extends View {
   }
 
   openSpace(name, folder, task) {
+    this.openSpaces([{ name, folder, task }]);
+  }
+
+  openSpaces(spaces) {
     this.dismiss();
-    const open = spaceFor(folder);
-    if (open) run("space.select", { id: open.id });
-    else
-      run("space.new", {
-        name,
-        folder,
-        argv: C.agent.argv,
-        ...(task ? { task } : {}),
-      });
+    for (const { name, folder, task } of spaces) {
+      const open = spaceFor(folder);
+      if (open) run("space.select", { id: open.id });
+      else
+        run("space.new", {
+          name,
+          folder,
+          argv: C.agent.argv,
+          ...(task ? { task } : {}),
+        });
+    }
   }
 
   spaceName(ticket, repo) {
@@ -445,6 +459,12 @@ export default class Tickets extends View {
 
   // New work on the ticket's own branch (C.branch) in `target`.
   async start(ticket, target, cx) {
+    const s = await this.prepare(ticket, target, cx);
+    this.openSpaces([s]);
+  }
+
+  // start()'s work up to opening the space: { name, folder, task }.
+  async prepare(ticket, target, cx) {
     const repo = await this.local(target, cx);
     const branch = branchFor(ticket, repo);
     const existing = (this.data.work.get(ticket.key) ?? []).find(
@@ -467,11 +487,40 @@ export default class Tickets extends View {
         level: "warning",
       }),
     );
-    this.openSpace(
-      this.spaceName(ticket, repo),
-      path,
-      existing ? null : fill(C.agent.task, this.taskValues(ticket, { repo })),
-    );
+    return {
+      name: this.spaceName(ticket, repo),
+      folder: path,
+      task: existing
+        ? null
+        : fill(C.agent.task, this.taskValues(ticket, { repo })),
+    };
+  }
+
+  // Every marked ticket in its best suggested repo, then all their spaces at
+  // once: opening one closes this popup, which would stop the rest.
+  startMarked(cx) {
+    if (this.running) return;
+    const d = this.data;
+    if (d.phase !== "ready")
+      return this.setAction(
+        { phase: "failed", error: "Still loading tickets' work, try again" },
+        cx,
+      );
+    const tickets = d.tickets.filter((t) => this.marked.has(t.key));
+    const noRepo = tickets.find((t) => !this.suggestions(t).length);
+    if (noRepo)
+      return this.setAction(
+        { phase: "failed", error: `No repo to start ${noRepo.label} in` },
+        cx,
+      );
+    this.act(cx, `Creating ${tickets.length} worktrees…`, async (cx) => {
+      const spaces = [];
+      for (const t of tickets) {
+        spaces.push(await this.prepare(t, this.suggestions(t)[0].repo, cx));
+        this.marked.delete(t.key); // done: a retry after a failure skips it
+      }
+      this.openSpaces(spaces);
+    });
   }
 
   // Ad-hoc work in `target`: its own branch (see adhocBranch), reused if it's
@@ -522,7 +571,13 @@ export default class Tickets extends View {
     if (e.modifiers.control && e.key === "o" && ticket)
       this.openInBrowser(ticket, cx);
     else if (e.modifiers.control && e.key === "r") this.load(cx);
-    else if (
+    else if (e.key === "tab" && this.screen.name === "list") {
+      if (sel?.kind === "ticket") {
+        const k = sel.ticket.key;
+        if (!this.marked.delete(k)) this.marked.add(k);
+        cx.notify();
+      }
+    } else if (
       e.key === "backspace" &&
       !this.filter &&
       this.screen.name !== "list"
@@ -551,6 +606,11 @@ export default class Tickets extends View {
           : onList
             ? "Looking for branches and pull requests…"
             : "Looking for this ticket's branches and pull requests…",
+        false,
+      ];
+    if (onList && this.marked.size)
+      return [
+        `${this.marked.size} marked · Enter starts them, Tab unmarks`,
         false,
       ];
     if (!rows.length)
@@ -615,7 +675,9 @@ export default class Tickets extends View {
         const pr = r.work.map((w) => prLabel(w.pr)).find(Boolean);
         const where = [...new Set(r.work.map((w) => w.repo.name))];
         return line(r, i, [
-          dot(r.work.some((w) => w.worktree)),
+          this.marked.has(r.ticket.key)
+            ? div().w(12).flex_none().text_color(t.accent).child("✓")
+            : dot(r.work.some((w) => w.worktree)),
           div()
             .w(100)
             .flex_none()
@@ -681,7 +743,7 @@ export default class Tickets extends View {
     const hint = this.running
       ? "Working… · Esc stops after this step"
       : this.screen.name === "list"
-        ? "Ctrl+O browser · Ctrl+R reload · Esc"
+        ? "Tab mark · Ctrl+O browser · Ctrl+R reload · Esc"
         : "⌫ back · Esc";
     const onList = this.screen.name === "list";
     const status = this.status(rows);
