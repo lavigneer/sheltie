@@ -7,19 +7,24 @@ your tracker to a merged pull request without leaving Herdr:
    git worktree for it, opens a space there and starts your coding agent
    (Claude Code by default) with the ticket as its first message.
 2. **Drive the PR from the sidebar.** The Work sidebar lists every worktree by
-   repo with its ticket, its pull request (review, checks, unresolved
+   repo with its ticket, its pull request (review, checks, conflicts, unresolved
    comments) and a button for the next step:
-   - **Draft PR**, **Fix CI**, **Address comments**: sent to the agent in that
-     worktree's space (as `/draft-pr`, `/fix-ci`, `/address-comments`)
+   - **Draft PR**, **Fix CI**, **Address comments**, **Resolve conflicts**:
+     sent to the agent in that worktree's space (as `/draft-pr`, `/fix-ci`,
+     `/address-comments`, `/resolve-conflicts`). A PR that conflicts with its
+     base ("conflicts" in its label) offers only Resolve conflicts: GitHub
+     runs no CI on it. The commands all check for conflicts before waiting
+     for CI, and merge the base in (never rebase or force-push) to fix them
    - **Ready**: marks the PR ready for review and, when the repo requires
      reviews, turns on auto-merge, so it merges on approval. Offered once CI
-     is green and nothing is unresolved; with `workflow.readyWhen: "agent"`,
+     has passed (a PR with no checks isn't green, so in a repo without CI
+     mark it ready on GitHub), it doesn't conflict and nothing is unresolved; with `workflow.readyWhen: "agent"`,
      also only once the agent says the PR is done, by running
      `hc label "$HC_TERMINAL_ID" pr=ready` (the Claude commands end with that;
      sending the agent another step clears it)
    - **Merge**: when it's approved, or the repo requires no review (unless
-     `workflow.mergeWithoutReview` is `false`), and CI passed, without
-     auto-merge; it asks for a second click
+     `workflow.mergeWithoutReview` is `false`), and CI passed and it doesn't
+     conflict, without auto-merge; it asks for a second click
    - **Finish** (after the merge): closes the space, removes the worktree and
      local branch, and resolves the ticket
    Every step also runs from the keyboard (see [Keys](#keys)). Click a row's
@@ -31,7 +36,8 @@ your tracker to a merged pull request without leaving Herdr:
    agents, apart from the per-ticket worktrees. Click it to go to that space
    or open one there with the agent. It has no ticket, PR or steps. A repo
    shows while it has worktrees or its hub has a space.
-3. **Get told** when CI finishes, review comments or a review arrive, or the PR
+3. **Get told** when CI finishes, review comments or a review arrive, the PR
+   starts conflicting with its base (e.g. after another PR merges), or it
    merges.
 
 Trackers: **Jira** (Cloud or Server, through jira-cli) and **GitHub issues**.
@@ -109,7 +115,7 @@ from the command line, e.g. `herdr-app do work.step`. Rebind them in
 
 Two more, for scripts (no key): `herdr-app do work.refresh` refreshes the
 sidebar now, like its ↻, and `herdr-app do work.report` writes what it shows
-(rows, hubs marked `hub: true`, their PRs and next steps, the selected row
+(rows, hubs marked `hub: true`, their PRs (with `mergeable`) and next steps, the selected row
 and step, and the PR and ticket URLs `work.open-pr` / `work.open-ticket`
 would open) to
 `<Herdr app home>/work-report.json`.
@@ -141,7 +147,7 @@ every setting with its default; `src/config.js` documents each one.
 | `agent.task`, `agent.extraBranchTask` | see example | first messages; `{key}`, `{summary}`, `{branch}`, `{viewCommand}` |
 | `agent.steps` | the Claude commands | what each sidebar step sends |
 | `workflow.autoMerge` | `"when-reviews-required"` | or `"never"` |
-| `workflow.readyWhen` | `"green"` | when Ready is offered: CI green and nothing unresolved; `"agent"`: also once the agent says the PR is done (`hc label "$HC_TERMINAL_ID" pr=ready`) |
+| `workflow.readyWhen` | `"green"` | when Ready is offered: CI passed, no conflicts and nothing unresolved; `"agent"`: also once the agent says the PR is done (`hc label "$HC_TERMINAL_ID" pr=ready`) |
 | `workflow.mergeWithoutReview` | `true` | offer Merge for a ready, green PR needing no review (no required reviews); `false`: only once approved |
 | `workflow.confirmMerge` | `true` | Merge needs a second click |
 | `workflow.confirmFinish` | `true` | Finish and Clean up need a second click |
@@ -162,7 +168,7 @@ commands in fast-forward:
 ```sh
 demo/herdr-demo                    # Jira; --tracker github for GitHub issues
 demo/herdr-demo comment WEB-105    # play a reviewer: comment, request-changes,
-demo/herdr-demo approve WEB-105    #   approve; fail-ci; status
+demo/herdr-demo approve WEB-105    #   approve; fail-ci; conflict (with main); status
 demo/herdr-demo --stop             # --reset to start over
 ```
 
@@ -180,8 +186,8 @@ display (with its own app home and herdr-core session, so your Herdr is
 untouched), and drives it with the keyboard: the mods load without errors, a
 fresh ticket starts from the tickets popup, its repo's hub row (above it)
 opens a space of its own, and its whole flow runs from the
-Work sidebar's keys through to Finish, opening the row's PR and ticket on the
-way (with a stub `xdg-open` that records the URL; with CI failing once and Finish
+Work sidebar's keys through to Finish, opening the row's PR and ticket and
+resolving a merge conflict on the way (with a stub `xdg-open` that records the URL; with CI failing once and Finish
 refusing uncommitted changes, on Jira). It checks outcomes, not pixels:
 `herdr-app status`, `work.report`, git, `hc read` and the demo's state. It
 needs herdr-app, hc, Xvfb, xdotool, jq and git (Linux), takes under a minute,

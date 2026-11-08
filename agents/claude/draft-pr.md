@@ -22,11 +22,30 @@ Open a draft pull request for the work on this branch, then make CI pass.
      ticket: a link for Jira (`jira open <KEY> --no-browser` prints its URL),
      or `Closes #12` for a GitHub issue. Use the repo's PR template if it has
      one (`.github/pull_request_template.md`).
-5. Wait for CI: `gh pr checks --watch --fail-fast`. If a check fails, read the
+5. Before waiting for CI, check that the PR can merge:
+   `gh pr view --json mergeable,mergeStateStatus,baseRefName`. GitHub runs no
+   CI on a PR that conflicts with its base, so `gh pr checks --watch` would
+   wait forever. `mergeable` can be `UNKNOWN` for a little while after a push:
+   ask again every few seconds, for up to a minute, until it's `MERGEABLE` or
+   `CONFLICTING`, and don't read `UNKNOWN` as either. If it's `CONFLICTING`:
+   1. merge the base in: `git fetch origin && git merge origin/<base>` (never
+      rebase or force-push a branch that has a PR);
+   2. resolve the conflicts, keeping both sides' intent (read what the base
+      changed, `git log -p HEAD..origin/<base> -- <file>`, and combine it with
+      this branch's change); regenerate committed generated files (built
+      output, lockfiles) with the repo's build instead of merging them by
+      hand;
+   3. rebuild anything generated and run the tests;
+   4. commit with the ticket prefix (e.g. `#12: merge main`), push, and only
+      then watch CI.
+
+   If a conflict can't be resolved with confidence, `git merge --abort`, stop
+   and say which files and why.
+6. Wait for CI: `gh pr checks --watch --fail-fast`. If a check fails, read the
    failing logs (`gh run view <run-id> --log-failed`), fix the cause, commit,
-   push, and watch again. After three failed rounds, stop and summarise what's
-   failing and why.
-6. Finish with the PR URL and the CI result.
+   push, check it can still merge (step 5), and watch again. After three
+   failed rounds, stop and summarise what's failing and why.
+7. Finish with the PR URL, the CI result and any conflicts you resolved.
 
 Don't mark the PR ready for review, request reviewers or merge: that's left to
 me.

@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-const AGENT_STEPS = ["draft-pr", "fix-ci", "address-comments"];
+const AGENT_STEPS = ["draft-pr", "fix-ci", "address-comments", "resolve-conflicts"];
 export const root = path.resolve(import.meta.dirname, "../..");
 const run = promisify(execFile);
 const NEEDS = ["herdr-app", "hc", "Xvfb", "xdotool", "jq", "git"];

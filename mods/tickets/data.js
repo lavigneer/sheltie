@@ -299,8 +299,15 @@ const BAD = [
   "STARTUP_FAILURE",
 ];
 
+const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
+
 // Details for a PR (number or branch) in `slug`, or null when there is none.
 // Throws when GitHub can't be asked, so callers can tell "no PR" from "failed".
+// `checks`: "passed" | "failed" | "pending", or null when the PR has none
+// (CI not started, or never will: GitHub runs no pull_request CI on a PR that
+// conflicts with its base). `mergeable`: "MERGEABLE" | "CONFLICTING" |
+// "UNKNOWN" (GitHub works it out lazily, so it's UNKNOWN for a little while
+// after a push or a change to the base).
 export async function prDetails(slug, ref) {
   const r = await tool("gh", [
     "pr",
@@ -309,7 +316,7 @@ export async function prDetails(slug, ref) {
     "--repo",
     slug,
     "--json",
-    "number,url,title,state,isDraft,reviewDecision,statusCheckRollup,headRefName,headRefOid,autoMergeRequest",
+    "number,url,title,state,isDraft,reviewDecision,statusCheckRollup,headRefName,headRefOid,autoMergeRequest,mergeable",
   ]);
   if (r.code !== 0) {
     const why = firstLine(r.stderr);
@@ -340,6 +347,7 @@ export async function prDetails(slug, ref) {
     branch: pr.headRefName,
     head: pr.headRefOid,
     autoMerge: Boolean(pr.autoMergeRequest),
+    mergeable: MERGE_STATES.includes(pr.mergeable) ? pr.mergeable : "UNKNOWN",
   };
 }
 
@@ -411,7 +419,8 @@ export async function mergePr(slug, number, { auto = false } = {}) {
   );
 }
 
-// "#881 draft approved ✓" and a tone for coloring: "bad" | "good" | null.
+// "#881 draft approved ✓" (or "#881 draft conflicts") and a tone for
+// coloring: "bad" | "good" | null.
 export function prLabel(pr) {
   if (!pr) return null;
   const parts = [`#${pr.number}`];
@@ -425,12 +434,13 @@ export function prLabel(pr) {
     if (pr.checks)
       parts.push({ failed: "✗", pending: "…", passed: "✓" }[pr.checks]);
   }
-  const bad = pr.checks === "failed" || pr.review === "CHANGES_REQUESTED";
+  const conflicts = pr.state === "OPEN" && pr.mergeable === "CONFLICTING";
+  if (conflicts) parts.push("conflicts");
+  const bad =
+    conflicts || pr.checks === "failed" || pr.review === "CHANGES_REQUESTED";
   const good =
     pr.state === "MERGED" ||
-    (pr.review === "APPROVED" &&
-      pr.checks !== "failed" &&
-      pr.checks !== "pending");
+    (pr.review === "APPROVED" && pr.checks === "passed");
   return { text: parts.join(" "), tone: bad ? "bad" : good ? "good" : null };
 }
 

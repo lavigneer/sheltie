@@ -1,6 +1,7 @@
 // The end-to-end scenarios, once per tracker: the mods load, a fresh ticket
 // starts from the tickets popup, its repo's hub row opens a space of its own,
-// and its whole flow runs from the Work sidebar's keys, through to Finish. With `failures`, CI fails once (Fix CI)
+// and its whole flow runs from the Work sidebar's keys, through to Finish (on
+// the way, the PR conflicts with main: Resolve conflicts). With `failures`, CI fails once (Fix CI)
 // and Finish first refuses a worktree with uncommitted changes.
 
 import assert from "node:assert/strict";
@@ -186,6 +187,37 @@ export function flow(t, { failures = false } = {}) {
     await h.key("alt+shift+p");
     await waitFor("the PR to open", () => h.opened().at(-1) === prUrl);
     await h.assertNoErrors("after opening the PR");
+
+    // Main moves on and the PR conflicts with it: GitHub runs no CI, so the
+    // row offers only Resolve conflicts (no Ready), until the agent has
+    // merged main in and CI has passed again.
+    await h.demoCmd("conflict", t.ref);
+    const c = await h.waitRow(
+      "conflicts, Resolve conflicts offered",
+      worktree(),
+      (r) => r.pr?.mergeable === "CONFLICTING",
+    );
+    assert.equal(c.pr.checks, null, "no checks");
+    assert.match(c.pr.label, /\bconflicts\b/, "labelled conflicts");
+    assert.deepEqual(
+      c.steps.map((s) => s.id),
+      ["resolve-conflicts"],
+      "only Resolve conflicts",
+    );
+    await h.step(worktree(), "resolve-conflicts");
+    await sent("/resolve-conflicts", "Pushed the merge; CI is running");
+    assert.equal(h.pr(t.branch).mergeable, "MERGEABLE", "conflicts resolved");
+    const resolved = await h.waitRow(
+      "CI passed after resolving, Ready back",
+      worktree(),
+      (r) =>
+        h.pr(t.branch)?.checks === "SUCCESS" &&
+        r.pr?.mergeable === "MERGEABLE" &&
+        r.pr?.checks === "passed" &&
+        r.steps.some((s) => s.id === "ready"),
+    );
+    assert.doesNotMatch(resolved.pr.label, /conflicts/);
+    await h.assertNoErrors("after Resolve conflicts");
 
     // Review comments -> Address comments.
     await h.demoCmd("comment", t.ref);

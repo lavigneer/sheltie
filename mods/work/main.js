@@ -11,9 +11,10 @@
 // "+" opens the tickets popup to start new work; ↻ refreshes everything now.
 //
 // Under each row, buttons for its next step in the ticket workflow (Draft PR,
-// Fix CI, Address comments, Ready, Merge, Finish; see flow.js). Finish and
-// Clean up ask for a second click. Notifies you when CI finishes, review
-// comments or a review arrive, or the PR merges.
+// Fix CI, Address comments, Resolve conflicts, Ready, Merge, Finish; see
+// flow.js). Finish and Clean up ask for a second click. Notifies you when CI
+// finishes, review comments or a review arrive, the PR starts conflicting
+// with its base, or it merges.
 //
 // Keys (keys.json; delivered through nextCommand()): one row is selected,
 // the focused space's by default. work.next / work.prev move the selection
@@ -71,7 +72,7 @@ import { tracker } from "./tracker.js";
 
 const GIT_MS = 30_000;
 const PR_MS = 120_000;
-const ACTIVE_PR_MS = 20_000; // CI running, or waiting to merge
+const ACTIVE_PR_MS = 20_000; // CI running, waiting to merge, or conflicts
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
 const CONFIRM_MS = 4_000;
 const NOTE_MS = 60_000; // how long a step's success note stays
@@ -299,11 +300,13 @@ export default class Work extends View {
           prUrl: pr?.url ?? null,
           pr: pr && {
             number: pr.number,
+            label: prLabel(pr)?.text ?? null,
             state: pr.state,
             draft: pr.draft,
             review: pr.review,
             checks: pr.checks,
             autoMerge: pr.autoMerge,
+            mergeable: pr.mergeable,
             unresolved: pr.unresolved ?? null,
           },
           last: last && {
@@ -358,9 +361,13 @@ export default class Work extends View {
     const prs = all.filter((w) => {
       const entry = this.prs.get(w.path);
       const pr = entry?.value;
+      // Conflicts (or not known yet): soon after the fix is pushed, CI starts.
       const active =
         pr?.state === "OPEN" &&
-        (pr.checks === "pending" || pr.autoMerge || pr.review === "APPROVED");
+        (pr.checks === "pending" ||
+          pr.autoMerge ||
+          pr.review === "APPROVED" ||
+          pr.mergeable !== "MERGEABLE");
       return (
         w.repo.slug && due(entry, force, active ? ACTIVE_PR_MS : PR_MS, now)
       );
@@ -377,6 +384,14 @@ export default class Work extends View {
           const before = this.prs.get(w.path)?.value;
           await lookup(this.prs, w.path, async () => {
             const pr = await prDetails(w.repo.slug, w.branch);
+            // The last mergeable GitHub had worked out (it's "UNKNOWN" for a
+            // while after a push), so a conflict is told once, not again
+            // after every push that doesn't fix it.
+            if (pr)
+              pr.settled =
+                pr.mergeable === "UNKNOWN"
+                  ? (before?.settled ?? null)
+                  : pr.mergeable;
             if (pr?.state === "OPEN")
               pr.unresolved = await unresolvedThreads(
                 w.repo.slug,
@@ -453,6 +468,16 @@ export default class Work extends View {
       );
     if (was.checks === "pending" && pr.checks === "failed")
       say("CI failed", "error");
+    if (
+      pr.state === "OPEN" &&
+      pr.mergeable === "CONFLICTING" &&
+      was.settled !== "CONFLICTING"
+    )
+      say(
+        "merge conflicts",
+        "warning",
+        "It conflicts with its base, so CI won't run: Resolve conflicts.",
+      );
     if ((pr.unresolved ?? 0) > (was.unresolved ?? 0))
       say(
         `${pr.unresolved - (was.unresolved ?? 0)} new review comment${pr.unresolved - (was.unresolved ?? 0) === 1 ? "" : "s"}`,

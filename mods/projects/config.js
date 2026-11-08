@@ -70,6 +70,7 @@ export const DEFAULTS = {
       "draft-pr": "/draft-pr",
       "fix-ci": "/fix-ci",
       "address-comments": "/address-comments",
+      "resolve-conflicts": "/resolve-conflicts",
     },
   },
 
@@ -77,9 +78,10 @@ export const DEFAULTS = {
     // At Ready: turn on auto-merge "when-reviews-required" (it then merges
     // on approval and never at once), or "never" (merge with the Merge step).
     autoMerge: "when-reviews-required",
-    // When a draft PR is offered Ready: "green" (CI passed and nothing is
-    // unresolved), or "agent" (also only once its agent says the PR is done,
-    // by labelling its terminal: `hc label "$HC_TERMINAL_ID" pr=ready`; the
+    // When a draft PR is offered Ready: "green" (CI passed, no conflicts with
+    // its base and nothing unresolved; a PR with no checks isn't green), or
+    // "agent" (also only once its agent says the PR is done, by labelling
+    // its terminal: `hc label "$HC_TERMINAL_ID" pr=ready`; the
     // label is cleared whenever a step is sent to the agent). Use "agent"
     // with agents that know this (the Claude commands in agents/claude do).
     readyWhen: "green",

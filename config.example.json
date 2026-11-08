@@ -50,7 +50,8 @@
     "steps": {
       "draft-pr": "/draft-pr",
       "fix-ci": "/fix-ci",
-      "address-comments": "/address-comments"
+      "address-comments": "/address-comments",
+      "resolve-conflicts": "/resolve-conflicts"
     }
   },
   "workflow": {
