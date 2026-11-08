@@ -57,12 +57,18 @@ if [ ! -f "$home/keys.json" ]; then
   exit 1
 fi
 
+# Copies from a read-only source (the Nix store) keep its modes: make them
+# writable, so the next install can replace them.
+writable() { [ ! -e "$1" ] || chmod -R u+w "$1"; }
+
 # Mods.
 mkdir -p "$home/mods"
 for mod in "$here"/mods/*/; do
   name="$(basename "$mod")"
+  writable "$home/mods/$name"
   rm -rf "${home:?}/mods/$name"
   cp -R "$mod" "$home/mods/$name"
+  writable "$home/mods/$name"
   echo "mod: $name"
 done
 
@@ -82,7 +88,11 @@ echo "keys: $(jq -r 'to_entries | map(.value | to_entries[] | "\(.key) → \(.va
 
 # Layout.
 mkdir -p "$home/layouts"
+writable "$home/layouts/sheltie.json"
+writable "$home/layouts/sheltie.svg"
 cp "$here/layouts/sheltie.json" "$here/layouts/sheltie.svg" "$home/layouts/"
+writable "$home/layouts/sheltie.json"
+writable "$home/layouts/sheltie.svg"
 echo "layout: sheltie (switch with: herdr-app do layout.switch --name sheltie)"
 
 # Settings.
@@ -105,8 +115,10 @@ if [ "$skills" = 1 ]; then
       if [ -e "$dest" ] && ! diff -rq "$src" "$dest" >/dev/null && [ "$force_skills" = 0 ]; then
         echo "skills: kept your $dest (differs; --force-skills replaces it)"
       else
+        writable "$dest"
         mkdir -p "$dest"
         cp -R "$src". "$dest"/
+        writable "$dest"
         echo "skills: $dest"
       fi
     done
