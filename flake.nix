@@ -29,7 +29,7 @@
             runHook preInstall
             share=$out/share/sheltie
             mkdir -p $share $out/bin
-            cp -R mods skills demo keys.json config.example.json install.sh $share/
+            cp -R mods layouts skills demo keys.json config.example.json install.sh $share/
             makeWrapper $share/install.sh $out/bin/sheltie-install \
               --prefix PATH : ${
                 pkgs.lib.makeBinPath [
