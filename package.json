@@ -1,5 +1,5 @@
 {
-  "name": "herdr-ticket-flow",
+  "name": "sheltie",
   "private": true,
   "type": "module",
   "description": "Herdr desktop mods: ticket -> worktree -> agent -> PR -> merged",

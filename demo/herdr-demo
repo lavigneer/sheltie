@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # herdr-demo: a separate Herdr app with fake tickets, PRs and repos, for trying
-# herdr-ticket-flow without touching your own setup.
+# sheltie without touching your own setup.
 #
 #   herdr-demo                    start it (creates the demo the first time)
 #   herdr-demo --tracker github   ... with GitHub issues instead of Jira
@@ -125,7 +125,7 @@ write_settings() {
   jq --arg ws "$HERDR_DEMO/ws" --arg bin "$here/bin" --arg hc "$(command -v hc || echo hc)" '
     .settings + {roots: [$ws], depth: 1,
       programs: {git: "git", gh: "\($bin)/gh", jira: "\($bin)/jira", hc: $hc},
-      agent: {argv: ["\($bin)/agent"]}}' "$state" >"$app/ticket-flow.json"
+      agent: {argv: ["\($bin)/agent"]}}' "$state" >"$app/sheltie.json"
 }
 
 # The open PR for KEY (by branch or title; the newest if several), or for an

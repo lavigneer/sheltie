@@ -1,7 +1,8 @@
-# herdr-ticket-flow
+# Sheltie
 
-Mods for the [Herdr](https://herdr.dev) desktop app that take a ticket from
-your tracker to a merged pull request without leaving Herdr:
+A herding dog for your [Herdr](https://herdr.dev) desktop app, named for
+Hopper, a Sheltie. These mods take a ticket from your tracker to a merged pull
+request without leaving Herdr:
 
 1. **Pick a ticket** (Ctrl+Shift+J). Enter creates the ticket's branch and a
    git worktree for it, opens a space there and starts your coding agent
@@ -68,8 +69,8 @@ project switcher over your repos.
 Start Herdr once (it writes the keys and layouts the installer adds to), then:
 
 ```sh
-git clone https://github.com/lavigneer/herdr-ticket-flow
-cd herdr-ticket-flow
+git clone https://github.com/lavigneer/sheltie
+cd sheltie
 ./install.sh --claude-commands
 herdr-app do layout.switch --name work
 ```
@@ -78,12 +79,12 @@ herdr-app do layout.switch --name work
 `~/.config/herdr-app`), binds Ctrl+Shift+J, Ctrl+Shift+F
 and the Work sidebar's keys (see [Keys](#keys)) where they're free,
 creates `layouts/work.json` (Herdr's main layout with the Work sidebar under
-Spaces), and writes a starter `ticket-flow.json`. `--claude-commands` also
+Spaces), and writes a starter `sheltie.json`. `--claude-commands` also
 copies the Claude Code commands into `~/.claude/commands`. Run it again after
 pulling to update.
 
 With Nix, the flake's `packages.default` has the same files under
-`share/herdr-ticket-flow`, plus `herdr-ticket-flow-install` and `herdr-demo`.
+`share/sheltie`, plus `sheltie-install` and `herdr-demo`.
 
 ## Keys
 
@@ -122,7 +123,7 @@ would open) to
 
 ## Settings
 
-`<Herdr app home>/ticket-flow.json`, merged over the defaults: set only what
+`<Herdr app home>/sheltie.json`, merged over the defaults: set only what
 you change. Changes apply when a mod next loads (reopen the popup; the sidebar
 reloads with the layout). [`config.example.json`](config.example.json) shows
 every setting with its default; `src/config.js` documents each one.

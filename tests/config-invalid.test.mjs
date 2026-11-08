@@ -6,12 +6,12 @@ import path from "node:path";
 import { test } from "node:test";
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "htf-config-"));
-fs.writeFileSync(path.join(home, "ticket-flow.json"), "{ not json");
+fs.writeFileSync(path.join(home, "sheltie.json"), "{ not json");
 process.env.HERDR_APP_HOME = home;
 const config = await import("../src/config.js");
 
 test("invalid JSON: defaults, with the problem noted", async () => {
   await config.configReady();
-  assert.match(config.C.problem, /ticket-flow\.json: .*using the defaults/);
+  assert.match(config.C.problem, /sheltie\.json: .*using the defaults/);
   assert.equal(config.C.tracker, "jira");
 });

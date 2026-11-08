@@ -1,4 +1,4 @@
-// Settings: <Herdr app home>/ticket-flow.json, merged over the defaults below.
+// Settings: <Herdr app home>/sheltie.json, merged over the defaults below.
 // Every mod awaits configReady() before using them; `C` holds the result.
 // See config.example.json for what each setting does.
 
@@ -96,7 +96,7 @@ export const DEFAULTS = {
   },
 };
 
-export const SETTINGS_FILE = "ticket-flow.json";
+export const SETTINGS_FILE = "sheltie.json";
 
 // The settings in use. Filled in by configReady(); tests may set them with
 // useConfig().
