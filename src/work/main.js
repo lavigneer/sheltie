@@ -1141,7 +1141,13 @@ export default class Work extends View {
       .child(header)
       .when(Boolean(problem), (el) => el.child(problem))
       .child(
-        v_flex().flex_1().min_h(0).pb(6).overflow_y_scrollbar().child(body),
+        v_flex()
+          .id("work-list")
+          .flex_1()
+          .min_h(0)
+          .pb(6)
+          .overflow_y_scrollbar()
+          .child(body),
       );
   }
 }
