@@ -22,7 +22,9 @@ your tracker to a merged pull request without leaving Herdr:
      also only once the agent says the PR is done, by running
      `hc label "$HC_TERMINAL_ID" pr=ready` (the Claude commands end with that;
      sending the agent another step clears it)
-   - **Merge**: when it's approved, green and mergeable without auto-merge
+   - **Merge**: when it's approved, or the repo requires no review (unless
+     `workflow.mergeWithoutReview` is `false`), and CI passed and it doesn't
+     conflict, without auto-merge; it asks for a second click
    - **Finish** (after the merge): closes the space, removes the worktree and
      local branch, and resolves the ticket
    Every step also runs from the keyboard (see [Keys](#keys)). Click a row's
@@ -146,6 +148,8 @@ every setting with its default; `src/config.js` documents each one.
 | `agent.steps` | the Claude commands | what each sidebar step sends |
 | `workflow.autoMerge` | `"when-reviews-required"` | or `"never"` |
 | `workflow.readyWhen` | `"green"` | when Ready is offered: CI passed, no conflicts and nothing unresolved; `"agent"`: also once the agent says the PR is done (`hc label "$HC_TERMINAL_ID" pr=ready`) |
+| `workflow.mergeWithoutReview` | `true` | offer Merge for a ready, green PR needing no review (no required reviews); `false`: only once approved |
+| `workflow.confirmMerge` | `true` | Merge needs a second click |
 | `workflow.confirmFinish` | `true` | Finish and Clean up need a second click |
 
 Repo suggestions for a ticket, best first: the repo you last used for it,

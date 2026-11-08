@@ -244,6 +244,7 @@ herdr-demo: started ($(jq -r .settings.tracker "$state"); log: $HERDR_DEMO/app.l
                 Address comments, Resolve conflicts, Ready, Merge, Finish).
 A whole flow: start a fresh ticket (WEB-105, or issue #5 with --tracker github),
   Draft PR, wait for CI (${DEMO_CI_SECONDS}s), herdr-demo comment KEY, Address comments,
-  Ready, herdr-demo approve KEY (auto-merge merges it), Finish.
+  Ready, herdr-demo approve KEY (auto-merge merges it), Finish. In a repo
+  without required reviews (acme/storage with --tracker github): Ready, Merge, Finish.
 Stop with: herdr-demo --stop     Start over with: herdr-demo --reset
 EOF

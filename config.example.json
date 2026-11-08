@@ -57,6 +57,8 @@
   "workflow": {
     "autoMerge": "when-reviews-required",
     "readyWhen": "green",
+    "mergeWithoutReview": true,
+    "confirmMerge": true,
     "confirmFinish": true
   }
 }

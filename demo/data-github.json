@@ -8,6 +8,7 @@
     {
       "name": "storage",
       "slug": "acme/storage",
+      "reviewRequired": false,
       "worktrees": [
         "issue-3"
       ],

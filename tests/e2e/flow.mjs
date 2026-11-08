@@ -14,7 +14,9 @@ import { Herdr, missingTools, waitFor } from "./herdr.mjs";
 //      worktree (relative to ws/), branch, task (RegExp the agent's screen
 //      shows), ticketUrl (where its ticket opens), ticketDone(state),
 //      readyWhen (the demo's workflow.readyWhen: "agent" checks that Ready
-//      waits for the agent's pr=ready label) }
+//      waits for the agent's pr=ready label), reviewRequired (false: the
+//      repo requires no review, so Ready leaves auto-merge off and Merge
+//      merges it; else Ready turns auto-merge on and approval merges it) }
 export function flow(t, { failures = false } = {}) {
   const missing = missingTools();
   if (missing.length) {
@@ -247,7 +249,7 @@ export function flow(t, { failures = false } = {}) {
       await h.assertNoErrors("after Fix CI");
     }
 
-    // Ready -> ready for review, auto-merge on (a review is required).
+    // Ready -> ready for review, not merged yet.
     await h.waitRow(
       "CI passed, Ready offered",
       worktree(),
@@ -261,13 +263,29 @@ export function flow(t, { failures = false } = {}) {
     assert.equal(ready.last.phase, "done", ready.last.text);
     const pr = h.pr(t.branch);
     assert.equal(pr.draft, false, "ready for review");
-    assert.equal(pr.autoMerge, true, "auto-merge on");
-    assert.equal(pr.state, "OPEN", "not merged before approval");
+    assert.equal(pr.state, "OPEN", "not merged at Ready");
     t.inReview?.(h.state());
     await h.assertNoErrors("after Ready");
 
-    // Approved -> auto-merge merges it -> Finish.
-    await h.demoCmd("approve", t.ref);
+    if (t.reviewRequired === false) {
+      // No review required -> auto-merge stays off, Merge (two presses) -> Finish.
+      assert.equal(pr.autoMerge ?? false, false, "auto-merge off");
+      const r = await h.waitRow("Merge offered", worktree(), (r) =>
+        r.steps.some((s) => s.id === "merge"),
+      );
+      assert.equal(r.pr.review, null, "no review required");
+      assert.deepEqual(r.steps.map((s) => s.id), ["merge"]);
+      const merged = await h.step(worktree(), "merge");
+      assert.equal(merged.last.phase, "done", merged.last.text);
+      assert.equal(h.pr(t.branch).state, "MERGED");
+      await h.assertNoErrors("after Merge");
+    } else {
+      // A review is required -> auto-merge on; approved -> it merges.
+      assert.equal(pr.autoMerge, true, "auto-merge on");
+      const r = await h.row(worktree());
+      assert.equal(r.steps.some((s) => s.id === "merge"), false, "no Merge awaiting review");
+      await h.demoCmd("approve", t.ref);
+    }
     await h.waitRow(
       "merged, Finish offered",
       worktree(),

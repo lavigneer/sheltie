@@ -153,6 +153,7 @@ export default class Work extends View {
     this.steps = new Map(); // worktree path -> { phase, text }
     this.confirming = null; // `${path}:${step id}`
     this.confirmByKey = false; // the confirmation was asked for by a key
+    this.confirmAsked = 0; // counts confirmation requests, for their timers
     this.picked = null; // { path, step, active }: see selection()
     this.watchTimer = false;
     this.width = null; // ours, from on_size_change
@@ -292,7 +293,7 @@ export default class Work extends View {
           agentDone: agentSaysDone(r.space),
           selected: i === at,
           step: i === at ? step : null,
-          steps: r.steps.map((s) => ({ id: s.id, label: s.label })),
+          steps: r.steps.map((s) => ({ id: s.id, label: s.label, confirm: Boolean(s.confirm) })),
           confirming,
           ticket: (r.w.key && this.tickets.get(r.w.key)?.value) || null,
           ticketUrl: null,
@@ -507,8 +508,12 @@ export default class Work extends View {
     if (step.confirm && this.confirming !== id) {
       this.confirming = id;
       this.confirmByKey = byKey;
+      // Only this request's timer ends it: an earlier one for the same step
+      // (asked, run, then asked again) mustn't clear the new one.
+      const asked = ++this.confirmAsked;
       cx.timer.after(CONFIRM_MS, (cx) => {
-        if (this.confirming === id) this.confirming = null;
+        if (this.confirming === id && this.confirmAsked === asked)
+          this.confirming = null;
         cx.notify();
       });
       return cx.notify();

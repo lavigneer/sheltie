@@ -1,4 +1,5 @@
-// GitHub issues (acme/storage#5, a fresh issue).
+// GitHub issues (acme/storage#5, a fresh issue), in a repo without required
+// reviews: Ready, then Merge.
 import assert from "node:assert/strict";
 import { flow } from "./flow.mjs";
 
@@ -15,4 +16,5 @@ flow({
   task: /Task: Work on .*Stream large files/,
   started: (s) => assert.equal(issue(s).state, "OPEN"),
   ticketDone: (s) => issue(s).state === "CLOSED",
+  reviewRequired: false,
 });

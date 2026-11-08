@@ -430,6 +430,7 @@ export function prLabel(pr) {
     if (pr.draft) parts.push("draft");
     if (pr.review === "APPROVED") parts.push("approved");
     else if (pr.review === "CHANGES_REQUESTED") parts.push("changes requested");
+    else if (!pr.draft && !pr.review) parts.push("no review needed");
     if (pr.checks)
       parts.push({ failed: "✗", pending: "…", passed: "✓" }[pr.checks]);
   }
