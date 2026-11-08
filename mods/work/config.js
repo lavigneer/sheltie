@@ -83,6 +83,12 @@ export const DEFAULTS = {
     // label is cleared whenever a step is sent to the agent). Use "agent"
     // with agents that know this (the Claude commands in agents/claude do).
     readyWhen: "green",
+    // Offer Merge for a ready, green PR that needs no review (a repo without
+    // required reviews), not only for an approved one; false: merge those in
+    // the browser.
+    mergeWithoutReview: true,
+    // Merge asks for a second click.
+    confirmMerge: true,
     // Finish and Clean up ask for a second click.
     confirmFinish: true,
   },

@@ -345,7 +345,7 @@ export class Herdr {
   // the row to be selected (it follows the focused space) and to offer the
   // step (an agent step: and to know the space's agent, or the step would
   // start another one), picks it with Alt+Shift+Right, then Alt+Shift+Enter (twice for a
-  // step that asks to confirm). Returns once the step has finished.
+  // step that asks to confirm: Merge, Finish, Clean up). Returns once the step has finished.
   async step(worktree, id) {
     const before = await this.waitRow(
       `${worktree} selected, offering ${id}`,
@@ -361,7 +361,7 @@ export class Herdr {
       row = await this.row(worktree);
     }
     await this.key("alt+shift+Return");
-    if (["finish", "clean-up"].includes(id)) {
+    if (before.steps.find((s) => s.id === id).confirm) {
       await waitFor(
         `${id} to ask to confirm`,
         async () => (await this.row(worktree))?.confirming === id,

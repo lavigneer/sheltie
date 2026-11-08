@@ -291,7 +291,7 @@ export default class Work extends View {
           agentDone: agentSaysDone(r.space),
           selected: i === at,
           step: i === at ? step : null,
-          steps: r.steps.map((s) => ({ id: s.id, label: s.label })),
+          steps: r.steps.map((s) => ({ id: s.id, label: s.label, confirm: Boolean(s.confirm) })),
           confirming,
           ticket: (r.w.key && this.tickets.get(r.w.key)?.value) || null,
           ticketUrl: null,

@@ -14,7 +14,9 @@
 //             gh pr ready; with C.workflow.autoMerge "when-reviews-required",
 //             auto-merge while reviews are still required, so it merges on
 //             approval and never at once; tracker step "review"
-//   Merge     when approved and green but auto-merge is off
+//   Merge     when approved, or no review is required (unless
+//             C.workflow.mergeWithoutReview is false), and CI passed, without
+//             auto-merge; asks for a second click (C.workflow.confirmMerge)
 //   Finish    after the merge: close its space, remove the worktree and local
 //             branch (refused if anything isn't in the PR), tracker step "done"
 //             unless other work on the ticket is still open
@@ -44,6 +46,18 @@ export function stageOf(pr) {
   return pr.review === "APPROVED" ? "approved" : "in-review";
 }
 
+// Whether a PR is offered Merge: open, ready, CI passed (not failed, pending
+// or missing), nothing unresolved, auto-merge off, and approved, or needing no
+// review at all (a repo without required reviews: reviewDecision is empty)
+// unless C.workflow.mergeWithoutReview is false.
+export function mergeable(pr) {
+  const stage = stageOf(pr);
+  if (stage !== "approved" && stage !== "in-review") return false;
+  if (pr.checks !== "passed" || pr.unresolved > 0 || pr.autoMerge) return false;
+  if (pr.review === "APPROVED") return true;
+  return pr.review === null && C.workflow.mergeWithoutReview !== false;
+}
+
 // The next steps for a worktree: [{ id, label, kind: "agent" | "direct", confirm }].
 // `working`: its agent is busy, so nothing is sent to it. `agentDone`: its
 // agent says the PR is done (see agentSaysDone), which Ready waits for with
@@ -70,8 +84,13 @@ export function nextSteps(pr, { working = false, agentDone = false } = {}) {
   const vouched = C.workflow.readyWhen !== "agent" || agentDone;
   if (stage === "draft" && green && !pr.unresolved && vouched)
     steps.push({ id: "ready", label: "Ready", kind: "direct" });
-  if (stage === "approved" && green && !pr.autoMerge)
-    steps.push({ id: "merge", label: "Merge", kind: "direct" });
+  if (mergeable(pr))
+    steps.push({
+      id: "merge",
+      label: "Merge",
+      kind: "direct",
+      confirm: C.workflow.confirmMerge !== false,
+    });
   const confirm = C.workflow.confirmFinish !== false;
   if (stage === "merged")
     steps.push({ id: "finish", label: "Finish", kind: "direct", confirm });

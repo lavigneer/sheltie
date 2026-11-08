@@ -70,3 +70,39 @@ test("an agent step clears pr=ready before it's sent", async () => {
     "send t7 /fix-ci",
   ]);
 });
+
+// A ready PR, CI passed, nothing unresolved, auto-merge off.
+const ready = { ...draft, draft: false };
+
+test("Merge: approved, or no review required, and CI passed, without auto-merge", () => {
+  const merge = (pr) => nextSteps(pr).find((s) => s.id === "merge");
+  assert.deepEqual(ids({ ...ready, review: "APPROVED" }), ["merge"]);
+  // A repo without required reviews: reviewDecision is empty.
+  assert.deepEqual(ids({ ...ready, review: null }), ["merge"]);
+  assert.equal(merge({ ...ready, review: null }).confirm, true, "asks for a second click");
+  // Never while a review is required or changes are requested.
+  assert.deepEqual(ids({ ...ready, review: "REVIEW_REQUIRED" }), []);
+  assert.deepEqual(ids({ ...ready, review: "CHANGES_REQUESTED" }), ["address-comments"]);
+  // Never unless CI passed.
+  for (const review of [null, "APPROVED"]) {
+    assert.deepEqual(ids({ ...ready, review, checks: "failed" }), ["fix-ci"]);
+    assert.deepEqual(ids({ ...ready, review, checks: "pending" }), []);
+    assert.deepEqual(ids({ ...ready, review, checks: null }), [], "missing checks");
+    assert.deepEqual(ids({ ...ready, review, unresolved: 1 }), ["address-comments"]);
+    assert.deepEqual(ids({ ...ready, review, autoMerge: true }), [], "auto-merge on");
+  }
+  // Not for a draft, nor once merged (Finish) or closed.
+  assert.deepEqual(ids({ ...ready, draft: true, review: null }), ["ready"]);
+  assert.deepEqual(ids({ ...ready, review: null, state: "MERGED" }), ["finish"]);
+});
+
+test("Merge: workflow.mergeWithoutReview false only offers it once approved", () => {
+  useConfig({ workflow: { mergeWithoutReview: false } });
+  assert.deepEqual(ids({ ...ready, review: null }), []);
+  assert.deepEqual(ids({ ...ready, review: "APPROVED" }), ["merge"]);
+});
+
+test("Merge: workflow.confirmMerge false runs it on the first click", () => {
+  useConfig({ workflow: { confirmMerge: false } });
+  assert.equal(nextSteps({ ...ready, review: null })[0].confirm, false);
+});

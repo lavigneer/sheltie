@@ -53,11 +53,14 @@ handle() {
         title="$(state_jq -r --arg repo "$slug" --argjson n "${issue:-0}" '([.issues // [] | .[] | select(.repo == $repo and .number == $n) | .title] | first) // "demo change"')"
         body="${issue:+Closes #$issue}"
       fi
+      # No review is required in a repo with "reviewRequired": false (GitHub
+      # then reports an empty reviewDecision).
+      review="$(state_jq -r --arg repo "$slug" 'if any(.repos[]?; .slug == $repo and .reviewRequired == false) then "" else "REVIEW_REQUIRED" end')"
       # Its CI is running from the start (ci_start below sets how it ends), so
       # nobody sees it green before its first run.
-      state_set --arg repo "$slug" --arg branch "$branch" --arg title "$title" --arg body "$body" '
+      state_set --arg repo "$slug" --arg branch "$branch" --arg title "$title" --arg body "$body" --arg review "$review" '
         .prs += [{repo: $repo, number: ((([.prs[].number] | max) // 0) + 1), branch: $branch,
-                  title: $title, body: $body, draft: true, review: "REVIEW_REQUIRED",
+                  title: $title, body: $body, draft: true, review: $review,
                   checks: "IN_PROGRESS", checksDoneAt: (now + 600), checksResult: "SUCCESS",
                   state: "OPEN", unresolved: 0}]'
       echo "Opened a draft PR: $(state_jq -r --arg repo "$slug" --arg branch "$branch" "[.prs[] | select($pr_filter)][0] | \"https://github.com/\(.repo)/pull/\(.number)\"")"
