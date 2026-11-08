@@ -16,6 +16,7 @@ your tracker to a merged pull request without leaving Herdr:
    - **Merge**: when it's approved and green without auto-merge
    - **Finish** (after the merge): closes the space, removes the worktree and
      local branch, and resolves the ticket
+   Every step also runs from the keyboard (see [Keys](#keys)).
 3. **Get told** when CI finishes, review comments or a review arrive, or the PR
    merges.
 
@@ -54,7 +55,8 @@ herdr-app do layout.switch --name work
 ```
 
 `install.sh` copies the mods into Herdr's app home (`$HERDR_APP_HOME`, else
-`~/.config/herdr-app`), binds Ctrl+Shift+J and Ctrl+Shift+F where they're free,
+`~/.config/herdr-app`), binds Ctrl+Shift+J, Ctrl+Shift+F
+and the Work sidebar's keys (see [Keys](#keys)) where they're free,
 creates `layouts/work.json` (Herdr's main layout with the Work sidebar under
 Spaces), and writes a starter `ticket-flow.json`. `--claude-commands` also
 copies the Claude Code commands into `~/.claude/commands`. Run it again after
@@ -62,6 +64,25 @@ pulling to update.
 
 With Nix, the flake's `packages.default` has the same files under
 `share/herdr-ticket-flow`, plus `herdr-ticket-flow-install` and `herdr-demo`.
+
+## Keys
+
+`install.sh` binds these where they're free (Herdr's defaults leave them free):
+
+| Key | Command | |
+|---|---|---|
+| Ctrl+Shift+J | `mod.open:tickets` | pick a ticket |
+| Ctrl+Shift+F | `mod.open:projects` | switch project |
+| Alt+Shift+Down / Up | `work.next` / `work.prev` | select the next / previous row in the Work sidebar |
+| Alt+Shift+Right / Left | `work.step-next` / `work.step-prev` | pick the selected row's next / previous step button |
+| Alt+Shift+Enter | `work.step` | run the picked step (Finish and Clean up: press twice) |
+| Alt+Shift+O | `work.open` | open the selected row's space, like clicking it |
+
+The selected row has an accent outline and its picked step an accent border.
+It follows the focused space (its first step picked) until you move it, and
+goes back to following when you focus another space. The commands also work
+from the command line, e.g. `herdr-app do work.step`. Rebind them in
+`<Herdr app home>/keys.json`.
 
 ## Settings
 

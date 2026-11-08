@@ -13,8 +13,9 @@
 #
 # What it does:
 #   mods/*                  copied to <home>/mods/ (replacing earlier versions)
-#   keys.json               ctrl-shift-j (tickets) and ctrl-shift-f (projects)
-#                           added to <home>/keys.json, unless you use those keys
+#   keys.json               ctrl-shift-j (tickets), ctrl-shift-f (projects) and
+#                           the Work sidebar's alt-shift keys added to
+#                           <home>/keys.json, unless you use those keys
 #   layouts/work.json       Herdr's main layout with the Work sidebar block under
 #                           Spaces, regenerated from <home>/layouts/main.json
 #   ticket-flow.json        a starter settings file if there is none
@@ -35,7 +36,7 @@ while [ $# -gt 0 ]; do
   --claude-commands) claude=1 ;;
   --force-commands) claude=1 force_commands=1 ;;
   -h | --help)
-    sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
   *)

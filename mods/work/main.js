@@ -11,6 +11,12 @@
 // Clean up ask for a second click. Notifies you when CI finishes, review
 // comments or a review arrive, or the PR merges.
 //
+// Keys (keys.json; delivered through nextCommand()): one row is selected,
+// the focused space's by default. work.next / work.prev move the selection
+// through the shown rows, work.step-next / work.step-prev pick one of its
+// next steps (the first by default), work.step runs that step (Finish and
+// Clean up: press twice) and work.open opens the row's space, like a click.
+//
 // State:
 //   git refresh, details   each runs one at a time; a request during a run
 //                          queues one more (serial()), merging "force"
@@ -20,6 +26,8 @@
 //   steps                  per worktree: the last step run from here
 //                          (running / done / failed, with a note)
 //   confirming             the step waiting for its second click, if any
+//   picked                 the row the keys moved to ({ path, step, active }),
+//                          dropped when the focused space changes
 //   watched                folders of spaces not yet listed as worktrees,
 //                          rechecked a few times (the tickets popup makes the
 //                          worktree first; an agent may make it later)
@@ -28,9 +36,9 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { notify, run, spaces, theme } from "herdr";
+import { nextCommand, notify, run, spaces, theme } from "herdr";
 import { C, configReady } from "./config.js";
-import { basename, pool, spaceFor } from "./lib.js";
+import { basename, cycle, pool, spaceFor } from "./lib.js";
 import {
   keyOfBranch,
   localRepos,
@@ -110,6 +118,8 @@ export default class Work extends View {
     this.watched = new Map(); // space folder -> tries
     this.steps = new Map(); // worktree path -> { phase, text }
     this.confirming = null; // `${path}:${step id}`
+    this.confirmByKey = false; // the confirmation was asked for by a key
+    this.picked = null; // { path, step, active }: see selection()
     this.watchTimer = false;
     this.refresh = serial((cx, force) => this.scan(cx, force));
     this.details = serial((cx, force) => this.lookups(cx, force));
@@ -117,6 +127,75 @@ export default class Work extends View {
     cx.timer.every(GIT_MS, (cx) => this.refresh(cx));
     // Ticket/PR lookups that are due, between git scans (only due ones run).
     cx.timer.every(DUE_CHECK_MS, (cx) => this.details(cx));
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        try {
+          this.command(cx, c);
+        } catch (e) {
+          console.error(`work.${c}: ${e?.message ?? e}`);
+        }
+        cx.notify();
+      }
+    });
+  }
+
+  // --- Keyboard ---------------------------------------------------------------
+
+  // The rows shown (unfolded groups), in order, with their next steps.
+  shownRows() {
+    return (this.groups ?? [])
+      .filter((g) => !this.folded.has(g.repo.path))
+      .flatMap((g) => g.worktrees.map((w) => ({ ...w, repo: g.repo })))
+      .map((w) => {
+        const space = spaceFor(w.path);
+        const steps =
+          this.steps.get(w.path)?.phase === "running"
+            ? []
+            : nextSteps(this.prs.get(w.path)?.value ?? null, {
+                working: space?.status === "working",
+              });
+        return { w, space, steps };
+      });
+  }
+
+  // The selected row and step: the one the keys moved to while the same
+  // space stays focused, else the focused space's row, else the first.
+  // Returns { rows, at, step, active } (at: -1 without rows; active: the
+  // focused space's id).
+  selection() {
+    const rows = this.shownRows();
+    const active = spaces().find((s) => s.active && !s.machine)?.id ?? null;
+    if (this.picked && this.picked.active !== active) this.picked = null;
+    let at = this.picked
+      ? rows.findIndex((r) => r.w.path === this.picked.path)
+      : -1;
+    let step = at >= 0 ? this.picked.step : 0;
+    if (at < 0) {
+      at = rows.findIndex((r) => r.space?.active);
+      if (at < 0 && rows.length) at = 0;
+      step = 0;
+    }
+    const n = rows[at]?.steps.length ?? 0;
+    return { rows, at, step: n ? Math.min(step, n - 1) : 0, active };
+  }
+
+  command(cx, c) {
+    const { rows, at, step, active } = this.selection();
+    const row = rows[at];
+    const pick = (i, s = 0) => {
+      if (rows[i]) this.picked = { path: rows[i].w.path, step: s, active };
+    };
+    if (c === "next" || c === "prev") {
+      if (rows.length) pick(cycle(rows.length, at, c === "next" ? 1 : -1));
+    } else if (c === "step-next" || c === "step-prev") {
+      if (row?.steps.length)
+        pick(at, cycle(row.steps.length, step, c === "step-next" ? 1 : -1));
+    } else if (c === "step") {
+      if (row?.steps[step]) this.step(cx, row.w, row.steps[step], true);
+    } else if (c === "open") {
+      if (row) this.open(row.w);
+    } else console.error(`work: unknown command ${c}`);
   }
 
   // Git only: worktrees and branches. Ticket and PR details follow separately,
@@ -274,13 +353,14 @@ export default class Work extends View {
   }
 
   // Runs a next step for worktree `w`; one asking for confirmation runs on its
-  // second click (within a few seconds).
-  step(cx, w, step) {
+  // second click or key press (within a few seconds).
+  step(cx, w, step, byKey = false) {
     const path = w.path;
     if (this.steps.get(path)?.phase === "running") return;
     const id = `${path}:${step.id}`;
     if (step.confirm && this.confirming !== id) {
       this.confirming = id;
+      this.confirmByKey = byKey;
       cx.timer.after(CONFIRM_MS, (cx) => {
         if (this.confirming === id) this.confirming = null;
         cx.notify();
@@ -384,7 +464,7 @@ export default class Work extends View {
         .child("●");
     };
 
-    const button = (w, s) => {
+    const button = (w, s, chosen) => {
       const confirming = this.confirming === `${w.path}:${s.id}`;
       return div()
         .id(`work-step-${w.path}-${s.id}`)
@@ -395,7 +475,9 @@ export default class Work extends View {
         .items_center()
         .rounded(5)
         .border_1()
-        .border_color(confirming ? t.blocked : (t.border ?? t.dim))
+        .border_color(
+          confirming ? t.blocked : chosen ? t.accent : (t.border ?? t.dim),
+        )
         .text_size(10.5)
         .text_color(confirming ? t.blocked : t.foreground)
         .cursor_pointer()
@@ -404,11 +486,19 @@ export default class Work extends View {
           cx.stop_propagation();
           this.step(cx, w, s);
         })
-        .child(confirming ? `${s.label}? click again` : s.label);
+        .child(
+          confirming
+            ? `${s.label}? ${this.confirmByKey ? "press" : "click"} again`
+            : s.label,
+        );
     };
+
+    const sel = this.selection();
+    const selected = sel.rows[sel.at]?.w.path ?? null;
 
     const row = (w) => {
       const space = spaceFor(w.path);
+      const isSelected = w.path === selected;
       const entry = w.key ? this.tickets.get(w.key) : null;
       const ticket = entry?.value ?? null;
       const prValue = this.prs.get(w.path)?.value ?? null;
@@ -453,6 +543,8 @@ export default class Work extends View {
         .py(4)
         .gap(1)
         .rounded(7)
+        .border_1()
+        .border_color(isSelected ? t.accent : "#00000000")
         .cursor_pointer()
         .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
         .hover((s) => s.bg(t.hover))
@@ -516,7 +608,11 @@ export default class Work extends View {
               .gap(4)
               .items_center()
               .children(
-                last?.phase === "running" ? [] : steps.map((s) => button(w, s)),
+                last?.phase === "running"
+                  ? []
+                  : steps.map((s, i) =>
+                      button(w, s, isSelected && i === sel.step),
+                    ),
               )
               .when(Boolean(note), (e) =>
                 e.child(

@@ -217,6 +217,10 @@ fi
 
 export HERDR_APP_HOME="$app" HC_SESSION="$session" HERDR_APP_ID="$session" GIT_TERMINAL_PROMPT=0 HERDR_DEMO
 if [ -z "$(session_pids)" ]; then
+  # Skip Herdr's welcome: its overlay sits over the window (and the sidebar).
+  shared="$app/shared.json"
+  [ -f "$shared" ] || echo '{}' >"$shared"
+  jq '. + {"frame.welcomed": "finished"}' "$shared" >"$shared.tmp" && mv "$shared.tmp" "$shared"
   cd "$HERDR_DEMO/ws" || exit 1
   nohup herdr-app >"$HERDR_DEMO/app.log" 2>&1 </dev/null &
   disown
