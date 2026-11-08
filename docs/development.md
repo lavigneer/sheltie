@@ -10,10 +10,11 @@ npm run e2e:shots  # screenshots of the mods at a few sizes, in e2e-results/shot
 ## Layout
 
 `src/` holds the shared modules (`config.js`, `lib.js`, `data.js`, `flow.js`,
-`tracker*.js`) and each mod's own `main.js` and `mod.json`. Herdr only resolves
-imports inside a mod's folder, so the build copies the shared modules into each
-`mods/<name>/`. `herdr-app check mods/<name>` (with Herdr running) loads a mod
-once.
+`tracker*.js`, `usage.js`) and each mod's own `main.js` and `mod.json`. Herdr
+only resolves imports inside a mod's folder, so the build copies into each
+`mods/<name>/` the shared modules it imports. `herdr-app check mods/<name>`
+(with Herdr running) loads a mod once; it leaves `gpui-kit.d.ts` and
+`jsconfig.json` in the folder, which `npm run build` removes.
 
 A new tracker is a `src/tracker-<name>.js` with the functions listed in
 `src/tracker.js`, added to its `trackers` map.
