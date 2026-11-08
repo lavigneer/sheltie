@@ -25,6 +25,9 @@ request without leaving Herdr:
 3. **Get notified** when CI finishes, reviews arrive, the PR starts
    conflicting, or it merges.
 
+See [docs/workflow.md](docs/workflow.md) for exactly when each step is
+offered, the safety checks and how repos are suggested.
+
 Trackers: **Jira** (via jira-cli) and **GitHub issues**. Code hosting: GitHub.
 A third mod, **projects** (Ctrl+Shift+F), is a plain project switcher.
 
@@ -75,13 +78,15 @@ and `herdr-demo`.
 
 Rebind them in `<Herdr app home>/keys.json`. They also work from the command
 line (`herdr-app do work.step`), as do `work.refresh` and `work.report`
-(writes the sidebar state to `<Herdr app home>/work-report.json`).
+(writes the sidebar state to `<Herdr app home>/work-report.json`). More in
+[docs/workflow.md](docs/workflow.md#keyboard).
 
 ## Settings
 
 `<Herdr app home>/sheltie.json` is merged over the defaults; set only what you
 change. [`config.example.json`](config.example.json) lists every setting with
-its default, and `src/config.js` documents each one. The main ones:
+its default, and [docs/settings.md](docs/settings.md) has the full table.
+The main ones:
 
 | Setting | Default | |
 |---|---|---|
@@ -115,11 +120,8 @@ npm run e2e        # drive real Herdr on the demo (Linux, Xvfb)
 npm run e2e:shots  # screenshots in e2e-results/shots/
 ```
 
-`nix develop .#e2e -c npm run e2e` provides everything the e2e tests need.
-Shared modules live in `src/`; the build copies them into each `mods/<name>/`
-since Herdr only resolves imports inside a mod's folder. To add a tracker,
-write `src/tracker-<name>.js` implementing `src/tracker.js` and add it to its
-`trackers` map.
+See [docs/development.md](docs/development.md) for the code layout, adding a
+tracker, the end-to-end tests and CI.
 
 ## License
 
