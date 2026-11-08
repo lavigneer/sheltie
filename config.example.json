@@ -8,7 +8,8 @@
     "gh": "gh",
     "jira": "jira",
     "hc": "hc",
-    "jq": "jq"
+    "jq": "jq",
+    "curl": "curl"
   },
   "tracker": "jira",
   "jira": {
@@ -56,7 +57,11 @@
     }
   },
   "usage": {
-    "claudeHomes": ["~/.claude"]
+    "agents": [
+      { "type": "claude-code", "home": "~/.claude" },
+      { "type": "codex", "home": "~/.codex" }
+    ],
+    "prices": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
   },
   "workflow": {
     "autoMerge": "when-reviews-required",
