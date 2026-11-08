@@ -51,7 +51,10 @@ test("usageGroups: Claude Code and Codex, by folder, priced", async () => {
     output_tokens: 2000,
     cache_read_input_tokens: 10000,
     cache_creation_input_tokens: 4000,
-    cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 4000 },
+    cache_creation: {
+      ephemeral_5m_input_tokens: 0,
+      ephemeral_1h_input_tokens: 4000,
+    },
   };
   const proj = path.join(tmp, "claude", "projects", "-work-repo");
   write(path.join(proj, "s1.jsonl"), [
@@ -67,16 +70,32 @@ test("usageGroups: Claude Code and Codex, by folder, priced", async () => {
   const usage = (total, last) => ({
     timestamp: "2026-11-07T11:00:00Z",
     type: "event_msg",
-    payload: { type: "token_count", info: { total_token_usage: { total_tokens: total }, last_token_usage: last } },
+    payload: {
+      type: "token_count",
+      info: {
+        total_token_usage: { total_tokens: total },
+        last_token_usage: last,
+      },
+    },
   });
-  const call = { input_tokens: 3000, cached_input_tokens: 1000, output_tokens: 500 };
-  write(path.join(tmp, "codex", "sessions", "2026", "11", "07", "rollout-1.jsonl"), [
-    JSON.stringify({ type: "session_meta", payload: { cwd: "/work/repo" } }),
-    JSON.stringify({ type: "turn_context", payload: { cwd: "/work/repo", model: "gpt-5-codex" } }),
-    JSON.stringify(usage(3500, call)),
-    JSON.stringify(usage(3500, call)), // repeated: not a new call
-    JSON.stringify(usage(7000, call)),
-  ]);
+  const call = {
+    input_tokens: 3000,
+    cached_input_tokens: 1000,
+    output_tokens: 500,
+  };
+  write(
+    path.join(tmp, "codex", "sessions", "2026", "11", "07", "rollout-1.jsonl"),
+    [
+      JSON.stringify({ type: "session_meta", payload: { cwd: "/work/repo" } }),
+      JSON.stringify({
+        type: "turn_context",
+        payload: { cwd: "/work/repo", model: "gpt-5-codex" },
+      }),
+      JSON.stringify(usage(3500, call)),
+      JSON.stringify(usage(3500, call)), // repeated: not a new call
+      JSON.stringify(usage(7000, call)),
+    ],
+  );
   useConfig({
     usage: {
       agents: [
@@ -106,7 +125,10 @@ test("costOf: unknown models have no price; dated ids match; totals", () => {
   const table = { "claude-haiku-4-5": { i: 1 * M, o: 5 * M } };
   const base = { input: 1e6, output: 0, read: 0, write5m: 0, write1h: 0 };
   assert.equal(costOf(table, { ...base, model: "mystery" }), null);
-  assert.equal(costOf(table, { ...base, model: "claude-haiku-4-5-20251001" }), 1);
+  assert.equal(
+    costOf(table, { ...base, model: "claude-haiku-4-5-20251001" }),
+    1,
+  );
   assert.deepEqual(
     total([
       { ...base, cost: null },
@@ -116,14 +138,20 @@ test("costOf: unknown models have no price; dated ids match; totals", () => {
   );
 });
 
-const hasSqlite = (await import("node:child_process")).spawnSync("sqlite3", ["-version"]).status === 0;
+const hasSqlite =
+  (await import("node:child_process")).spawnSync("sqlite3", ["-version"])
+    .status === 0;
 
-test("usageGroups: opencode's database", { skip: !hasSqlite && "no sqlite3" }, async () => {
+test("usageGroups: opencode's database", {
+  skip: !hasSqlite && "no sqlite3",
+}, async () => {
   const { DatabaseSync } = await import("node:sqlite");
   const home = path.join(tmp, "opencode");
   fs.mkdirSync(home, { recursive: true });
   const db = new DatabaseSync(path.join(home, "opencode.db"));
-  db.exec("CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, data TEXT)");
+  db.exec(
+    "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, data TEXT)",
+  );
   const add = db.prepare("INSERT INTO message VALUES (?, 's', ?)");
   const msg = (role, tokens) =>
     JSON.stringify({
@@ -134,7 +162,12 @@ test("usageGroups: opencode's database", { skip: !hasSqlite && "no sqlite3" }, a
       time: { created: Date.parse("2026-11-07T12:00:00Z") },
       tokens,
     });
-  const tokens = { input: 3000, output: 400, reasoning: 100, cache: { read: 2000, write: 0 } };
+  const tokens = {
+    input: 3000,
+    output: 400,
+    reasoning: 100,
+    cache: { read: 2000, write: 0 },
+  };
   add.run("m1", msg("assistant", tokens));
   add.run("m2", msg("assistant", tokens));
   add.run("m3", msg("user"));
@@ -159,10 +192,20 @@ test("usageGroups: opencode's database", { skip: !hasSqlite && "no sqlite3" }, a
 
 test("settled: ready, then a failed refresh keeps the last groups", async () => {
   const { LOADING, settled } = await import("../src/usage.js");
-  const fail = async () => { throw new Error("no logs"); };
-  assert.deepEqual(await settled(LOADING, fail), { phase: "failed", groups: null, error: "no logs" });
+  const fail = async () => {
+    throw new Error("no logs");
+  };
+  assert.deepEqual(await settled(LOADING, fail), {
+    phase: "failed",
+    groups: null,
+    error: "no logs",
+  });
   const ready = await settled(LOADING, async () => [{ cost: 1 }]);
-  assert.deepEqual(ready, { phase: "ready", groups: [{ cost: 1 }], error: null });
+  assert.deepEqual(ready, {
+    phase: "ready",
+    groups: [{ cost: 1 }],
+    error: null,
+  });
   assert.deepEqual(await settled({ ...ready, phase: "loading" }, fail), {
     phase: "failed",
     groups: [{ cost: 1 }],

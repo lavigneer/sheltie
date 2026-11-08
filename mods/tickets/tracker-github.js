@@ -89,7 +89,15 @@ export function create(s) {
     if (!k || !t || t.status !== "Open") return null;
     await must(
       "gh",
-      ["issue", "close", String(k.number), "--repo", k.slug, "--reason", "completed"],
+      [
+        "issue",
+        "close",
+        String(k.number),
+        "--repo",
+        k.slug,
+        "--reason",
+        "completed",
+      ],
       "gh issue close",
     );
     return `${labelOf(key)} closed`;
@@ -119,7 +127,8 @@ export function create(s) {
     );
     if (slug) {
       for (const m of t.matchAll(ref)) out.add(keyOf(slug, m[1]));
-      for (const m of t.matchAll(/(?:^|[\s(])#(\d+)\b/g)) out.add(keyOf(slug, m[1]));
+      for (const m of t.matchAll(/(?:^|[\s(])#(\d+)\b/g))
+        out.add(keyOf(slug, m[1]));
     }
     for (const m of t.matchAll(/\b([\w.-]+\/[\w.-]+)#(\d+)\b/g))
       out.add(keyOf(m[1], m[2]));
@@ -146,7 +155,10 @@ export function create(s) {
           ],
           "gh issue view",
         );
-        return { key, prs: JSON.parse(json).closedByPullRequestsReferences ?? [] };
+        return {
+          key,
+          prs: JSON.parse(json).closedByPullRequestsReferences ?? [],
+        };
       }),
     );
     for (const f of found.filter(Boolean))
@@ -160,5 +172,16 @@ export function create(s) {
   const suggest = (ticket) =>
     ticket.repo ? [{ target: ticket.repo, why: "issue's repo" }] : [];
 
-  return { name, labelOf, list, view, move, url, viewCommand, keysIn, linkedPRs, suggest };
+  return {
+    name,
+    labelOf,
+    list,
+    view,
+    move,
+    url,
+    viewCommand,
+    keysIn,
+    linkedPRs,
+    suggest,
+  };
 }

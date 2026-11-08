@@ -46,8 +46,7 @@ export class Cache {
     return (
       !entry ||
       force ||
-      this.now() - entry.at >
-        (entry.state === "failed" ? this.retryMs : maxAge)
+      this.now() - entry.at > (entry.state === "failed" ? this.retryMs : maxAge)
     );
   }
 

@@ -270,7 +270,11 @@ export default class Work extends View {
           cost: this.costOf(r.w),
           selected: i === at,
           step: i === at ? step : null,
-          steps: r.steps.map((s) => ({ id: s.id, label: s.label, confirm: Boolean(s.confirm) })),
+          steps: r.steps.map((s) => ({
+            id: s.id,
+            label: s.label,
+            confirm: Boolean(s.confirm),
+          })),
           confirming,
           ticket: (r.w.key && this.tickets.get(r.w.key)?.value) || null,
           ticketUrl: null,
@@ -621,7 +625,11 @@ export default class Work extends View {
           .flex_none()
           .justify_center()
           .items_center()
-          .child(icon("new", "+", "New work (tickets)", () => run("mod.open", { name: "tickets" })))
+          .child(
+            icon("new", "+", "New work (tickets)", () =>
+              run("mod.open", { name: "tickets" }),
+            ),
+          )
       : h_flex()
           .h(30)
           .flex_none()
@@ -638,8 +646,14 @@ export default class Work extends View {
               .text_color(t.dim)
               .child("WORK"),
           )
-          .child(icon("refresh", "↻", "Refresh now", (cx) => this.refresh(cx, true)))
-          .child(icon("new", "+", "New work (tickets)", () => run("mod.open", { name: "tickets" })));
+          .child(
+            icon("refresh", "↻", "Refresh now", (cx) => this.refresh(cx, true)),
+          )
+          .child(
+            icon("new", "+", "New work (tickets)", () =>
+              run("mod.open", { name: "tickets" }),
+            ),
+          );
 
     const status = (space) => {
       if (!space) return div().w(12).flex_none().text_color(t.dim).child("○");
@@ -874,90 +888,91 @@ export default class Work extends View {
         sub,
         links,
       } = look(w);
-      return v_flex()
-        .id(`work-${w.path}`)
-        .mx(6)
-        .px(8)
-        .py(4)
-        .gap(1)
-        .rounded(7)
-        .border_1()
-        .border_color(isSelected ? t.accent : "#00000000")
-        .cursor_pointer()
-        .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
-        .hover((s) => s.bg(t.hover))
-        .on_hover((hovered, cx) => {
-          if (hovered) this.hovered = w.path;
-          else if (this.hovered === w.path) this.hovered = null;
-          cx.notify();
-        })
-        .on_click(() => this.open(w))
-        .child(
-          h_flex()
-            .gap(6)
-            .items_center()
-            .child(status(space))
-            .child(
-              div()
-                .flex_shrink(1)
-                .min_w(64)
-                .flex()
-                .child(
-                  div()
-                    .flex_shrink(1)
-                    .min_w(0)
-                    .truncate()
-                    .text_size(12.5)
-                    .text_color(t.foreground)
-                    .when(Boolean(space?.active), (d) => d.font_semibold())
-                    .child(title),
-                ),
-            )
-            // The rest of the line after the title (sized to its text): the
-            // PR, at the right; it also pushes the hub tag and ↗ there.
-            .child(
-              h_flex()
-                .flex_1()
-                .min_w(0)
-                .justify_end()
-                .when(Boolean(pr), (el) =>
-                  el.child(
+      return (
+        v_flex()
+          .id(`work-${w.path}`)
+          .mx(6)
+          .px(8)
+          .py(4)
+          .gap(1)
+          .rounded(7)
+          .border_1()
+          .border_color(isSelected ? t.accent : "#00000000")
+          .cursor_pointer()
+          .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
+          .hover((s) => s.bg(t.hover))
+          .on_hover((hovered, cx) => {
+            if (hovered) this.hovered = w.path;
+            else if (this.hovered === w.path) this.hovered = null;
+            cx.notify();
+          })
+          .on_click(() => this.open(w))
+          .child(
+            h_flex()
+              .gap(6)
+              .items_center()
+              .child(status(space))
+              .child(
+                div()
+                  .flex_shrink(1)
+                  .min_w(64)
+                  .flex()
+                  .child(
                     div()
+                      .flex_shrink(1)
                       .min_w(0)
                       .truncate()
-                      .text_size(11)
-                      .text_color(prColor)
-                      .child(pr.text),
+                      .text_size(12.5)
+                      .text_color(t.foreground)
+                      .when(Boolean(space?.active), (d) => d.font_semibold())
+                      .child(title),
                   ),
+              )
+              // The rest of the line after the title (sized to its text): the
+              // PR, at the right; it also pushes the hub tag and ↗ there.
+              .child(
+                h_flex()
+                  .flex_1()
+                  .min_w(0)
+                  .justify_end()
+                  .when(Boolean(pr), (el) =>
+                    el.child(
+                      div()
+                        .min_w(0)
+                        .truncate()
+                        .text_size(11)
+                        .text_color(prColor)
+                        .child(pr.text),
+                    ),
+                  ),
+              )
+              .when(Boolean(w.hub), (el) =>
+                el.child(
+                  div()
+                    .flex_none()
+                    .px(5)
+                    .rounded(4)
+                    .border_1()
+                    .border_color(t.border ?? t.dim)
+                    .text_size(11)
+                    .text_color(t.dim)
+                    .child("hub"),
                 ),
-            )
-            .when(Boolean(w.hub), (el) =>
-              el.child(
-                div()
-                  .flex_none()
-                  .px(5)
-                  .rounded(4)
-                  .border_1()
-                  .border_color(t.border ?? t.dim)
-                  .text_size(11)
-                  .text_color(t.dim)
-                  .child("hub"),
+              )
+              .when(links.length > 0, (el) =>
+                el.child(
+                  isSelected ||
+                    this.hovered === w.path ||
+                    this.linksOpen === w.path
+                    ? linksMenu(w, links)
+                    : div().w(LINKS_W).flex_none(),
+                ),
               ),
-            )
-            .when(links.length > 0, (el) =>
-              el.child(
-                isSelected ||
-                  this.hovered === w.path ||
-                  this.linksOpen === w.path
-                  ? linksMenu(w, links)
-                  : div().w(LINKS_W).flex_none(),
-              ),
-            ),
-        )
-        // Always there, even while empty: a ticket's status and the cost
-        // come from lookups that finish later, and the line appearing then
-        // would push every row below it down.
-        .child(
+          )
+          // Always there, even while empty: a ticket's status and the cost
+          // come from lookups that finish later, and the line appearing then
+          // would push every row below it down.
+          .child(
             h_flex()
               .pl(18)
               .gap(6)
@@ -990,40 +1005,43 @@ export default class Work extends View {
                     .flex_none()
                     .text_size(11)
                     .text_color(t.dim)
-                    .tooltip("What agents working here have cost (at API prices)")
+                    .tooltip(
+                      "What agents working here have cost (at API prices)",
+                    )
                     .child(cost),
                 ),
               ),
-        )
-        .when(steps.length > 0 || Boolean(note), (el) =>
-          el.child(
-            h_flex()
-              .flex_wrap()
-              .pl(18)
-              .pt(2)
-              .gap_x(4)
-              .gap_y(3)
-              .items_center()
-              .children(
-                last?.phase === "running"
-                  ? []
-                  : steps.map((s, i) =>
-                      button(w, s, isSelected && i === sel.step),
-                    ),
-              )
-              .when(Boolean(note), (e) =>
-                e.child(
-                  div()
-                    .flex_1()
-                    .min_w(60)
-                    .truncate()
-                    .text_size(11)
-                    .text_color(note.color)
-                    .child(note.text),
+          )
+          .when(steps.length > 0 || Boolean(note), (el) =>
+            el.child(
+              h_flex()
+                .flex_wrap()
+                .pl(18)
+                .pt(2)
+                .gap_x(4)
+                .gap_y(3)
+                .items_center()
+                .children(
+                  last?.phase === "running"
+                    ? []
+                    : steps.map((s, i) =>
+                        button(w, s, isSelected && i === sel.step),
+                      ),
+                )
+                .when(Boolean(note), (e) =>
+                  e.child(
+                    div()
+                      .flex_1()
+                      .min_w(60)
+                      .truncate()
+                      .text_size(11)
+                      .text_color(note.color)
+                      .child(note.text),
+                  ),
                 ),
-              ),
-          ),
-        );
+            ),
+          )
+      );
     };
 
     const group = (g) => {

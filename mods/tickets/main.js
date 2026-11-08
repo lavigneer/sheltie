@@ -435,15 +435,13 @@ export default class Tickets extends View {
       { phase: "running", message: `Starting ${ticket.label}…` },
       cx,
     );
-    await ticket.tracker
-      .move(ticket.key, "start", ticket.status)
-      .catch((e) =>
-        notify({
-          title: `${ticket.label}: couldn't update the ticket`,
-          body: errorText(e),
-          level: "warning",
-        }),
-      );
+    await ticket.tracker.move(ticket.key, "start", ticket.status).catch((e) =>
+      notify({
+        title: `${ticket.label}: couldn't update the ticket`,
+        body: errorText(e),
+        level: "warning",
+      }),
+    );
     this.openSpace(
       this.spaceName(ticket, repo),
       path,
@@ -457,7 +455,9 @@ export default class Tickets extends View {
     const repo = await this.local(target, cx);
     const branch = adhocBranch(description, repo);
     const path = worktreePath(repo, branch);
-    const existing = (await listWorktrees(repo.path)).linked.some((w) => w.path === path);
+    const existing = (await listWorktrees(repo.path)).linked.some(
+      (w) => w.path === path,
+    );
     if (!existing) await addWorktree(repo, branch, { create: true });
     this.openSpace(
       basename(path),
@@ -485,9 +485,7 @@ export default class Tickets extends View {
 
   openInBrowser(ticket, cx) {
     cx.spawn(async () => {
-      const url = await ticket.tracker
-        .url(ticket.key)
-        .catch(() => null);
+      const url = await ticket.tracker.url(ticket.key).catch(() => null);
       if (url) await openUrl(url);
     });
   }
@@ -661,103 +659,107 @@ export default class Tickets extends View {
     const onList = this.screen.name === "list";
     const status = this.status(rows);
 
-    return v_flex()
-      .id("tickets")
-      .track_focus(this.handle)
-      .w_full()
-      .min_h(0)
-      .p(18)
-      .gap(10)
-      .bg(t.popover)
-      .text_size(13)
-      .on_key_down((e, cx) => {
-        if (this.onKey(e, rows, sel, cx)) cx.stop_propagation();
-      })
-      .child(
-        h_flex()
-          .gap(10)
-          .items_center()
-          .when(!onList, (el) =>
-            el.child(
+    return (
+      v_flex()
+        .id("tickets")
+        .track_focus(this.handle)
+        .w_full()
+        .min_h(0)
+        .p(18)
+        .gap(10)
+        .bg(t.popover)
+        .text_size(13)
+        .on_key_down((e, cx) => {
+          if (this.onKey(e, rows, sel, cx)) cx.stop_propagation();
+        })
+        .child(
+          h_flex()
+            .gap(10)
+            .items_center()
+            .when(!onList, (el) =>
+              el.child(
+                div()
+                  .id("tk-back")
+                  .px(6)
+                  .rounded(5)
+                  .flex_none()
+                  .text_size(15)
+                  .text_color(t.dim)
+                  .cursor_pointer()
+                  .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                  .on_click((_e, cx) => {
+                    if (!this.running) this.back(cx);
+                  })
+                  .tooltip("Back (⌫)")
+                  .child("‹"),
+              ),
+            )
+            .child(
               div()
-                .id("tk-back")
-                .px(6)
-                .rounded(5)
-                .flex_none()
+                .flex_1()
+                .min_w(120)
+                .truncate()
                 .text_size(15)
+                .font_semibold()
+                .text_color(t.foreground)
+                .child(title),
+            )
+            .child(
+              div()
+                .flex_shrink(1)
+                .min_w(0)
+                .truncate()
+                .text_size(11)
                 .text_color(t.dim)
-                .cursor_pointer()
-                .hover((s) => s.bg(t.hover).text_color(t.foreground))
-                .on_click((_e, cx) => {
-                  if (!this.running) this.back(cx);
-                })
-                .tooltip("Back (⌫)")
-                .child("‹"),
+                .child(hint),
             ),
-          )
-          .child(
-            div()
-              .flex_1()
-              .min_w(120)
-              .truncate()
-              .text_size(15)
-              .font_semibold()
-              .text_color(t.foreground)
-              .child(title),
-          )
-          .child(
-            div()
+        )
+        .child(
+          h_flex()
+            .h(36)
+            .flex_none()
+            .px(10)
+            .gap(8)
+            .items_center()
+            .rounded(9)
+            .border_1()
+            .border_color(t.accent)
+            .bg(t.background)
+            .child(
+              svg("mods/workspace-chrome/search.svg")
+                .size(15)
+                .text_color(t.dim),
+            )
+            .child(
+              Input.new(this.input)
+                .flex_1()
+                .h_full()
+                .text_size(12.8)
+                .text_color(t.foreground),
+            ),
+        )
+        // The status line always keeps its space, so the list below doesn't
+        // jump when a loading message comes or goes.
+        .child(
+          div()
+            .flex_none()
+            .px(10)
+            .py(4)
+            .truncate()
+            .text_color(status?.[1] ? t.blocked : t.dim)
+            .child(status?.[0] ?? "\u00a0"),
+        )
+        .when(rows.length > 0, (el) =>
+          el.child(
+            v_flex()
+              .h(Math.min(420, 6 + rows.length * 32))
+              .min_h(0)
               .flex_shrink(1)
-              .min_w(0)
-              .truncate()
-              .text_size(11)
-              .text_color(t.dim)
-              .child(hint),
+              .pb(6)
+              .overflow_y_scrollbar()
+              .children(rows.map(row)),
           ),
-      )
-      .child(
-        h_flex()
-          .h(36)
-          .flex_none()
-          .px(10)
-          .gap(8)
-          .items_center()
-          .rounded(9)
-          .border_1()
-          .border_color(t.accent)
-          .bg(t.background)
-          .child(
-            svg("mods/workspace-chrome/search.svg").size(15).text_color(t.dim),
-          )
-          .child(
-            Input.new(this.input)
-              .flex_1()
-              .h_full()
-              .text_size(12.8)
-              .text_color(t.foreground),
-          ),
-      )
-      // The status line always keeps its space, so the list below doesn't
-      // jump when a loading message comes or goes.
-      .child(
-        div()
-          .flex_none()
-          .px(10)
-          .py(4)
-          .truncate()
-          .text_color(status?.[1] ? t.blocked : t.dim)
-          .child(status?.[0] ?? "\u00a0"),
-      )
-      .when(rows.length > 0, (el) =>
-        el.child(
-          v_flex()
-            .h(Math.min(420, 6 + rows.length * 32))
-            .min_h(0)
-            .flex_shrink(1)
-            .pb(6)
-            .overflow_y_scrollbar()
-            .children(rows.map(row)),
-        ),
-      );
+        )
+    );
   }
 }

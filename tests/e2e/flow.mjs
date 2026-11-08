@@ -52,13 +52,18 @@ export function flow(t, { failures = false } = {}) {
   scenario("the mods load", async () => {
     for (const mod of ["tickets", "work", "projects", "usage"])
       await h.sh("herdr-app", ["check", path.join(h.home, "mods", mod)]);
-    await waitFor("the sidebar's first scan", async () => (await h.report()).loaded);
+    await waitFor(
+      "the sidebar's first scan",
+      async () => (await h.report()).loaded,
+    );
     await h.assertNoErrors("after start");
   });
 
   scenario("start a fresh ticket from the popup, by keyboard", async () => {
     await h.key("ctrl+shift+j");
-    await waitFor("the tickets popup", async () => (await h.status()).overlays.includes("tickets"));
+    await waitFor("the tickets popup", async () =>
+      (await h.status()).overlays.includes("tickets"),
+    );
     await h.assertNoErrors("after opening the tickets popup");
     await h.type(t.filter);
     // Enter starts it. Pressed before the popup knows the ticket's work, Enter
@@ -69,7 +74,10 @@ export function flow(t, { failures = false } = {}) {
       "the ticket's worktree",
       async () => {
         if ((await h.worktrees(repo())).includes(worktree())) return true;
-        if (Date.now() - pressed > 1_500 && (await h.status()).overlays.includes("tickets")) {
+        if (
+          Date.now() - pressed > 1_500 &&
+          (await h.status()).overlays.includes("tickets")
+        ) {
           pressed = Date.now();
           await h.key("Return");
         }
@@ -80,8 +88,14 @@ export function flow(t, { failures = false } = {}) {
     const space = await waitFor("its space", () => h.spaceAt(worktree()));
     assert.equal(space.active, true, "its space is shown");
     const terminal = space.tabs[0].terminals[0].terminal;
-    await waitFor("the agent to get its task", async () => t.task.test(await h.screen(terminal)));
-    assert.equal((await h.status()).overlays.includes("tickets"), false, "the popup closed");
+    await waitFor("the agent to get its task", async () =>
+      t.task.test(await h.screen(terminal)),
+    );
+    assert.equal(
+      (await h.status()).overlays.includes("tickets"),
+      false,
+      "the popup closed",
+    );
     // Agent steps go to that terminal (not to a new agent).
     await h.waitRow("its agent", worktree(), (r) => r.agent === terminal);
     t.started?.(h.state());
@@ -89,7 +103,11 @@ export function flow(t, { failures = false } = {}) {
   });
 
   scenario("open the row's ticket, and no PR yet, by keyboard", async () => {
-    const r = await h.waitRow("its ticket's URL", worktree(), (r) => r.selected && r.ticketUrl);
+    const r = await h.waitRow(
+      "its ticket's URL",
+      worktree(),
+      (r) => r.selected && r.ticketUrl,
+    );
     assert.equal(r.ticketUrl, t.ticketUrl);
     assert.equal(r.pr, null, "no PR yet");
     await h.key("alt+shift+p"); // no PR: nothing opens, nothing errors
@@ -99,44 +117,66 @@ export function flow(t, { failures = false } = {}) {
     await h.assertNoErrors("after opening the ticket");
   });
 
-  scenario("the repo's hub row: above the worktree, a space of its own", async () => {
-    const own = await h.spaceAt(worktree());
-    const { rows } = await h.report();
-    const hubAt = rows.findIndex((r) => r.path === repo());
-    const at = rows.findIndex((r) => r.path === worktree());
-    assert.ok(hubAt >= 0, "a row for the repo's main checkout");
-    const hub = rows[hubAt];
-    assert.equal(hub.hub, true, "marked as the hub");
-    assert.equal(rows[at].hub, false, "the worktree isn't a hub");
-    assert.ok(hubAt < at, "the hub comes first");
-    assert.ok(
-      rows.slice(hubAt + 1, at).every((r) => !r.hub),
-      "the worktree's group is the hub's",
-    );
-    assert.deepEqual(hub.steps, [], "no steps");
-    assert.equal(hub.pr, null, "no PR");
-    assert.notEqual(hub.space, own.id, "not the worktree's space");
-    assert.equal(rows[at].selected, true, "the focused worktree's row is selected");
+  scenario(
+    "the repo's hub row: above the worktree, a space of its own",
+    async () => {
+      const own = await h.spaceAt(worktree());
+      const { rows } = await h.report();
+      const hubAt = rows.findIndex((r) => r.path === repo());
+      const at = rows.findIndex((r) => r.path === worktree());
+      assert.ok(hubAt >= 0, "a row for the repo's main checkout");
+      const hub = rows[hubAt];
+      assert.equal(hub.hub, true, "marked as the hub");
+      assert.equal(rows[at].hub, false, "the worktree isn't a hub");
+      assert.ok(hubAt < at, "the hub comes first");
+      assert.ok(
+        rows.slice(hubAt + 1, at).every((r) => !r.hub),
+        "the worktree's group is the hub's",
+      );
+      assert.deepEqual(hub.steps, [], "no steps");
+      assert.equal(hub.pr, null, "no PR");
+      assert.notEqual(hub.space, own.id, "not the worktree's space");
+      assert.equal(
+        rows[at].selected,
+        true,
+        "the focused worktree's row is selected",
+      );
 
-    // Up to the hub; nothing to open in the browser; open its space.
-    for (let i = hubAt; i < at; i++) await h.key("alt+shift+Up");
-    await h.waitRow("the hub selected", repo(), (r) => r.selected);
-    await h.key("alt+shift+p", "alt+shift+t");
-    await h.key("alt+shift+o");
-    const space = await waitFor("the hub's space", () => h.spaceAt(repo()));
-    assert.notEqual(space.id, own.id, "a space of its own");
-    await h.waitRow("the hub's space", repo(), (r) => r.space === space.id && r.selected);
-    assert.equal((await h.row(worktree())).space, own.id, "the worktree keeps its space");
-    assert.deepEqual(h.opened(), [t.ticketUrl], "nothing opened for the hub");
+      // Up to the hub; nothing to open in the browser; open its space.
+      for (let i = hubAt; i < at; i++) await h.key("alt+shift+Up");
+      await h.waitRow("the hub selected", repo(), (r) => r.selected);
+      await h.key("alt+shift+p", "alt+shift+t");
+      await h.key("alt+shift+o");
+      const space = await waitFor("the hub's space", () => h.spaceAt(repo()));
+      assert.notEqual(space.id, own.id, "a space of its own");
+      await h.waitRow(
+        "the hub's space",
+        repo(),
+        (r) => r.space === space.id && r.selected,
+      );
+      assert.equal(
+        (await h.row(worktree())).space,
+        own.id,
+        "the worktree keeps its space",
+      );
+      assert.deepEqual(h.opened(), [t.ticketUrl], "nothing opened for the hub");
 
-    // Back to the worktree's space, for the rest of the flow.
-    for (let i = hubAt; i < at; i++) await h.key("alt+shift+Down");
-    await h.waitRow("the worktree selected", worktree(), (r) => r.selected);
-    await h.key("alt+shift+o");
-    await waitFor("its space shown", async () => (await h.spaceAt(worktree()))?.active);
-    await h.waitRow("its row selected", worktree(), (r) => r.selected && r.space === own.id);
-    await h.assertNoErrors("after opening the hub");
-  });
+      // Back to the worktree's space, for the rest of the flow.
+      for (let i = hubAt; i < at; i++) await h.key("alt+shift+Down");
+      await h.waitRow("the worktree selected", worktree(), (r) => r.selected);
+      await h.key("alt+shift+o");
+      await waitFor(
+        "its space shown",
+        async () => (await h.spaceAt(worktree()))?.active,
+      );
+      await h.waitRow(
+        "its row selected",
+        worktree(),
+        (r) => r.selected && r.space === own.id,
+      );
+      await h.assertNoErrors("after opening the hub");
+    },
+  );
 
   scenario("the whole flow, from the sidebar's keys", async () => {
     const space = await h.spaceAt(worktree());
@@ -169,10 +209,22 @@ export function flow(t, { failures = false } = {}) {
     );
     if (t.readyWhen === "agent") {
       // Ready is there because the agent said pr=ready: without it, it goes.
-      assert.equal((await h.row(worktree())).agentDone, true, "the agent said pr=ready");
+      assert.equal(
+        (await h.row(worktree())).agentDone,
+        true,
+        "the agent said pr=ready",
+      );
       await h.sh("hc", ["label", terminal, "pr="]);
-      const r = await h.waitRow("Ready hidden without pr=ready", worktree(), (r) => !r.agentDone);
-      assert.equal(r.steps.some((s) => s.id === "ready"), false, "no Ready");
+      const r = await h.waitRow(
+        "Ready hidden without pr=ready",
+        worktree(),
+        (r) => !r.agentDone,
+      );
+      assert.equal(
+        r.steps.some((s) => s.id === "ready"),
+        false,
+        "no Ready",
+      );
       await h.sh("hc", ["label", terminal, "pr=ready"]);
       await h.waitRow("Ready back with pr=ready", worktree(), (r) =>
         r.steps.some((s) => s.id === "ready"),
@@ -182,7 +234,11 @@ export function flow(t, { failures = false } = {}) {
 
     // Its PR, in the browser.
     const prUrl = `https://github.com/${h.pr(t.branch).repo}/pull/${h.pr(t.branch).number}`;
-    const withPr = await h.waitRow("the PR's URL", worktree(), (r) => r.selected && r.prUrl);
+    const withPr = await h.waitRow(
+      "the PR's URL",
+      worktree(),
+      (r) => r.selected && r.prUrl,
+    );
     assert.equal(withPr.prUrl, prUrl);
     await h.key("alt+shift+p");
     await waitFor("the PR to open", () => h.opened().at(-1) === prUrl);
@@ -222,7 +278,11 @@ export function flow(t, { failures = false } = {}) {
     // Review comments -> Address comments.
     await h.demoCmd("comment", t.ref);
     if (failures) await h.demoCmd("fail-ci", t.ref); // the next CI run fails
-    const r = await h.waitRow("2 comments", worktree(), (r) => r.pr?.unresolved === 2);
+    const r = await h.waitRow(
+      "2 comments",
+      worktree(),
+      (r) => r.pr?.unresolved === 2,
+    );
     assert.deepEqual(
       r.steps.map((s) => s.label),
       ["Address 2 comments"],
@@ -274,7 +334,10 @@ export function flow(t, { failures = false } = {}) {
         r.steps.some((s) => s.id === "merge"),
       );
       assert.equal(r.pr.review, null, "no review required");
-      assert.deepEqual(r.steps.map((s) => s.id), ["merge"]);
+      assert.deepEqual(
+        r.steps.map((s) => s.id),
+        ["merge"],
+      );
       const merged = await h.step(worktree(), "merge");
       assert.equal(merged.last.phase, "done", merged.last.text);
       assert.equal(h.pr(t.branch).state, "MERGED");
@@ -283,7 +346,11 @@ export function flow(t, { failures = false } = {}) {
       // A review is required -> auto-merge on; approved -> it merges.
       assert.equal(pr.autoMerge, true, "auto-merge on");
       const r = await h.row(worktree());
-      assert.equal(r.steps.some((s) => s.id === "merge"), false, "no Merge awaiting review");
+      assert.equal(
+        r.steps.some((s) => s.id === "merge"),
+        false,
+        "no Merge awaiting review",
+      );
       await h.demoCmd("approve", t.ref);
     }
     await h.waitRow(
@@ -295,11 +362,17 @@ export function flow(t, { failures = false } = {}) {
 
     if (failures) {
       // Finish refuses while the worktree has uncommitted changes.
-      fs.appendFileSync(path.join(worktree(), "README.md"), "\nnot committed\n");
+      fs.appendFileSync(
+        path.join(worktree(), "README.md"),
+        "\nnot committed\n",
+      );
       const refused = await h.step(worktree(), "finish");
       assert.equal(refused.last?.phase, "failed", "Finish refused");
       assert.match(refused.last.text, /uncommitted changes/);
-      assert.ok((await h.worktrees(repo())).includes(worktree()), "worktree kept");
+      assert.ok(
+        (await h.worktrees(repo())).includes(worktree()),
+        "worktree kept",
+      );
       assert.ok(await h.spaceAt(worktree()), "space kept");
       await h.sh("git", ["-C", worktree(), "checkout", "--", "README.md"]);
     }
@@ -307,10 +380,21 @@ export function flow(t, { failures = false } = {}) {
     const done = await h.step(worktree(), "finish");
     if (!done.gone) assert.equal(done.last.phase, "done", done.last.text);
     await waitFor("its row to go", async () => !(await h.row(worktree())));
-    assert.equal((await h.worktrees(repo())).includes(worktree()), false, "worktree removed");
+    assert.equal(
+      (await h.worktrees(repo())).includes(worktree()),
+      false,
+      "worktree removed",
+    );
     assert.equal(fs.existsSync(worktree()), false, "worktree folder removed");
-    assert.equal(await h.branchExists(repo(), t.branch), false, "local branch deleted");
-    await waitFor("its space to close", async () => !(await h.spaceAt(worktree())));
+    assert.equal(
+      await h.branchExists(repo(), t.branch),
+      false,
+      "local branch deleted",
+    );
+    await waitFor(
+      "its space to close",
+      async () => !(await h.spaceAt(worktree())),
+    );
     await waitFor("the ticket to be done", () => t.ticketDone(h.state()));
     await h.assertNoErrors("after Finish");
   });

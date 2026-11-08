@@ -31,7 +31,8 @@ const made = new Map();
 /** @param {import("./config.js").Settings} [s] @returns {Tracker} */
 export function tracker(s = C) {
   const t = trackers[s.tracker];
-  if (!t) throw new Error(`unknown tracker "${s.tracker}" (use "jira" or "github")`);
+  if (!t)
+    throw new Error(`unknown tracker "${s.tracker}" (use "jira" or "github")`);
   const id = JSON.stringify(s, (k, v) => (k === "problem" ? undefined : v));
   if (!made.has(id)) made.set(id, t.create(s));
   return /** @type {Tracker} */ (made.get(id));

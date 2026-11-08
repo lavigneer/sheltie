@@ -13,7 +13,9 @@ export const fill = (template, values) =>
 // Calls to the APIs behind gh and jira go through `limits` below.
 /** @param {string} name @param {string[]} args @param {{ cwd?: string }} [opts] @returns {Promise<import("herdr").ExecResult>} */
 export const tool = (name, args, opts) =>
-  limits[name] ? limited(limits[name], name, args, opts) : run(name, args, opts);
+  limits[name]
+    ? limited(limits[name], name, args, opts)
+    : run(name, args, opts);
 
 const run = (name, args, opts) => exec(C.programs[name], args, opts);
 
@@ -45,7 +47,10 @@ async function limited(l, name, args, opts) {
       };
     const r = await run(name, args, opts);
     if (r.code !== 0 && RATE_LIMITED.test(`${r.stderr}\n${r.stdout}`)) {
-      l.backoff = Math.min(l.backoff ? l.backoff * 2 : BACKOFF_MS, MAX_BACKOFF_MS);
+      l.backoff = Math.min(
+        l.backoff ? l.backoff * 2 : BACKOFF_MS,
+        MAX_BACKOFF_MS,
+      );
       l.until = Date.now() + l.backoff;
     } else if (r.code === 0) l.backoff = 0;
     return r;

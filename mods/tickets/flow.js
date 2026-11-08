@@ -161,7 +161,9 @@ export function agentIn(space) {
       .filter((t) => t.labels?.agent)
       .map((t) => t.address),
   );
-  return here.find((p) => p.terminal && labelled.has(p.terminal))?.terminal ?? null;
+  return (
+    here.find((p) => p.terminal && labelled.has(p.terminal))?.terminal ?? null
+  );
 }
 
 // Whether the agent terminal in a space says its PR is done: it has the

@@ -16,7 +16,8 @@ import { Herdr, missingTools, RESULTS, waitFor } from "./herdr.mjs";
 
 const OUT = path.join(RESULTS, "shots");
 // The demo's row with the longest everything, and the most steps.
-const LONG = "customer-onboarding-and-billing-service/.claude/worktrees/WEB-106";
+const LONG =
+  "customer-onboarding-and-billing-service/.claude/worktrees/WEB-106";
 const LONG_STEPS = ["fix-ci", "address-comments"];
 // Long enough for a frame or two at the new size, zoom or theme.
 const SETTLE_MS = 1_200;
@@ -55,21 +56,41 @@ else {
   const look = async (win, sidebar, settings) => {
     await h.settings({ ...PLAIN, ...settings });
     await h.resize(...WINDOWS[win]);
-    await h.sh("herdr-app", ["do", "layout.resize", "--id", "sidebar", "--px", String(sidebar)]);
+    await h.sh("herdr-app", [
+      "do",
+      "layout.resize",
+      "--id",
+      "sidebar",
+      "--px",
+      String(sidebar),
+    ]);
     await settle();
   };
   const shot = (name) => h.shot(path.join(OUT, `${h.tracker}-${name}.png`));
 
-  before(async () => {
-    fs.rmSync(OUT, { recursive: true, force: true });
-    await h.start();
-    // The Work block taller than Spaces and Agents, so every demo row shows.
-    await h.sh("herdr-app", ["do", "layout.resize", "--id", "work-outline", "--weight", "4"]);
-  }, { timeout: 120_000 });
+  before(
+    async () => {
+      fs.rmSync(OUT, { recursive: true, force: true });
+      await h.start();
+      // The Work block taller than Spaces and Agents, so every demo row shows.
+      await h.sh("herdr-app", [
+        "do",
+        "layout.resize",
+        "--id",
+        "work-outline",
+        "--weight",
+        "4",
+      ]);
+    },
+    { timeout: 120_000 },
+  );
   after(() => h.stop(), { timeout: 60_000 });
 
   test("the Work sidebar at every size", { timeout: 180_000 }, async () => {
-    await waitFor("the sidebar's first scan", async () => (await h.report()).loaded);
+    await waitFor(
+      "the sidebar's first scan",
+      async () => (await h.report()).loaded,
+    );
     await h.waitRow("the long row's steps", long(), (r) =>
       LONG_STEPS.every((id) => r.steps.some((s) => s.id === id)),
     );
@@ -99,7 +120,9 @@ else {
       await look(win, 268, settings);
 
       await h.key("ctrl+shift+j");
-      await waitFor("the tickets popup", async () => (await h.status()).overlays.includes("tickets"));
+      await waitFor("the tickets popup", async () =>
+        (await h.status()).overlays.includes("tickets"),
+      );
       await settle();
       await shot(`tickets-${name}`);
       // The long ticket's screen (it has work, so Enter opens it).
@@ -110,15 +133,23 @@ else {
       await shot(`ticket-${name}`);
       await h.assertNoErrors(`showing the tickets popup ${name}`);
       await h.key("Escape");
-      await waitFor("the popup to close", async () => !(await h.status()).overlays.includes("tickets"));
+      await waitFor(
+        "the popup to close",
+        async () => !(await h.status()).overlays.includes("tickets"),
+      );
 
       await h.key("ctrl+shift+f");
-      await waitFor("the projects popup", async () => (await h.status()).overlays.includes("projects"));
+      await waitFor("the projects popup", async () =>
+        (await h.status()).overlays.includes("projects"),
+      );
       await settle();
       await shot(`projects-${name}`);
       await h.assertNoErrors(`showing the projects popup ${name}`);
       await h.key("Escape");
-      await waitFor("the popup to close", async () => !(await h.status()).overlays.includes("projects"));
+      await waitFor(
+        "the popup to close",
+        async () => !(await h.status()).overlays.includes("projects"),
+      );
     }
   });
 }

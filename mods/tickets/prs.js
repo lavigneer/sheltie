@@ -133,4 +133,3 @@ export async function mergePr(slug, number, { auto = false } = {}) {
     "gh pr merge",
   );
 }
-

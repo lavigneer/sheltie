@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { flow } from "./flow.mjs";
 
-const issue = (s) => s.issues.find((i) => i.repo === "acme/storage" && i.number === 5);
+const issue = (s) =>
+  s.issues.find((i) => i.repo === "acme/storage" && i.number === 5);
 
 flow({
   tracker: "github",
