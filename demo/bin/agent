@@ -48,10 +48,13 @@ handle() {
         title="$(state_jq -r --arg repo "$slug" --argjson n "${issue:-0}" '([.issues // [] | .[] | select(.repo == $repo and .number == $n) | .title] | first) // "demo change"')"
         body="${issue:+Closes #$issue}"
       fi
+      # Its CI is running from the start (ci_start below sets how it ends), so
+      # nobody sees it green before its first run.
       state_set --arg repo "$slug" --arg branch "$branch" --arg title "$title" --arg body "$body" '
         .prs += [{repo: $repo, number: ((([.prs[].number] | max) // 0) + 1), branch: $branch,
                   title: $title, body: $body, draft: true, review: "REVIEW_REQUIRED",
-                  checks: "SUCCESS", state: "OPEN", unresolved: 0}]'
+                  checks: "IN_PROGRESS", checksDoneAt: (now + 600), checksResult: "SUCCESS",
+                  state: "OPEN", unresolved: 0}]'
       echo "Opened a draft PR: $(state_jq -r --arg repo "$slug" --arg branch "$branch" "[.prs[] | select($pr_filter)][0] | \"https://github.com/\(.repo)/pull/\(.number)\"")"
     fi
     ci_start ".repo == \"$slug\" and .branch == \"$branch\""
