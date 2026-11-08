@@ -120,7 +120,7 @@ export function score(text, query) {
 
 // The local space already working in `dir`: its start folder, else any of its
 // terminals. Folders inside `except` don't count as in `dir` (a repo's main
-// checkout holds its worktrees: see hubExcept in data.js). A space started in
+// checkout holds its worktrees: see hubExcept in git.js). A space started in
 // a folder above `dir` or inside `except` belongs there, wherever its
 // terminals are: a hub's space is never one of its worktrees', nor the other
 // way round.

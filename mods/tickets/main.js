@@ -59,15 +59,13 @@ import {
   adhocBranch,
   branchFor,
   cloneRepo,
-  listTickets,
   listWorktrees,
   localRepos,
-  prLabel,
   repoRoot,
-  suggestRepos,
-  workFor,
   worktreePath,
-} from "./data.js";
+} from "./git.js";
+import { prLabel } from "./prs.js";
+import { listTickets, suggestRepos, workFor } from "./work.js";
 
 const REMEMBER = "tickets.repo"; // shared: ticket key -> repo slug or path
 

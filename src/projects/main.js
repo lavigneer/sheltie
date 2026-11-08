@@ -12,7 +12,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { exec, home, run, theme, props, closeOverlay } from "herdr";
 import { C, configReady } from "./config.js";
 import { basename, pool, score, spaceFor, moveKey } from "./lib.js";
-import { hubExcept, listWorktrees } from "./data.js";
+import { hubExcept, listWorktrees } from "./git.js";
 
 // Repos at exactly DEPTH below a root: <root>/<repo>/.git (a dir, or a file for
 // worktrees). Returns { repos, problems }: a root that couldn't be read (missing,

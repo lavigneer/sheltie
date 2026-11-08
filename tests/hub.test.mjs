@@ -4,7 +4,7 @@ import { afterEach, test } from "node:test";
 import { live } from "./herdr-stub.mjs";
 
 const { spaceFor } = await import("../src/lib.js");
-const { hubExcept, parseWorktrees } = await import("../src/data.js");
+const { hubExcept, parseWorktrees } = await import("../src/git.js");
 
 const repo = "/ws/app";
 const wt = `${repo}/.worktrees/issue-1`;

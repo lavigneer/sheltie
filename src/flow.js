@@ -27,13 +27,8 @@
 
 import { agents, panes, run, spaces, terminals } from "herdr";
 import { C, settingsOf } from "./config.js";
-import {
-  assertClean,
-  markReady,
-  mergePr,
-  prDetails,
-  removeWorktree,
-} from "./data.js";
+import { assertClean, removeWorktree } from "./git.js";
+import { markReady, mergePr, prDetails } from "./prs.js";
 import { basename, inside, spaceFor, tool } from "./lib.js";
 import { trackerOf } from "./tracker.js";
 
