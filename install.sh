@@ -2,15 +2,15 @@
 # Installs sheltie into a Herdr app home. Safe to run again (to
 # update): it only replaces its own mods and layout.
 #
-#   ./install.sh [--home DIR] [--claude-commands] [--force-commands]
+#   ./install.sh [--home DIR] [--skills] [--force-skills]
 #
 #   --home DIR          the Herdr app home (default: $HERDR_APP_HOME, else
 #                       ~/.config/herdr-app). Start Herdr once first: this adds
 #                       to the keys.json it writes.
-#   --claude-commands   also copy the Claude Code commands (/draft-pr,
-#                       /address-comments, /fix-ci, /resolve-conflicts) into
-#                       ~/.claude/commands,
-#                       keeping any that you changed (--force-commands: replace)
+#   --skills            also copy the agent skills (draft-pr, address-comments,
+#                       fix-ci, resolve-conflicts) into ~/.agents/skills and
+#                       ~/.claude/skills, keeping any that you changed
+#                       (--force-skills: replace)
 #
 # What it does:
 #   mods/*                  copied to <home>/mods/ (replacing earlier versions)
@@ -25,8 +25,8 @@
 set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 home="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
-claude=0
-force_commands=0
+skills=0
+force_skills=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -34,8 +34,8 @@ while [ $# -gt 0 ]; do
     home="${2:?--home needs a folder}"
     shift
     ;;
-  --claude-commands) claude=1 ;;
-  --force-commands) claude=1 force_commands=1 ;;
+  --skills | --claude-commands) skills=1 ;;
+  --force-skills | --force-commands) skills=1 force_skills=1 ;;
   -h | --help)
     sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
@@ -95,16 +95,20 @@ else
   echo "settings: $home/sheltie.json (new: edit it; config.example.json has every setting)"
 fi
 
-# Claude Code commands.
-if [ "$claude" = 1 ]; then
-  mkdir -p "$HOME/.claude/commands"
-  for f in "$here"/agents/claude/*.md; do
-    dest="$HOME/.claude/commands/$(basename "$f")"
-    if [ -e "$dest" ] && ! cmp -s "$f" "$dest" && [ "$force_commands" = 0 ]; then
-      echo "claude: kept your $(basename "$f") (differs; --force-commands replaces it)"
-    else
-      cp "$f" "$dest"
-      echo "claude: /$(basename "$f" .md)"
-    fi
+# Agent skills (agentskills.io format): ~/.agents/skills is read by most
+# agents (Codex, Gemini CLI, ...), ~/.claude/skills by Claude Code.
+if [ "$skills" = 1 ]; then
+  for dir in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
+    for src in "$here"/skills/*/; do
+      name="$(basename "$src")"
+      dest="$dir/$name"
+      if [ -e "$dest" ] && ! diff -rq "$src" "$dest" >/dev/null && [ "$force_skills" = 0 ]; then
+        echo "skills: kept your $dest (differs; --force-skills replaces it)"
+      else
+        mkdir -p "$dest"
+        cp -R "$src". "$dest"/
+        echo "skills: $dest"
+      fi
+    done
   done
 fi
