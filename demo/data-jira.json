@@ -30,6 +30,9 @@
         "review": "In Review",
         "done": "Resolved"
       }
+    },
+    "workflow": {
+      "readyWhen": "agent"
     }
   },
   "repos": [

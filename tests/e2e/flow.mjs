@@ -11,7 +11,9 @@ import { Herdr, missingTools, waitFor } from "./herdr.mjs";
 
 // t: { tracker, filter (typed in the popup), ref (for herdr-demo), repo,
 //      worktree (relative to ws/), branch, task (RegExp the agent's screen
-//      shows), ticketUrl (where its ticket opens), ticketDone(state) }
+//      shows), ticketUrl (where its ticket opens), ticketDone(state),
+//      readyWhen (the demo's workflow.readyWhen: "agent" checks that Ready
+//      waits for the agent's pr=ready label) }
 export function flow(t, { failures = false } = {}) {
   const missing = missingTools();
   if (missing.length) {
@@ -162,6 +164,17 @@ export function flow(t, { failures = false } = {}) {
         r.pr?.checks === "passed" &&
         r.steps.some((s) => s.id === "ready"),
     );
+    if (t.readyWhen === "agent") {
+      // Ready is there because the agent said pr=ready: without it, it goes.
+      assert.equal((await h.row(worktree())).agentDone, true, "the agent said pr=ready");
+      await h.sh("hc", ["label", terminal, "pr="]);
+      const r = await h.waitRow("Ready hidden without pr=ready", worktree(), (r) => !r.agentDone);
+      assert.equal(r.steps.some((s) => s.id === "ready"), false, "no Ready");
+      await h.sh("hc", ["label", terminal, "pr=ready"]);
+      await h.waitRow("Ready back with pr=ready", worktree(), (r) =>
+        r.steps.some((s) => s.id === "ready"),
+      );
+    }
     await h.assertNoErrors("after Draft PR");
 
     // Its PR, in the browser.

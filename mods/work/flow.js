@@ -7,7 +7,11 @@
 //   Draft PR / Fix CI / Address comments   sent to the space's agent
 //                                          (C.agent.steps: /draft-pr, /fix-ci,
 //                                          /address-comments by default)
-//   Ready     gh pr ready; with C.workflow.autoMerge "when-reviews-required",
+//   Ready     once CI is green and nothing is unresolved; with
+//             C.workflow.readyWhen "agent", also only once the agent has
+//             labelled its terminal pr=ready (`hc label "$HC_TERMINAL_ID"
+//             pr=ready`), a label cleared whenever an agent step is sent.
+//             gh pr ready; with C.workflow.autoMerge "when-reviews-required",
 //             auto-merge while reviews are still required, so it merges on
 //             approval and never at once; tracker step "review"
 //   Merge     when approved and green but auto-merge is off
@@ -41,8 +45,10 @@ export function stageOf(pr) {
 }
 
 // The next steps for a worktree: [{ id, label, kind: "agent" | "direct", confirm }].
-// `working`: its agent is busy, so nothing is sent to it.
-export function nextSteps(pr, { working = false } = {}) {
+// `working`: its agent is busy, so nothing is sent to it. `agentDone`: its
+// agent says the PR is done (see agentSaysDone), which Ready waits for with
+// C.workflow.readyWhen "agent".
+export function nextSteps(pr, { working = false, agentDone = false } = {}) {
   const stage = stageOf(pr);
   const steps = [];
   const agent = (id, label) => {
@@ -61,7 +67,8 @@ export function nextSteps(pr, { working = false } = {}) {
     else if (pr.review === "CHANGES_REQUESTED")
       agent("address-comments", "Address review");
   }
-  if (stage === "draft" && green && !pr.unresolved)
+  const vouched = C.workflow.readyWhen !== "agent" || agentDone;
+  if (stage === "draft" && green && !pr.unresolved && vouched)
     steps.push({ id: "ready", label: "Ready", kind: "direct" });
   if (stage === "approved" && green && !pr.autoMerge)
     steps.push({ id: "merge", label: "Merge", kind: "direct" });
@@ -95,12 +102,23 @@ export function agentIn(space) {
   return here.find((p) => labelled.has(p.terminal))?.terminal ?? null;
 }
 
+// Whether the agent terminal in a space says its PR is done: it has the
+// label pr=ready.
+export function agentSaysDone(space) {
+  const address = agentIn(space);
+  if (!address) return false;
+  return terminals().find((t) => t.address === address)?.labels?.pr === "ready";
+}
+
 // Sends a step's message to the worktree's agent, or starts one with it.
 async function tellAgent(w, id) {
   const text = C.agent.steps[id];
   const space = spaceFor(w.path);
   const address = agentIn(space);
   if (address) {
+    // The agent has more to do: Ready waits until it says pr=ready again.
+    // (Best effort: an agent that can't be labelled can't be sent to either.)
+    await tool("hc", ["label", address, "pr="]).catch(() => null);
     const r = await tool("hc", ["send", address, text]);
     if (r.code !== 0)
       throw new Error(
