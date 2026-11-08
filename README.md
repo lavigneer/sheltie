@@ -91,7 +91,7 @@ and `herdr-demo`.
 Rebind them in `<Herdr app home>/keys.json`. They also work from the command
 line (`herdr-app do work.step`), as do `work.refresh`, `work.report` (writes
 the sidebar state to `<Herdr app home>/work-report.json`) and `work.start`
-(starts the tickets `work-start.json` names, for agents; see
+(starts the tickets requested in `work-start/`, for agents; see
 [docs/workflow.md](docs/workflow.md#starting-tickets-from-an-agent-or-script)).
 More in [docs/workflow.md](docs/workflow.md#keyboard).
 

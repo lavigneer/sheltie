@@ -21,12 +21,20 @@ do, not which tool to do it with.
    "depends on", "blocked by", "after #12", or the tracker links it). Start
    now only the tickets whose dependencies are done (merged). Tell me the
    order and which ones wait.
-3. Start the ready ones in one go: write `<app home>/work-start.json`, then run
-   `herdr-app do work.start` (the Work sidebar must be showing, as in the
-   `sheltie` layout):
+3. Start the ready ones in one go: write a request to
+   `<app home>/work-start/<id>.json`, with an `<id>` of your own (e.g.
+   `$(date +%s)-$$`) so you never overwrite another caller's request. Write it
+   as `<id>.json.tmp` first and rename it, so it's never read half-written.
+   Then run `herdr-app do work.start` (the Work sidebar must be showing, as
+   in the `sheltie` layout):
 
-   ```json
-   { "tickets": ["WEB-142", "acme/web#12", { "ticket": "WEB-150", "repo": "acme/api" }] }
+   ```sh
+   dir="${HERDR_APP_HOME:-$HOME/.config/herdr-app}/work-start"
+   id="$(date +%s)-$$"
+   mkdir -p "$dir"
+   printf '%s\n' '{ "tickets": ["WEB-142", "acme/web#12", { "ticket": "WEB-150", "repo": "acme/api" }] }' >"$dir/$id.json.tmp"
+   mv "$dir/$id.json.tmp" "$dir/$id.json"
+   herdr-app do work.start
    ```
 
    Name a ticket by its key (`WEB-142`, `owner/repo#12`) or its label as the
@@ -35,11 +43,12 @@ do, not which tool to do it with.
    tracker's start step, and a space with the agent and the ticket as its
    first message. Tickets that already have a branch, worktree or PR are
    skipped.
-4. A few seconds later, read `<app home>/work-started.json`: `{ at, results }`
-   with one `{ ticket, status, repo?, folder?, why? }` per ticket (`status`
+4. Wait for `<dir>/<id>.result.json` (check every few seconds, for up to a few
+   minutes: requests run one at a time). It's `{ at, results }` with one
+   `{ ticket, status, repo?, folder?, why? }` per ticket (`status`
    `started`, `skipped` or `failed`), or `{ at, error }` if the request was
-   bad. Check that `at` is after you ran the command; if it isn't yet, wait
-   and read it again.
+   bad. Read it, then delete it. If `<id>.json` is still there after a
+   minute, the Work sidebar isn't showing: tell me.
 5. Waiting tickets: when I ask (or if you're still running), check which
    dependencies have merged (`herdr-app do work.report` writes the sidebar's
    rows, with their PRs, to `<app home>/work-report.json`) and start the

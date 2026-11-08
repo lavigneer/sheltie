@@ -35,3 +35,12 @@ export const setShared = (key, value) => {
   sharedDoc.set(key, value);
   return null;
 };
+export const readTextFile = async (path) => {
+  const fs = await import("node:fs/promises");
+  return fs.readFile(path, "utf8").catch(() => null);
+};
+export const writeTextFile = async (path, text) => {
+  const fs = await import("node:fs/promises");
+  await fs.writeFile(path, text);
+  return null;
+};

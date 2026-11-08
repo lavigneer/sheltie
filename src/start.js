@@ -3,7 +3,15 @@
 // by the tickets popup (Enter) and the Work sidebar's work.start command (for
 // agents and scripts).
 
-import { notify, run, setShared, shared } from "herdr";
+import {
+  exec,
+  notify,
+  readTextFile,
+  run,
+  setShared,
+  shared,
+  writeTextFile,
+} from "herdr";
 import { C } from "./config.js";
 import { addWorktree, branchFor, cloneRepo, localRepos } from "./git.js";
 import { fill, firstLine, spaceFor } from "./lib.js";
@@ -192,4 +200,49 @@ export async function startRequested(request) {
   }
   openSpaces(spaces);
   return results;
+}
+
+const DAY_MIN = "1440"; // results nobody collected are removed after a day
+
+// work.start's queue, <dir> (<app home>/work-start): each request is its own
+// <id>.json, so callers never overwrite each other (write it as <id>.json.tmp
+// and rename it, so it's never read half-written). Handles every request
+// waiting, oldest first, one at a time (run it through serial(), so two
+// work.starts never race on a ticket): removes it, starts its tickets and
+// writes <id>.result.json, { at, results } or { at, error }, for the caller
+// to read and remove.
+/** @param {string} dir @param {(request: unknown) => Promise<unknown[]>} [start] */
+export async function drainRequests(dir, start = startRequested) {
+  await exec("find", [
+    dir,
+    "-name",
+    "*.result.json",
+    "-mmin",
+    `+${DAY_MIN}`,
+    "-delete",
+  ]);
+  const ls = await exec("ls", ["-1tr", dir]);
+  const ids = ls.stdout
+    .split("\n")
+    .filter((f) => f.endsWith(".json") && !f.endsWith(".result.json"))
+    .map((f) => f.slice(0, -".json".length));
+  for (const id of ids) {
+    const file = `${dir}/${id}.json`;
+    const text = await readTextFile(file);
+    await exec("rm", ["-f", file]);
+    /** @type {{ at: number, results?: unknown[], error?: string }} */
+    const out = { at: Date.now() };
+    try {
+      if (text == null) throw new Error(`couldn't read ${file}`);
+      out.results = await start(JSON.parse(text));
+    } catch (e) {
+      out.error = `${e?.message ?? e}`;
+      notify({ title: "work.start failed", body: out.error, level: "error" });
+    }
+    await writeTextFile(
+      `${dir}/${id}.result.json`,
+      `${JSON.stringify(out, null, 2)}\n`,
+      null,
+    );
+  }
 }

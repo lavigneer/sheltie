@@ -24,3 +24,32 @@ test("ticketNamed matches a key, or a label only when it's unique", () => {
   assert.equal(ticketNamed("#12", [a, b, c]), null);
   assert.equal(ticketNamed("WEB-9", [a]), null);
 });
+
+test("drainRequests handles each request once and leaves its result", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const { drainRequests } = await import("../src/start.js");
+  const dir = fs.mkdtempSync(`${os.tmpdir()}/work-start-`);
+  fs.writeFileSync(`${dir}/a.json`, '{"tickets":["WEB-1"]}');
+  fs.writeFileSync(`${dir}/b.json`, "not json");
+  fs.writeFileSync(`${dir}/c.json.tmp`, "{}"); // still being written
+  fs.writeFileSync(`${dir}/old.result.json`, "{}");
+  const old = new Date(Date.now() - 2 * 86_400_000);
+  fs.utimesSync(`${dir}/old.result.json`, old, old);
+  const seen = [];
+  await drainRequests(dir, async (r) => {
+    seen.push(r);
+    return [{ ticket: "WEB-1", status: "started" }];
+  });
+  assert.deepEqual(seen, [{ tickets: ["WEB-1"] }]);
+  assert.deepEqual(fs.readdirSync(dir).sort(), [
+    "a.result.json",
+    "b.result.json",
+    "c.json.tmp",
+  ]);
+  const a = JSON.parse(fs.readFileSync(`${dir}/a.result.json`, "utf8"));
+  assert.deepEqual(a.results, [{ ticket: "WEB-1", status: "started" }]);
+  const b = JSON.parse(fs.readFileSync(`${dir}/b.result.json`, "utf8"));
+  assert.match(b.error, /JSON/);
+  fs.rmSync(dir, { recursive: true });
+});

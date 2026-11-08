@@ -28,8 +28,8 @@
 // nothing to open).
 // work.refresh refreshes everything now, like ↻. work.report writes what the
 // sidebar shows to <app home>/work-report.json, for scripts and tests.
-// work.start starts the tickets <app home>/work-start.json names, like the
-// tickets popup (for agents and scripts; see startFromFile).
+// work.start starts the tickets the requests in <app home>/work-start/ name,
+// like the tickets popup (for agents and scripts; see drainRequests).
 //
 // State:
 //   git refresh, details   each runs one at a time; a request during a run
@@ -65,7 +65,7 @@ import { agentIn, agentSaysDone, nextSteps, prLabel, runStep } from "./flow.js";
 import { hubExcept, keyOfBranch, localRepos, repoState } from "./git.js";
 import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
 import { prDetails } from "./prs.js";
-import { startRequested } from "./start.js";
+import { drainRequests } from "./start.js";
 import { trackerOf } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
 import { Cache, serial } from "./watch.js";
@@ -130,6 +130,15 @@ export default class Work extends View {
     cx.timer.every(GIT_MS, (cx) => this.refresh(cx));
     // Ticket/PR lookups that are due, between git scans (only due ones run).
     cx.timer.every(DUE_CHECK_MS, (cx) => this.details(cx));
+    // work.start: every request waiting in <app home>/work-start (see
+    // drainRequests, start.js), one run at a time.
+    this.starts = serial(async (cx) => {
+      await configReady();
+      await drainRequests(`${appHome()}/work-start`).catch((e) =>
+        console.error(`work.start: ${e?.message ?? e}`),
+      );
+      this.refresh(cx, true);
+    });
     this.costs = serial(async (cx) => {
       await configReady();
       this.usage = await usageGroups().catch((e) => {
@@ -239,7 +248,7 @@ export default class Work extends View {
       if (row) this.openTicket(cx, row.w);
     } else if (c === "refresh") this.refresh(cx, true);
     else if (c === "report") this.report(cx, rows, at, step);
-    else if (c === "start") this.startFromFile(cx);
+    else if (c === "start") this.starts(cx);
     else console.error(`work: unknown command ${c}`);
   }
 
@@ -263,32 +272,6 @@ export default class Work extends View {
           writeTextFile(file, `${JSON.stringify(out, null, 2)}\n`, old),
         )
         .catch((e) => console.error(`work.report: ${e?.message ?? e}`));
-    });
-  }
-
-  // work.start: starts the tickets <app home>/work-start.json asks for (see
-  // startRequested, start.js) and writes what happened to each to
-  // <app home>/work-started.json: { at, results } or { at, error }.
-  startFromFile(cx) {
-    const dir = appHome();
-    cx.spawn(async (cx) => {
-      const out = { at: Date.now() };
-      try {
-        await configReady();
-        const text = await readTextFile(`${dir}/work-start.json`);
-        if (text == null) throw new Error(`no ${dir}/work-start.json`);
-        out.results = await startRequested(JSON.parse(text));
-      } catch (e) {
-        out.error = `${e?.message ?? e}`;
-        notify({ title: "work.start failed", body: out.error, level: "error" });
-      }
-      const file = `${dir}/work-started.json`;
-      await readTextFile(file)
-        .then((old) =>
-          writeTextFile(file, `${JSON.stringify(out, null, 2)}\n`, old),
-        )
-        .catch((e) => console.error(`work.start: ${e?.message ?? e}`));
-      this.refresh(cx, true);
     });
   }
 
