@@ -3,9 +3,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly, the end-to-end tests against the newest Herdr in nixos-unstable,
+  # so changes in Herdr's API show up before users hit them.
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
 
 jobs:
   test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,3 +28,31 @@ jobs:
           git config --global user.email ci@example.invalid
           git config --global init.defaultBranch main
           npm test
+
+  # The real Herdr with the mods, on throwaway demos (npm run e2e), on Xvfb.
+  # Herdr comes from the nixpkgs in flake.lock; the scheduled run uses the
+  # newest nixos-unstable instead.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Use the newest nixpkgs (scheduled run)
+        if: github.event_name == 'schedule'
+        run: nix flake update nixpkgs
+      - name: Herdr version
+        run: nix develop .#e2e -c herdr-app --version
+      - name: End-to-end tests
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.invalid
+          git config --global init.defaultBranch main
+          nix develop .#e2e -c npm run e2e
+      - name: Screenshots and logs of the failed steps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: e2e-results/
+          if-no-files-found: ignore
