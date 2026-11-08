@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
+const AGENT_STEPS = ["draft-pr", "fix-ci", "address-comments"];
 export const root = path.resolve(import.meta.dirname, "../..");
 const run = promisify(execFile);
 const NEEDS = ["herdr-app", "hc", "Xvfb", "xdotool", "jq", "git"];
@@ -302,13 +303,15 @@ export class Herdr {
 
   // Runs the sidebar step `id` on `worktree`'s row with the keys: waits for
   // the row to be selected (it follows the focused space) and to offer the
-  // step, picks it with Alt+Shift+Right, then Alt+Shift+Enter (twice for a
+  // step (an agent step: and to know the space's agent, or the step would
+  // start another one), picks it with Alt+Shift+Right, then Alt+Shift+Enter (twice for a
   // step that asks to confirm). Returns once the step has finished.
   async step(worktree, id) {
     const before = await this.waitRow(
       `${worktree} selected, offering ${id}`,
       worktree,
-      (r) => r.selected && r.steps.some((s) => s.id === id),
+      (r) =>
+        r.selected && r.steps.some((s) => s.id === id) && (!AGENT_STEPS.includes(id) || r.agent),
     );
     let row = before;
     for (let i = 0; row.steps[row.step]?.id !== id; i++) {

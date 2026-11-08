@@ -58,7 +58,7 @@ import {
   repoState,
   unresolvedThreads,
 } from "./data.js";
-import { nextSteps, runStep } from "./flow.js";
+import { agentIn, nextSteps, runStep } from "./flow.js";
 import { tracker } from "./tracker.js";
 
 const GIT_MS = 30_000;
@@ -212,8 +212,8 @@ export default class Work extends View {
   }
 
   // What the sidebar shows, as JSON in <app home>/work-report.json: the shown
-  // rows with their PR, next steps and last step, and which row and step the
-  // keys would act on.
+  // rows with their space's agent (where agent steps go), PR, next steps and
+  // last step, and which row and step the keys would act on.
   report(rows, at, step) {
     const out = {
       at: Date.now(),
@@ -230,6 +230,7 @@ export default class Work extends View {
           key: r.w.key ?? null,
           repo: r.w.repo.slug ?? r.w.repo.name,
           space: r.space?.id ?? null,
+          agent: agentIn(r.space),
           selected: i === at,
           step: i === at ? step : null,
           steps: r.steps.map((s) => ({ id: s.id, label: s.label })),

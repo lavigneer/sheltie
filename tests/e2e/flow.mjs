@@ -77,6 +77,8 @@ export function flow(t, { failures = false } = {}) {
     const terminal = space.tabs[0].terminals[0].terminal;
     await waitFor("the agent to get its task", async () => t.task.test(await h.screen(terminal)));
     assert.equal((await h.status()).overlays.includes("tickets"), false, "the popup closed");
+    // Agent steps go to that terminal (not to a new agent).
+    await h.waitRow("its agent", worktree(), (r) => r.agent === terminal);
     t.started?.(h.state());
     await h.assertNoErrors("after starting the ticket");
   });
