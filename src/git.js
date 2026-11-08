@@ -194,8 +194,14 @@ export function adhocBranch(description, repo) {
   return slug ? fill(settingsOf(repo).branch, { ref: slug, key: slug }) : null;
 }
 
-export const worktreePath = (repo, branch) =>
-  `${repo.path}/${C.worktreeDir}/${branch.split("/").pop()}`;
+// Where `branch`'s worktree goes: <repo>/<worktreeDir>/<its last part>. A
+// branch whose last part would step out of worktreeDir ("", ".", "..") throws.
+export function worktreePath(repo, branch) {
+  const name = branch.split("/").pop() ?? "";
+  if (name === "" || name === "." || name === "..")
+    throw new Error(`no worktree directory for branch "${branch}"`);
+  return `${repo.path}/${C.worktreeDir}/${name}`;
+}
 
 // Adds a worktree for `branch` and returns its path. Where the branch comes from:
 //   1. a local branch of that name;
