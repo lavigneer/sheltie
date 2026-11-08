@@ -3,7 +3,7 @@
 // from the tracker in use (tracker.js).
 
 import { exec } from "herdr";
-import { C } from "./config.js";
+import { C, REPO_FILE, readSettings, repoSettings, settingsOf } from "./config.js";
 import {
   NOT_FOUND,
   basename,
@@ -13,7 +13,7 @@ import {
   pool,
   tool,
 } from "./lib.js";
-import { tracker } from "./tracker.js";
+import { tracker, trackerOf } from "./tracker.js";
 
 const git = (cwd, ...args) => tool("git", args, { cwd });
 
@@ -30,7 +30,10 @@ const sameSlug = (a, b) =>
 
 // --- Repos ------------------------------------------------------------------
 
-// Local repos under the roots (main checkouts): [{ path, name, slug }].
+// Local repos under the roots (main checkouts): [{ path, name, slug, settings,
+// tracker, problem }]. `settings` (see config.js settingsOf) and `tracker` are
+// set when the repo's REPO_FILE sets any of REPO_SETTINGS; `problem` says
+// what's wrong with that file.
 export async function localRepos() {
   const paths = new Set();
   for (const root of C.roots) {
@@ -57,10 +60,56 @@ export async function localRepos() {
         path,
         name: basename(path),
         slug: r?.code === 0 ? slugOf(r.stdout) : null,
+        ...(await ownSettings(path)),
       };
     }),
   );
   return repos.filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function ownSettings(repoPath) {
+  const file = `${repoPath}/${REPO_FILE}`;
+  const read = await readSettings(file);
+  const { settings, problem } = repoSettings(read.over, file);
+  try {
+    return {
+      settings,
+      tracker: settings ? tracker(settings) : null,
+      problem: read.problem ?? problem,
+    };
+  } catch (e) {
+    return { settings: null, tracker: null, problem: `${file}: ${e.message}` };
+  }
+}
+
+// Your tickets from every tracker in use: the global one, then each one repos
+// pick for themselves. Each ticket carries its `tracker` and `homes`: the repos
+// whose own tracker listed it. A repo's tracker that fails leaves its tickets
+// out; the global one failing throws. `repos` may be a promise (of
+// localRepos()): the global tracker is asked without waiting for it.
+export async function listTickets(repos) {
+  const global = tracker();
+  const globalList = global.list();
+  globalList.catch(() => {}); // awaited below, unless the repo scan fails first
+  const sources = new Map([[global, []]]);
+  for (const r of await repos)
+    if (r.tracker && r.tracker !== global)
+      sources.set(r.tracker, [...(sources.get(r.tracker) ?? []), r]);
+  const own = [...sources].slice(1);
+  const [first, ...rest] = await Promise.all([
+    globalList,
+    ...own.map(([t]) => t.list().catch(() => [])),
+  ]);
+  const out = new Map();
+  [[global, [], first], ...own.map(([t, homes], i) => [t, homes, rest[i]])]
+    .forEach(([t, homes, tickets]) => {
+      for (const ticket of tickets) {
+        const seen = out.get(ticket.key);
+        if (seen) seen.homes.push(...homes);
+        else out.set(ticket.key, { ...ticket, tracker: t, homes: [...homes] });
+      }
+    });
+  return [...out.values()];
 }
 
 // The main checkout of the repo containing `dir` (also from inside a worktree), or null.
@@ -165,23 +214,23 @@ export async function repoState(repo) {
 
 // The tracker's key for a branch in `repo`, or null.
 export const keyOfBranch = (branch, repo) =>
-  tracker().keysIn(branch, repo?.slug ?? null)[0] ?? null;
+  trackerOf(repo).keysIn(branch, repo?.slug ?? null)[0] ?? null;
 
 // --- Worktrees --------------------------------------------------------------
 
-// A ticket's branch (C.branch, e.g. "{ref}" or "me/{ref}").
-export const branchFor = (ticket) =>
-  fill(C.branch, { ref: ticket.ref, key: ticket.key });
+// A ticket's branch in `repo` (its `branch` setting, e.g. "{ref}" or "me/{ref}").
+export const branchFor = (ticket, repo) =>
+  fill(settingsOf(repo).branch, { ref: ticket.ref, key: ticket.key });
 
-// An ad-hoc branch (not tied to a ticket): C.branch with a short kebab-case
+// An ad-hoc branch (not tied to a ticket) in `repo`: its `branch` setting with a short kebab-case
 // slug of the description as its {ref}, or null when nothing's left of it.
-export function adhocBranch(description) {
+export function adhocBranch(description, repo) {
   const slug = description
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .slice(0, 40)
     .replace(/^-+|-+$/g, "");
-  return slug ? fill(C.branch, { ref: slug, key: slug }) : null;
+  return slug ? fill(settingsOf(repo).branch, { ref: slug, key: slug }) : null;
 }
 
 export const worktreePath = (repo, branch) =>
@@ -457,11 +506,11 @@ export function prLabel(pr) {
 
 // --- Putting it together ----------------------------------------------------
 
-// Every piece of work for each ticket key: [{ repo, branch, worktree, pr }],
-// from local branches/worktrees whose name has the key and PRs the tracker
-// links to it.
-export async function workFor(keys, repos, { prs = true } = {}) {
-  const t = tracker();
+// Every piece of work for each ticket (from listTickets), by key: [{ repo,
+// branch, worktree, pr }], from local branches/worktrees whose name has the
+// key and PRs the ticket's tracker links to it.
+export async function workFor(tickets, repos, { prs = true } = {}) {
+  const keys = tickets.map((t) => t.key);
   const states = await pool(
     repos
       .filter((r) => r.path)
@@ -486,7 +535,7 @@ export async function workFor(keys, repos, { prs = true } = {}) {
     else list.push(item);
   };
   for (const s of states.filter(Boolean)) {
-    const mentioned = (branch) => t.keysIn(branch, s.repo.slug);
+    const mentioned = (branch) => trackerOf(s.repo).keysIn(branch, s.repo.slug);
     for (const w of s.worktrees)
       for (const key of mentioned(w.branch))
         add(key, {
@@ -502,7 +551,14 @@ export async function workFor(keys, repos, { prs = true } = {}) {
   if (!prs) return work;
 
   // PRs: the branches we found, plus any PR the tracker links to the key.
-  const linked = await t.linkedPRs(keys, repos).catch(() => new Map());
+  const byTracker = new Map();
+  for (const t of tickets)
+    byTracker.set(t.tracker, [...(byTracker.get(t.tracker) ?? []), t.key]);
+  const linked = new Map();
+  for (const found of await Promise.all(
+    [...byTracker].map(([t, ks]) => t.linkedPRs(ks, repos).catch(() => new Map())),
+  ))
+    for (const [k, v] of found) linked.set(k, v);
   const lookups = [];
   for (const [key, items] of work) {
     for (const item of items)
@@ -537,7 +593,8 @@ export async function workFor(keys, repos, { prs = true } = {}) {
 }
 
 // Where new work on a ticket should go: [{ repo, why }] best first (may be
-// empty): the repo last used for it, repoRules matching its component or label,
+// empty): the repo last used for it, the repos whose own tracker listed it
+// (ticket.homes), repoRules matching its component or label,
 // what the tracker suggests (GitHub: the issue's repo), repoRules matching its
 // project (only when no component/label rule matched), the current repo.
 export function suggestRepos(ticket, repos, here, remembered) {
@@ -554,6 +611,7 @@ export function suggestRepos(ticket, repos, here, remembered) {
       out.push({ repo, why });
   };
   if (remembered) push(findRepo(remembered, repos), "last used");
+  for (const r of ticket.homes ?? []) push(r, REPO_FILE);
   const has = (list, v) =>
     v != null &&
     list.some((x) => String(x).toLowerCase() === String(v).toLowerCase());
@@ -567,7 +625,7 @@ export function suggestRepos(ticket, repos, here, remembered) {
       findRepo(r.repo, repos),
       r.component ? `component ${r.component}` : `label ${r.label}`,
     );
-  for (const s of tracker().suggest(ticket))
+  for (const s of (ticket.tracker ?? tracker()).suggest(ticket))
     push(findRepo(s.target, repos), s.why);
   if (!specific.length)
     for (const r of C.repoRules)

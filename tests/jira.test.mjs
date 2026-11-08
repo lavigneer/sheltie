@@ -66,7 +66,7 @@ test("PR details, review threads, check results", async () => {
 });
 
 test("workFor: worktrees, branches and PRs per ticket, fork PRs included", async () => {
-  const work = await D.workFor(["WEB-101", "WEB-103", "WEB-104"], await D.localRepos());
+  const work = await D.workFor(["WEB-101", "WEB-103", "WEB-104"].map((key) => ({ key, tracker: T })), await D.localRepos());
   const w101 = work.get("WEB-101");
   assert.ok(w101.some((i) => i.worktree && i.pr?.number === 12));
   assert.ok(w101.some((i) => i.branch === "me/WEB-101-retry-backoff"));
@@ -149,4 +149,61 @@ test("a conflicting PR: mergeable CONFLICTING, no checks, no auto-merge", async 
   });
   writeState(s);
   assert.equal((await D.prDetails("acme/docs", 56)).state, "OPEN");
+});
+
+test("a repo's own .sheltie.json: its tracker lists its tickets and names its branches", async () => {
+  const s = state();
+  s.issues = [{ repo: "acme/storage", number: 77, title: "Own tracker", state: "OPEN", labels: [] }];
+  writeState(s);
+  const storage = (await D.localRepos()).find((r) => r.name === "storage");
+  fs.writeFileSync(
+    `${storage.path}/.sheltie.json`,
+    JSON.stringify({
+      tracker: "github",
+      github: { repos: ["acme/storage"] },
+      branch: "x/{ref}",
+      workflow: { confirmMerge: false },
+      roots: ["/elsewhere"],
+    }),
+  );
+  try {
+    const repos = await D.localRepos();
+    const own = repos.find((r) => r.name === "storage");
+    assert.equal(own.tracker.name, "github");
+    assert.match(own.problem, /roots can only be set in sheltie\.json/);
+    assert.equal(own.settings.workflow.confirmMerge, false);
+    assert.equal(own.settings.workflow.autoMerge, C.workflow.autoMerge);
+    assert.equal(repos.find((r) => r.name === "web-app").tracker, null);
+
+    const tickets = await D.listTickets(repos);
+    const issue = tickets.find((t) => t.key === "acme/storage#77");
+    assert.equal(issue.tracker, own.tracker);
+    assert.deepEqual(issue.homes, [own]);
+    assert.ok(tickets.some((t) => t.key === "WEB-101" && t.tracker === T));
+    assert.equal(D.suggestRepos(issue, repos, null, null)[0].why, ".sheltie.json");
+
+    assert.equal(D.keyOfBranch("issue-77", own), "acme/storage#77");
+    assert.equal(D.branchFor(issue, own), "x/issue-77");
+    assert.equal(D.branchFor(issue, null), `me/issue-77`);
+    assert.equal(D.adhocBranch("Tidy up", own), "x/tidy-up");
+    const { nextSteps } = await import("../src/flow.js");
+    const pr = { state: "OPEN", draft: false, review: "APPROVED", checks: "passed", mergeable: "MERGEABLE", unresolved: 0 };
+    assert.equal(nextSteps(pr, { repo: own }).find((s) => s.id === "merge").confirm, false);
+    assert.equal(nextSteps(pr).find((s) => s.id === "merge").confirm, true);
+    assert.equal(D.keyOfBranch("me/WEB-101", repos.find((r) => r.name === "web-app")), "WEB-101");
+  } finally {
+    fs.rmSync(`${storage.path}/.sheltie.json`);
+  }
+});
+
+test("a repo's .sheltie.json that isn't JSON: the global tracker, and a problem", async () => {
+  const storage = (await D.localRepos()).find((r) => r.name === "storage");
+  fs.writeFileSync(`${storage.path}/.sheltie.json`, "{");
+  try {
+    const own = (await D.localRepos()).find((r) => r.name === "storage");
+    assert.equal(own.tracker, null);
+    assert.match(own.problem, /\.sheltie\.json: .*using the defaults/);
+  } finally {
+    fs.rmSync(`${storage.path}/.sheltie.json`);
+  }
 });

@@ -70,7 +70,7 @@ import {
   unresolvedThreads,
 } from "./data.js";
 import { agentIn, agentSaysDone, nextSteps, runStep } from "./flow.js";
-import { tracker } from "./tracker.js";
+import { trackerOf } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
 
 const GIT_MS = 30_000;
@@ -228,6 +228,7 @@ export default class Work extends View {
     return nextSteps(entry.value, {
       working: space?.status === "working",
       agentDone: agentSaysDone(space),
+      repo: w.repo,
     });
   }
 
@@ -375,6 +376,7 @@ export default class Work extends View {
       },
       worktrees: s.worktrees.map((w) => ({
         ...w,
+        repo: s.repo,
         key: keyOfBranch(w.branch, s.repo),
       })),
     }));
@@ -389,9 +391,10 @@ export default class Work extends View {
     const all = this.groups.flatMap((g) =>
       g.worktrees.map((w) => ({ ...w, repo: g.repo })),
     );
-    const keys = [...new Set(all.map((w) => w.key).filter(Boolean))].filter(
-      (k) => due(this.tickets.get(k), force, TICKET_MS, now),
-    );
+    // Each key once, with the repo whose tracker it's from.
+    const keys = [
+      ...new Map(all.filter((w) => w.key).map((w) => [w.key, w.repo])),
+    ].filter(([k]) => due(this.tickets.get(k), force, TICKET_MS, now));
     const prs = all.filter((w) => {
       const entry = this.prs.get(w.path);
       const pr = entry?.value;
@@ -408,8 +411,8 @@ export default class Work extends View {
     });
     await Promise.all([
       pool(
-        keys.map((key) => async () => {
-          await lookup(this.tickets, key, () => tracker().view(key));
+        keys.map(([key, repo]) => async () => {
+          await lookup(this.tickets, key, () => trackerOf(repo).view(key));
           cx.notify();
         }),
       ),
@@ -593,7 +596,7 @@ export default class Work extends View {
         name: w.hub
           ? w.repo.name
           : w.key
-            ? tracker().labelOf(w.key)
+            ? trackerOf(w.repo).labelOf(w.key)
             : w.branch.split("/").pop(),
         folder: w.path,
         argv: C.agent.argv,
@@ -609,7 +612,7 @@ export default class Work extends View {
 
   // Where `w`'s ticket is in the browser; null when its branch isn't a ticket.
   async ticketUrl(w) {
-    return this.isTicket(w) ? await tracker().url(w.key) : null;
+    return this.isTicket(w) ? await trackerOf(w.repo).url(w.key) : null;
   }
 
   // Opens `w`'s PR in the browser; without one, says so.
@@ -636,14 +639,14 @@ export default class Work extends View {
       const url = await this.ticketUrl(w).catch(() => null);
       if (url) return openUrl(url);
       notify({
-        title: `${this.who(w)}: ${this.isTicket(w) ? `no link for ${tracker().labelOf(w.key)}` : "not a ticket"}`,
+        title: `${this.who(w)}: ${this.isTicket(w) ? `no link for ${trackerOf(w.repo).labelOf(w.key)}` : "not a ticket"}`,
         level: "info",
       });
     });
   }
 
   who(w) {
-    return w.key ? tracker().labelOf(w.key) : basename(w.path);
+    return w.key ? trackerOf(w.repo).labelOf(w.key) : basename(w.path);
   }
 
   render(cx) {
@@ -855,13 +858,13 @@ export default class Work extends View {
       const title = w.hub
         ? (w.branch ?? "detached")
         : isTicket
-          ? tracker().labelOf(w.key)
+          ? trackerOf(w.repo).labelOf(w.key)
           : w.branch;
       const sub = ticket
         ? ticket.summary
         : isTicket
           ? entry?.state === "failed"
-            ? `${w.branch} · ${tracker().name} unreachable`
+            ? `${w.branch} · ${trackerOf(w.repo).name} unreachable`
             : w.branch
           : "";
       const cost = this.costOf(w);

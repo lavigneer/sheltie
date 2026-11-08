@@ -26,7 +26,7 @@
 //             unless other work on the ticket is still open
 
 import { agents, panes, run, spaces, terminals } from "herdr";
-import { C } from "./config.js";
+import { C, settingsOf } from "./config.js";
 import {
   assertClean,
   markReady,
@@ -35,7 +35,7 @@ import {
   removeWorktree,
 } from "./data.js";
 import { basename, inside, spaceFor, tool } from "./lib.js";
-import { tracker } from "./tracker.js";
+import { trackerOf } from "./tracker.js";
 
 const AGENT_STEPS = [
   "draft-pr",
@@ -58,22 +58,26 @@ export function stageOf(pr) {
 // Whether a PR is offered Merge: open, ready, CI passed (not failed, pending
 // or missing) on a PR GitHub says can merge, nothing unresolved, auto-merge
 // off, and approved, or needing no review at all (a repo without required
-// reviews: reviewDecision is empty) unless C.workflow.mergeWithoutReview is
-// false.
-export function canMerge(pr) {
+// reviews: reviewDecision is empty) unless the workflow's mergeWithoutReview
+// is false. `workflow`: the repo's (settingsOf(repo).workflow).
+export function canMerge(pr, workflow = C.workflow) {
   const stage = stageOf(pr);
   if (stage !== "approved" && stage !== "in-review") return false;
   if (pr.checks !== "passed" || pr.mergeable !== "MERGEABLE") return false;
   if (pr.unresolved > 0 || pr.autoMerge) return false;
   if (pr.review === "APPROVED") return true;
-  return pr.review === null && C.workflow.mergeWithoutReview !== false;
+  return pr.review === null && workflow.mergeWithoutReview !== false;
 }
 
 // The next steps for a worktree: [{ id, label, kind: "agent" | "direct", confirm }].
 // `working`: its agent is busy, so nothing is sent to it. `agentDone`: its
 // agent says the PR is done (see agentSaysDone), which Ready waits for with
-// C.workflow.readyWhen "agent".
-export function nextSteps(pr, { working = false, agentDone = false } = {}) {
+// readyWhen "agent". `repo`: whose workflow settings apply (settingsOf).
+export function nextSteps(
+  pr,
+  { working = false, agentDone = false, repo = null } = {},
+) {
+  const { workflow } = settingsOf(repo);
   const stage = stageOf(pr);
   const steps = [];
   const agent = (id, label) => {
@@ -100,17 +104,17 @@ export function nextSteps(pr, { working = false, agentDone = false } = {}) {
     else if (pr.review === "CHANGES_REQUESTED")
       agent("address-comments", "Address review");
   }
-  const vouched = C.workflow.readyWhen !== "agent" || agentDone;
+  const vouched = workflow.readyWhen !== "agent" || agentDone;
   if (stage === "draft" && green && !pr.unresolved && vouched)
     steps.push({ id: "ready", label: "Ready", kind: "direct" });
-  if (canMerge(pr))
+  if (canMerge(pr, workflow))
     steps.push({
       id: "merge",
       label: "Merge",
       kind: "direct",
-      confirm: C.workflow.confirmMerge !== false,
+      confirm: workflow.confirmMerge !== false,
     });
-  const confirm = C.workflow.confirmFinish !== false;
+  const confirm = workflow.confirmFinish !== false;
   if (stage === "merged")
     steps.push({ id: "finish", label: "Finish", kind: "direct", confirm });
   if (stage === "closed")
@@ -172,7 +176,7 @@ async function tellAgent(w, id) {
     });
   else
     run("space.new", {
-      name: w.key ? tracker().labelOf(w.key) : basename(w.path),
+      name: w.key ? trackerOf(w.repo).labelOf(w.key) : basename(w.path),
       folder: w.path,
       argv: C.agent.argv,
       task: text,
@@ -192,7 +196,7 @@ export async function runStep(id, w, pr, others = []) {
     const notes = ["ready for review"];
     // Auto-merge only waits for what the repo requires; without required
     // reviews it would merge at once, so then leave merging to the Merge step.
-    if (C.workflow.autoMerge === "when-reviews-required") {
+    if (settingsOf(w.repo).workflow.autoMerge === "when-reviews-required") {
       const now = await prDetails(w.repo.slug, pr.number);
       if (
         now?.review === "REVIEW_REQUIRED" ||
@@ -203,7 +207,7 @@ export async function runStep(id, w, pr, others = []) {
       }
     }
     if (w.key) {
-      const moved = await tracker().move(w.key, "review");
+      const moved = await trackerOf(w.repo).move(w.key, "review");
       if (moved) notes.push(moved);
     }
     return notes.join(" · ");
@@ -227,10 +231,10 @@ export async function runStep(id, w, pr, others = []) {
       );
       if (open.length)
         notes.push(
-          `${tracker().labelOf(w.key)} left open: ${open.map((o) => basename(o.w.path)).join(", ")} still in progress`,
+          `${trackerOf(w.repo).labelOf(w.key)} left open: ${open.map((o) => basename(o.w.path)).join(", ")} still in progress`,
         );
       else {
-        const moved = await tracker().move(w.key, "done");
+        const moved = await trackerOf(w.repo).move(w.key, "done");
         if (moved) notes.push(moved);
       }
     }

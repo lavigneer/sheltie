@@ -1,4 +1,5 @@
-// The ticket tracker in use (C.tracker). Each tracker module exports:
+// Ticket trackers: the global one (C.tracker) and any a repo's own settings
+// pick (config.js repoSettings). Each tracker module's create(settings) gives:
 //   name
 //   list()                 your tickets: [{ key, label, ref, summary, status,
 //                          components, labels, project, repo }]
@@ -18,9 +19,18 @@ import * as github from "./tracker-github.js";
 import * as jira from "./tracker-jira.js";
 
 const trackers = { jira, github };
+const made = new Map();
 
-export function tracker() {
-  const t = trackers[C.tracker];
-  if (!t) throw new Error(`unknown tracker "${C.tracker}" (use "jira" or "github")`);
-  return t;
+// The tracker for settings `s` (the global ones by default). The same
+// settings give the same tracker, so trackers can be compared to group work.
+export function tracker(s = C) {
+  const t = trackers[s.tracker];
+  if (!t) throw new Error(`unknown tracker "${s.tracker}" (use "jira" or "github")`);
+  const id = JSON.stringify(s, (k, v) => (k === "problem" ? undefined : v));
+  if (!made.has(id)) made.set(id, t.create(s));
+  return made.get(id);
 }
+
+// The tracker for a repo's tickets and branches (localRepos sets repo.tracker
+// from the repo's own settings), the global one for any other repo.
+export const trackerOf = (repo) => repo?.tracker ?? tracker();

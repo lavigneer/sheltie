@@ -44,7 +44,7 @@ test("keysIn: branch part in its repo, #N, owner/repo#N", () => {
 
 test("workFor: branches by name, PRs linked to the issue (also forks)", async () => {
   const keys = ["acme/storage#3", "acme/web-app#9", "acme/docs#2"];
-  const work = await D.workFor(keys, await D.localRepos());
+  const work = await D.workFor(keys.map((key) => ({ key, tracker: T })), await D.localRepos());
   const storage3 = work.get("acme/storage#3");
   assert.ok(storage3.some((i) => i.worktree && i.pr?.number === 12));
   assert.ok(storage3.some((i) => i.branch === "issue-3-retry-backoff"));
