@@ -187,6 +187,15 @@ export default class Usage extends View {
     const limitList = this.limits.list ?? [];
     const session = limitList[0]?.windows.find((w) => w.key === "session");
     const percent = (n) => `${Math.round(n)}%`;
+    // Green while there's room, then warning, then red near the limit.
+    const fullness = (n) =>
+      n >= 90
+        ? t.blocked
+        : n >= 70
+          ? (t.working ?? t.accent)
+          : (t.done ?? t.accent);
+    // The bar's track spans the sidebar less its 14 px sides.
+    const barWidth = Math.max(0, (this.width ?? 0) - 28);
     const limits = !limitList.length
       ? this.limits.error
         ? message(this.limits.error, t.blocked)
@@ -199,7 +208,7 @@ export default class Usage extends View {
                   ? `CLAUDE CODE LIMITS (${l.home})`
                   : "CLAUDE CODE LIMITS",
               ),
-              ...l.windows.map((w) =>
+              ...l.windows.flatMap((w) => [
                 h_flex()
                   .id(`usage-limit-${l.home}-${w.key}`)
                   .when(Boolean(w.resets), (el) =>
@@ -231,10 +240,29 @@ export default class Usage extends View {
                       .flex_none()
                       .flex()
                       .justify_end()
-                      .text_color(w.used >= 90 ? t.blocked : t.foreground)
+                      .text_color(fullness(w.used))
                       .child(percent(w.used)),
                   ),
-              ),
+                // How full: a track with the used part filled, coloured
+                // like the percentage.
+                div()
+                  .mx(14)
+                  .mb(4)
+                  .h(4)
+                  .rounded(2)
+                  .bg(t.hover)
+                  .child(
+                    div()
+                      .h_full()
+                      .rounded(2)
+                      .bg(fullness(w.used))
+                      .w(
+                        Math.round(
+                          (barWidth * Math.min(100, Math.max(0, w.used))) / 100,
+                        ),
+                      ),
+                  ),
+              ]),
             ]),
           )
           .when(Boolean(this.limits.error), (el) =>
@@ -292,9 +320,10 @@ export default class Usage extends View {
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        const was = this.width !== null && this.width < RAIL;
+        // The rail switch and the plan limits' bars depend on the width.
+        const changed = size.width !== this.width;
         this.width = size.width;
-        if (size.width < RAIL !== was) cx.notify();
+        if (changed) cx.notify();
       })
       .child(
         rail
