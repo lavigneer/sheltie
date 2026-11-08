@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues on lavigneer/sheltie (via the `gh` CLI). See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues on lavigneer/sheltie (via the `gh` CLI). No triage labels. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
