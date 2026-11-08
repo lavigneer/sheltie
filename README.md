@@ -4,69 +4,46 @@ A herding dog for your [Herdr](https://herdr.dev) desktop app, named for
 Hopper, a Sheltie. These mods take a ticket from your tracker to a merged pull
 request without leaving Herdr:
 
-1. **Pick a ticket** (Ctrl+Shift+J). Enter creates the ticket's branch and a
-   git worktree for it, opens a space there and starts your coding agent
-   (Claude Code by default) with the ticket as its first message.
-2. **Drive the PR from the sidebar.** The Work sidebar lists every worktree by
-   repo with its ticket, its pull request (review, checks, conflicts, unresolved
-   comments) and a button for the next step:
+1. **Pick a ticket** (Ctrl+Shift+J). Sheltie creates a branch and worktree,
+   opens a space there and starts your agent (Claude Code by default) on the
+   ticket.
+2. **Drive the PR from the Work sidebar.** Each worktree shows its ticket, PR
+   status and a button for the next step:
    - **Draft PR**, **Fix CI**, **Address comments**, **Resolve conflicts**:
-     sent to the agent in that worktree's space (as `/draft-pr`, `/fix-ci`,
-     `/address-comments`, `/resolve-conflicts`). A PR that conflicts with its
-     base ("conflicts" in its label) offers only Resolve conflicts: GitHub
-     runs no CI on it. The commands all check for conflicts before waiting
-     for CI, and merge the base in (never rebase or force-push) to fix them
-   - **Ready**: marks the PR ready for review and, when the repo requires
-     reviews, turns on auto-merge, so it merges on approval. Offered once CI
-     has passed (a PR with no checks isn't green, so in a repo without CI
-     mark it ready on GitHub), it doesn't conflict and nothing is unresolved; with `workflow.readyWhen: "agent"`,
-     also only once the agent says the PR is done, by running
-     `hc label "$HC_TERMINAL_ID" pr=ready` (the Claude commands end with that;
-     sending the agent another step clears it)
-   - **Merge**: when it's approved, or the repo requires no review (unless
-     `workflow.mergeWithoutReview` is `false`), and CI passed and it doesn't
-     conflict, without auto-merge; it asks for a second click
-   - **Finish** (after the merge): closes the space, removes the worktree and
-     local branch, and resolves the ticket
-   Every step also runs from the keyboard (see [Keys](#keys)). Click a row's
-   PR label to open the PR in the browser, its ticket key or status to open
-   the ticket (anywhere else on the row: its space).
+     sent to the agent (`/draft-pr`, `/fix-ci`, `/address-comments`,
+     `/resolve-conflicts`). Conflicts are fixed by merging the base, never by
+     rebasing or force-pushing.
+   - **Ready**: marks the PR ready and, if reviews are required, turns on
+     auto-merge. Offered once CI is green, nothing conflicts and nothing is
+     unresolved.
+   - **Merge**: once approved (or no review is required) and green.
+   - **Finish**: closes the space, removes the worktree and branch, and
+     resolves the ticket.
 
-   Each repo's group starts with its **hub**: the main checkout (its branch
-   and a "hub" tag), with a space of its own for the repo's longer-running
-   agents, apart from the per-ticket worktrees. Click it to go to that space
-   or open one there with the agent. It has no ticket, PR or steps. A repo
-   shows while it has worktrees or its hub has a space.
-3. **Get told** when CI finishes, review comments or a review arrive, the PR
-   starts conflicting with its base (e.g. after another PR merges), or it
-   merges.
+   Each repo also has a **hub** row: the main checkout, with its own space for
+   longer-running agents.
+3. **Get notified** when CI finishes, reviews arrive, the PR starts
+   conflicting, or it merges.
 
-Trackers: **Jira** (Cloud or Server, through jira-cli) and **GitHub issues**.
-Code hosting: GitHub. A third mod, **projects** (Ctrl+Shift+F), is a plain
-project switcher over your repos.
+Trackers: **Jira** (via jira-cli) and **GitHub issues**. Code hosting: GitHub.
+A third mod, **projects** (Ctrl+Shift+F), is a plain project switcher.
 
-> **What it runs and changes.** The mods run `git`, `gh`, `jira` and `hc` as
-> you. Through them they create branches and worktrees, push (via the agent),
-> mark PRs ready, turn on auto-merge, merge, delete local branches and
-> worktrees, and move or close tickets. Safety checks: auto-merge is only
-> turned on while a review is still required (so it can't merge at once);
-> Finish refuses if the worktree has uncommitted changes or commits that
-> aren't in the PR, asks for a second click, and leaves the ticket open while
-> other work on it is still open; an existing branch or PR is never replaced
-> by an empty look-alike branch.
+> **What it runs.** The mods run `git`, `gh`, `jira` and `hc` as you, to
+> create branches and worktrees, mark PRs ready, merge, clean up and move
+> tickets. Auto-merge is only enabled while a review is still required, and
+> Finish refuses if the worktree has uncommitted or unpushed work.
 
 ## Requirements
 
 - Herdr desktop (tested with herdr-app 0.1.10, herdr-core 0.1.15)
-- git, [gh](https://cli.github.com) (logged in), jq (for install.sh and the demo)
+- git, [gh](https://cli.github.com) (logged in), jq
 - For Jira: [jira-cli](https://github.com/ankitpokhrel/jira-cli), set up with
-  `jira init` (Server/Data Center: `--installation local --auth-type bearer`
-  and a personal access token)
+  `jira init`
 - An agent; the defaults expect [Claude Code](https://claude.com/claude-code)
 
 ## Install
 
-Start Herdr once (it writes the keys and layouts the installer adds to), then:
+Start Herdr once, then:
 
 ```sh
 git clone https://github.com/lavigneer/sheltie
@@ -75,148 +52,74 @@ cd sheltie
 herdr-app do layout.switch --name work
 ```
 
-`install.sh` copies the mods into Herdr's app home (`$HERDR_APP_HOME`, else
-`~/.config/herdr-app`), binds Ctrl+Shift+J, Ctrl+Shift+F
-and the Work sidebar's keys (see [Keys](#keys)) where they're free,
-creates `layouts/work.json` (Herdr's main layout with the Work sidebar under
-Spaces), and writes a starter `sheltie.json`. `--claude-commands` also
-copies the Claude Code commands into `~/.claude/commands`. Run it again after
-pulling to update.
+This copies the mods into Herdr's app home (`$HERDR_APP_HOME`, else
+`~/.config/herdr-app`), binds the keys below, adds a `work` layout and a
+starter `sheltie.json`. `--claude-commands` also installs the Claude Code
+commands into `~/.claude/commands`. Re-run after pulling to update.
 
-With Nix, the flake's `packages.default` has the same files under
-`share/sheltie`, plus `sheltie-install` and `herdr-demo`.
+With Nix, `packages.default` provides the same files plus `sheltie-install`
+and `herdr-demo`.
 
 ## Keys
-
-`install.sh` binds these where they're free (Herdr's defaults leave them free):
 
 | Key | Command | |
 |---|---|---|
 | Ctrl+Shift+J | `mod.open:tickets` | pick a ticket |
 | Ctrl+Shift+F | `mod.open:projects` | switch project |
-| Alt+Shift+Down / Up | `work.next` / `work.prev` | select the next / previous row in the Work sidebar |
-| Alt+Shift+Right / Left | `work.step-next` / `work.step-prev` | pick the selected row's next / previous step button |
-| Alt+Shift+Enter | `work.step` | run the picked step (Finish and Clean up: press twice) |
-| Alt+Shift+O | `work.open` | open the selected row's space, like clicking it |
-| Alt+Shift+P | `work.open-pr` | open the selected row's PR in the browser, like clicking its PR label |
-| Alt+Shift+T | `work.open-ticket` | open the selected row's ticket in the browser, like clicking its key or status |
+| Alt+Shift+Down / Up | `work.next` / `work.prev` | select next / previous row |
+| Alt+Shift+Right / Left | `work.step-next` / `work.step-prev` | pick next / previous step |
+| Alt+Shift+Enter | `work.step` | run the picked step |
+| Alt+Shift+O | `work.open` | open the row's space |
+| Alt+Shift+P | `work.open-pr` | open the row's PR |
+| Alt+Shift+T | `work.open-ticket` | open the row's ticket |
 
-A row without a PR, or whose branch isn't a ticket, or a hub, just says so (a
-notification) for that key. The browser opens with `xdg-open` (Linux) or
-`open` (macOS).
-
-The selected row has an accent outline and its picked step an accent border.
-It follows the focused space (its first step picked) until you move it, and
-goes back to following when you focus another space. On a narrow sidebar the
-step buttons wrap; narrower than 160 px (like Herdr's folded sidebar) the
-Work sidebar is a rail of row statuses, with each row's ticket, PR and next
-steps on hover, and the keys work as before. The commands also work
-from the command line, e.g. `herdr-app do work.step`. Rebind them in
-`<Herdr app home>/keys.json`.
-
-Two more, for scripts (no key): `herdr-app do work.refresh` refreshes the
-sidebar now, like its ↻, and `herdr-app do work.report` writes what it shows
-(rows, hubs marked `hub: true`, their PRs (with `mergeable`) and next steps, the selected row
-and step, and the PR and ticket URLs `work.open-pr` / `work.open-ticket`
-would open) to
-`<Herdr app home>/work-report.json`.
+Rebind them in `<Herdr app home>/keys.json`. They also work from the command
+line (`herdr-app do work.step`), as do `work.refresh` and `work.report`
+(writes the sidebar state to `<Herdr app home>/work-report.json`).
 
 ## Settings
 
-`<Herdr app home>/sheltie.json`, merged over the defaults: set only what
-you change. Changes apply when a mod next loads (reopen the popup; the sidebar
-reloads with the layout). [`config.example.json`](config.example.json) shows
-every setting with its default; `src/config.js` documents each one.
+`<Herdr app home>/sheltie.json` is merged over the defaults; set only what you
+change. [`config.example.json`](config.example.json) lists every setting with
+its default, and `src/config.js` documents each one. The main ones:
 
 | Setting | Default | |
 |---|---|---|
-| `roots`, `depth` | `["~/workspace"]`, `1` | where your repos are: `depth` levels below each root |
-| `programs` | `git`, `gh`, `jira`, `hc` | found on your login shell's PATH; absolute paths win |
+| `roots`, `depth` | `["~/workspace"]`, `1` | where your repos are |
 | `tracker` | `"jira"` | or `"github"` |
 | `jira.jql` | your unresolved tickets | which tickets to list |
-| `jira.transitions` | `{start: null, review: null, done: "Resolved"}` | Jira transition at each step |
-| `jira.resolution` | `null` | resolution for the `done` transition |
 | `github.repos` | `[]` (anywhere) | where to look for issues |
-| `github.assignee`, `github.search` | `"@me"`, `""` | which issues |
-| `github.ref` | `"issue-{number}"` | an issue's part of a branch name |
-| `github.closeOnFinish` | `true` | close the issue at Finish if merging didn't |
-| `githubOwners` | `[]` | extra orgs searched for PRs mentioning a Jira key |
-| `repoRules` | `[]` | `{component \| label \| project, repo}`: where new work goes |
-| `branch` | `"{ref}"` | branch name; `{ref}` is `WEB-142` or `issue-12`, e.g. `"me/{ref}"` |
-| `worktreeDir` | `".worktrees"` | relative to the repo's main checkout |
-| `agent.argv` | `["claude"]` | the agent; its first message is the last argument |
-| `agent.task`, `agent.extraBranchTask` | see example | first messages; `{key}`, `{summary}`, `{branch}`, `{viewCommand}` |
-| `agent.steps` | the Claude commands | what each sidebar step sends |
-| `workflow.autoMerge` | `"when-reviews-required"` | or `"never"` |
-| `workflow.readyWhen` | `"green"` | when Ready is offered: CI passed, no conflicts and nothing unresolved; `"agent"`: also once the agent says the PR is done (`hc label "$HC_TERMINAL_ID" pr=ready`) |
-| `workflow.mergeWithoutReview` | `true` | offer Merge for a ready, green PR needing no review (no required reviews); `false`: only once approved |
-| `workflow.confirmMerge` | `true` | Merge needs a second click |
-| `workflow.confirmFinish` | `true` | Finish and Clean up need a second click |
+| `repoRules` | `[]` | map a component, label or project to a repo |
+| `branch` | `"{ref}"` | branch name, e.g. `"me/{ref}"` |
+| `agent.argv` | `["claude"]` | the agent command |
+| `workflow.readyWhen` | `"green"` | `"agent"`: also wait for `hc label "$HC_TERMINAL_ID" pr=ready` |
+| `workflow.mergeWithoutReview` | `true` | `false`: Merge only once approved |
 
-Repo suggestions for a ticket, best first: the repo you last used for it,
-`repoRules` matching its component or label, the tracker's own (a GitHub issue's
-repo), `repoRules` matching its project (only if no component/label rule
-matched), and the repo you're in. With exactly one clear choice, Enter starts
-right away; otherwise you pick (or pick any repo, cloning it if needed).
+## Demo
 
-## The demo
-
-`demo/herdr-demo` runs a separate Herdr window (its own app home and
-herdr-core session, so your spaces and settings are untouched) over fake
-repos, Jira or GitHub issues, PRs, CI and an agent that acts on the step
-commands in fast-forward:
+`demo/herdr-demo` runs a separate Herdr window over fake repos, tickets, PRs,
+CI and agent, leaving your own setup untouched:
 
 ```sh
 demo/herdr-demo                    # Jira; --tracker github for GitHub issues
-demo/herdr-demo comment WEB-105    # play a reviewer: comment, request-changes,
-demo/herdr-demo approve WEB-105    #   approve; fail-ci; conflict (with main); status
+demo/herdr-demo approve WEB-105    # also: comment, request-changes, fail-ci, conflict, status
 demo/herdr-demo --stop             # --reset to start over
 ```
 
 ## Development
 
 ```sh
-npm run build   # src/ -> mods/ (commit the result)
-npm test        # node --test against throwaway demos
-npm run e2e     # the real Herdr with the mods, on throwaway demos
-npm run e2e:shots  # screenshots of the mods at a few sizes, in e2e-results/shots/
+npm run build      # src/ -> mods/ (commit the result)
+npm test           # unit tests against throwaway demos
+npm run e2e        # drive real Herdr on the demo (Linux, Xvfb)
+npm run e2e:shots  # screenshots in e2e-results/shots/
 ```
 
-`npm run e2e` launches Herdr on the demo, once per tracker, on its own Xvfb
-display (with its own app home and herdr-core session, so your Herdr is
-untouched), and drives it with the keyboard: the mods load without errors, a
-fresh ticket starts from the tickets popup, its repo's hub row (above it)
-opens a space of its own, and its whole flow runs from the
-Work sidebar's keys through to Finish, opening the row's PR and ticket and
-resolving a merge conflict on the way (with a stub `xdg-open` that records the URL; with CI failing once and Finish
-refusing uncommitted changes, on Jira). It checks outcomes, not pixels:
-`herdr-app status`, `work.report`, git, `hc read` and the demo's state. It
-needs herdr-app, hc, Xvfb, xdotool, jq and git (Linux), takes under a minute,
-and cleans up after itself; a failed step leaves a screenshot, the app log and
-the state in `e2e-results/`. `nix develop .#e2e -c npm run e2e` brings all of
-that, with Herdr from the nixpkgs pinned in `flake.lock`.
-
-`npm run e2e:shots` (same needs) saves screenshots of the Work sidebar, from
-the folded rail to wide, and of the tickets and projects popups in a small, a
-default and a large window, light and dark, at zoom 1, 1.5 and 2, on the Jira
-demo with its long ticket, branch and repo names. They're for looking at after
-a Herdr update or a UI change; the run itself only checks there are no errors
-and the sidebar still offers every step. CI keeps them as the `e2e-shots`
-artifact.
-
-CI runs the end-to-end tests that way, on pull requests and pushes to main,
-against **herdr-desktop 0.1.10 and herdr-core 0.1.15** (update `flake.lock` to
-move on), and weekly against the newest Herdr in nixos-unstable. A failed run
-uploads `e2e-results/` as an artifact.
-
-`src/` holds the shared modules (`config.js`, `lib.js`, `data.js`, `flow.js`,
-`tracker*.js`) and each mod's own `main.js` and `mod.json`. Herdr only resolves
-imports inside a mod's folder, so the build copies the shared modules into each
-`mods/<name>/`. CI checks that `mods/` is up to date, runs ShellCheck and the
-tests. `herdr-app check mods/<name>` (with Herdr running) loads a mod once.
-
-A new tracker is a `src/tracker-<name>.js` with the functions listed in
-`src/tracker.js`, added to its `trackers` map.
+`nix develop .#e2e -c npm run e2e` provides everything the e2e tests need.
+Shared modules live in `src/`; the build copies them into each `mods/<name>/`
+since Herdr only resolves imports inside a mod's folder. To add a tracker,
+write `src/tracker-<name>.js` implementing `src/tracker.js` and add it to its
+`trackers` map.
 
 ## License
 
