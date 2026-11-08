@@ -577,8 +577,7 @@ export default class Tickets extends View {
         if (!this.marked.delete(k)) this.marked.add(k);
         cx.notify();
       }
-    }
-    else if (
+    } else if (
       e.key === "backspace" &&
       !this.filter &&
       this.screen.name !== "list"
