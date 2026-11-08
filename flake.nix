@@ -1,0 +1,61 @@
+{
+  description = "Herdr desktop mods: ticket -> worktree -> agent -> PR -> merged";
+
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+  # Packaging only: the built mods and the rest of the repo under
+  # share/herdr-ticket-flow, plus `herdr-ticket-flow-install` (install.sh) and
+  # `herdr-demo`. Configuring Herdr is left to whoever uses the package.
+  outputs =
+    { self, nixpkgs }:
+    let
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
+      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+    in
+    {
+      packages = forAllSystems (pkgs: {
+        default = pkgs.stdenvNoCC.mkDerivation {
+          pname = "herdr-ticket-flow";
+          version = "0.1.0";
+          src = self;
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          dontBuild = true;
+          installPhase = ''
+            runHook preInstall
+            share=$out/share/herdr-ticket-flow
+            mkdir -p $share $out/bin
+            cp -R mods agents demo keys.json config.example.json install.sh $share/
+            makeWrapper $share/install.sh $out/bin/herdr-ticket-flow-install \
+              --prefix PATH : ${
+                pkgs.lib.makeBinPath [
+                  pkgs.jq
+                  pkgs.coreutils
+                ]
+              }
+            # herdr-app and hc come from the user's Herdr install.
+            makeWrapper $share/demo/herdr-demo $out/bin/herdr-demo \
+              --prefix PATH : ${
+                pkgs.lib.makeBinPath [
+                  pkgs.jq
+                  pkgs.git
+                  pkgs.coreutils
+                  pkgs.gnused
+                  pkgs.gnugrep
+                  pkgs.procps
+                ]
+              }
+            runHook postInstall
+          '';
+          meta = {
+            description = "Herdr desktop mods: ticket -> worktree -> agent -> PR -> merged";
+            platforms = systems;
+          };
+        };
+      });
+    };
+}
