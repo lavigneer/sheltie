@@ -47,17 +47,6 @@
           "type": "column",
           "children": [
             {
-              "id": "spaces",
-              "type": "block",
-              "size": {
-                "weight": 1
-              },
-              "min": 90,
-              "content": {
-                "mod": "spaces"
-              }
-            },
-            {
               "id": "work-outline",
               "type": "block",
               "content": {
