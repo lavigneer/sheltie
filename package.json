@@ -1,0 +1,14 @@
+{
+  "name": "herdr-ticket-flow",
+  "private": true,
+  "type": "module",
+  "description": "Herdr desktop mods: ticket -> worktree -> agent -> PR -> merged",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --import ./tests/register.mjs --test 'tests/*.test.mjs'",
+    "check-built": "node scripts/build.mjs && git diff --exit-code -- mods"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

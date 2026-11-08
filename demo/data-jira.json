@@ -1,0 +1,186 @@
+{
+  "settings": {
+    "tracker": "jira",
+    "branch": "me/{ref}",
+    "worktreeDir": ".claude/worktrees",
+    "githubOwners": [
+      "acme"
+    ],
+    "repoRules": [
+      {
+        "component": "Storage",
+        "repo": "acme/storage"
+      },
+      {
+        "component": "Docs",
+        "repo": "acme/docs"
+      },
+      {
+        "project": "WEB",
+        "repo": "acme/web-app"
+      },
+      {
+        "project": "API",
+        "repo": "partner/api"
+      }
+    ],
+    "jira": {
+      "transitions": {
+        "start": "In Progress",
+        "review": "In Review",
+        "done": "Resolved"
+      }
+    }
+  },
+  "repos": [
+    {
+      "name": "storage",
+      "slug": "acme/storage",
+      "worktrees": [
+        "me/WEB-101"
+      ],
+      "branches": [
+        "me/WEB-101-retry-backoff"
+      ]
+    },
+    {
+      "name": "web-app",
+      "slug": "acme/web-app",
+      "worktrees": [
+        "me/WEB-102",
+        "me/WEB-103"
+      ],
+      "branches": []
+    },
+    {
+      "name": "api",
+      "slug": "partner/api",
+      "worktrees": [
+        "me/API-7"
+      ],
+      "branches": []
+    }
+  ],
+  "uncloned": [
+    {
+      "name": "docs",
+      "slug": "acme/docs",
+      "branches": [
+        "me/WEB-104"
+      ]
+    }
+  ],
+  "tickets": [
+    {
+      "key": "WEB-101",
+      "summary": "Retry Storage uploads with backoff",
+      "status": "In Progress",
+      "components": [
+        "Storage"
+      ]
+    },
+    {
+      "key": "WEB-102",
+      "summary": "Fix login redirect loop",
+      "status": "In Review",
+      "components": []
+    },
+    {
+      "key": "WEB-103",
+      "summary": "Rate-limit the signup form",
+      "status": "In Progress",
+      "components": []
+    },
+    {
+      "key": "WEB-104",
+      "summary": "Document the new auth flow",
+      "status": "In Review",
+      "components": [
+        "Docs"
+      ]
+    },
+    {
+      "key": "WEB-105",
+      "summary": "Storage: stream large files",
+      "status": "To Do",
+      "components": [
+        "Storage"
+      ]
+    },
+    {
+      "key": "API-7",
+      "summary": "Paginate the audit log endpoint",
+      "status": "In Progress",
+      "components": []
+    },
+    {
+      "key": "PLAT-9",
+      "summary": "Upgrade the build image",
+      "status": "To Do",
+      "components": []
+    }
+  ],
+  "prs": [
+    {
+      "repo": "acme/storage",
+      "number": 12,
+      "branch": "me/WEB-101",
+      "title": "WEB-101: retry uploads with exponential backoff",
+      "body": "",
+      "draft": false,
+      "review": "APPROVED",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 34,
+      "branch": "me/WEB-102",
+      "title": "Fix login redirect loop",
+      "body": "Fixes WEB-102",
+      "draft": false,
+      "review": "CHANGES_REQUESTED",
+      "checks": "FAILURE",
+      "state": "OPEN",
+      "unresolved": 2
+    },
+    {
+      "repo": "partner/api",
+      "number": 7,
+      "branch": "me/API-7",
+      "title": "API-7 paginate audit log",
+      "body": "",
+      "draft": true,
+      "review": "",
+      "checks": "IN_PROGRESS",
+      "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/docs",
+      "number": 56,
+      "branch": "me/WEB-104",
+      "title": "WEB-104: document the auth flow",
+      "body": "",
+      "draft": false,
+      "review": "REVIEW_REQUIRED",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 35,
+      "branch": "contributor/WEB-103-fix",
+      "title": "WEB-103: rate-limit signups (from a fork)",
+      "body": "",
+      "draft": false,
+      "review": "REVIEW_REQUIRED",
+      "checks": "SUCCESS",
+      "fork": true,
+      "state": "OPEN",
+      "unresolved": 0
+    }
+  ]
+}

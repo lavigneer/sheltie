@@ -1,0 +1,168 @@
+{
+  "settings": {
+    "tracker": "github",
+    "branch": "{ref}",
+    "worktreeDir": ".worktrees"
+  },
+  "repos": [
+    {
+      "name": "storage",
+      "slug": "acme/storage",
+      "worktrees": [
+        "issue-3"
+      ],
+      "branches": [
+        "issue-3-retry-backoff"
+      ]
+    },
+    {
+      "name": "web-app",
+      "slug": "acme/web-app",
+      "worktrees": [
+        "issue-8",
+        "issue-9"
+      ],
+      "branches": []
+    },
+    {
+      "name": "api",
+      "slug": "partner/api",
+      "worktrees": [
+        "issue-7"
+      ],
+      "branches": []
+    }
+  ],
+  "uncloned": [
+    {
+      "name": "docs",
+      "slug": "acme/docs",
+      "branches": [
+        "issue-2"
+      ]
+    },
+    {
+      "name": "platform",
+      "slug": "acme/platform",
+      "branches": []
+    }
+  ],
+  "issues": [
+    {
+      "repo": "acme/storage",
+      "number": 3,
+      "title": "Retry Storage uploads with backoff",
+      "state": "OPEN",
+      "labels": [
+        "bug"
+      ]
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 8,
+      "title": "Fix login redirect loop",
+      "state": "OPEN",
+      "labels": []
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 9,
+      "title": "Rate-limit the signup form",
+      "state": "OPEN",
+      "labels": []
+    },
+    {
+      "repo": "acme/docs",
+      "number": 2,
+      "title": "Document the new auth flow",
+      "state": "OPEN",
+      "labels": [
+        "docs"
+      ]
+    },
+    {
+      "repo": "acme/storage",
+      "number": 5,
+      "title": "Stream large files",
+      "state": "OPEN",
+      "labels": []
+    },
+    {
+      "repo": "partner/api",
+      "number": 7,
+      "title": "Paginate the audit log endpoint",
+      "state": "OPEN",
+      "labels": []
+    },
+    {
+      "repo": "acme/platform",
+      "number": 1,
+      "title": "Upgrade the build image",
+      "state": "OPEN",
+      "labels": []
+    }
+  ],
+  "prs": [
+    {
+      "repo": "acme/storage",
+      "number": 12,
+      "branch": "issue-3",
+      "title": "Retry uploads with exponential backoff",
+      "body": "Closes #3",
+      "draft": false,
+      "review": "APPROVED",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 34,
+      "branch": "issue-8",
+      "title": "Fix login redirect loop",
+      "body": "Fixes #8",
+      "draft": false,
+      "review": "CHANGES_REQUESTED",
+      "checks": "FAILURE",
+      "state": "OPEN",
+      "unresolved": 2
+    },
+    {
+      "repo": "partner/api",
+      "number": 17,
+      "branch": "issue-7",
+      "title": "Paginate the audit log",
+      "body": "Closes #7",
+      "draft": true,
+      "review": "",
+      "checks": "IN_PROGRESS",
+      "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/docs",
+      "number": 56,
+      "branch": "issue-2",
+      "title": "Document the auth flow",
+      "body": "Closes #2",
+      "draft": false,
+      "review": "REVIEW_REQUIRED",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 35,
+      "branch": "contributor/rate-limit",
+      "title": "Rate-limit signups (from a fork)",
+      "body": "Closes #9",
+      "draft": false,
+      "review": "REVIEW_REQUIRED",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0,
+      "fork": true
+    }
+  ]
+}

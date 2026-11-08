@@ -1,0 +1,24 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: mods/ is built from src/
+        run: npm run check-built
+      - name: ShellCheck
+        run: shellcheck -x -e SC2016 -P SCRIPTDIR install.sh demo/herdr-demo demo/bin/* demo/state.sh
+      - name: Tests (against the demo's fake Jira and GitHub)
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.invalid
+          git config --global init.defaultBranch main
+          npm test

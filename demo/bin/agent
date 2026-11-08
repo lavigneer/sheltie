@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+# shellcheck source=demo/state.sh
+. "$here/state.sh"
+
+# Fake agent for herdr-demo. Shows the task it was started with (Herdr passes it
+# as the last argument, as with `claude "<task>"`), then acts on the Claude Code
+# commands the Work sidebar sends it, in fast-forward:
+#   /draft-pr          commit, push, open a draft PR (CI starts)
+#   /fix-ci            commit a fix, push (CI starts again, and passes)
+#   /address-comments  commit, push, resolve the review threads (CI starts)
+# Anything else is just echoed. It labels its terminal agent=herdr-demo so the
+# sidebar can find it (a real Claude Code reports its status instead).
+
+hc label "${HC_TERMINAL_ID:-}" agent=herdr-demo >/dev/null 2>&1 || true
+
+branch="$(git branch --show-current 2>/dev/null || echo '?')"
+# The ticket: a Jira key in the branch name, else a GitHub issue number.
+key="$(grep -oE '[A-Z][A-Z0-9]+-[0-9]+' <<<"$branch" | head -1 || true)"
+issue="$(grep -oE 'issue-[0-9]+' <<<"$branch" | head -1 | cut -d- -f2 || true)"
+if [ -n "$key" ]; then prefix="$key: "; elif [ -n "$issue" ]; then prefix="#$issue: "; else prefix=""; fi
+# The configured URL: `git remote get-url` applies the demo's insteadOf rewrite.
+slug="$(git config --get remote.origin.url 2>/dev/null | sed -E 's#^https://github.com/##; s#\.git$##' || true)"
+
+# A commit on this branch, pushed to the demo's "GitHub".
+work() {
+  echo "$1 ($(date +%T))" >>demo-changes.txt
+  git add demo-changes.txt
+  git -c user.name=herdr-demo -c user.email=demo@example.invalid commit --quiet -m "$prefix$1"
+  git push --quiet -u origin HEAD 2>/dev/null
+}
+
+pr_filter='.repo == $repo and .branch == $branch and (.state // "OPEN") == "OPEN"'
+has_pr() { state_jq -e --arg repo "$slug" --arg branch "$branch" "any(.prs[]; $pr_filter)" >/dev/null; }
+
+handle() {
+  case "$1" in
+  /draft-pr*)
+    work "the change"
+    if has_pr; then
+      echo "Pushed to the existing PR."
+    else
+      if [ -n "$key" ]; then
+        title="$key: $(state_jq -r --arg key "$key" '([.tickets // [] | .[] | select(.key == $key) | .summary] | first) // "demo change"')"
+        body=""
+      else
+        title="$(state_jq -r --arg repo "$slug" --argjson n "${issue:-0}" '([.issues // [] | .[] | select(.repo == $repo and .number == $n) | .title] | first) // "demo change"')"
+        body="${issue:+Closes #$issue}"
+      fi
+      state_set --arg repo "$slug" --arg branch "$branch" --arg title "$title" --arg body "$body" '
+        .prs += [{repo: $repo, number: ((([.prs[].number] | max) // 0) + 1), branch: $branch,
+                  title: $title, body: $body, draft: true, review: "REVIEW_REQUIRED",
+                  checks: "SUCCESS", state: "OPEN", unresolved: 0}]'
+      echo "Opened a draft PR: $(state_jq -r --arg repo "$slug" --arg branch "$branch" "[.prs[] | select($pr_filter)][0] | \"https://github.com/\(.repo)/pull/\(.number)\"")"
+    fi
+    ci_start ".repo == \"$slug\" and .branch == \"$branch\""
+    echo "CI is running; it takes ${DEMO_CI_SECONDS}s here."
+    ;;
+  /fix-ci*)
+    work "fix CI"
+    ci_start ".repo == \"$slug\" and .branch == \"$branch\""
+    echo "Pushed a fix; CI is running again."
+    ;;
+  /address-comments*)
+    work "address review comments"
+    state_set --arg repo "$slug" --arg branch "$branch" "(.prs[] | select($pr_filter)).unresolved = 0"
+    ci_start ".repo == \"$slug\" and .branch == \"$branch\""
+    echo "Addressed the comments, replied and pushed; CI is running."
+    ;;
+  "") ;;
+  *) echo "(fake agent) $1" ;;
+  esac
+}
+
+echo "herdr-demo: fake agent in $PWD"
+echo "Branch: $branch"
+if [ $# -gt 0 ]; then
+  echo "Task: ${*: -1}"
+  # Started with a command (the sidebar does that when no agent is running).
+  case "${*: -1}" in /*) handle "${*: -1}" ;; esac
+fi
+echo "Waiting for commands (the Work sidebar's buttons send them)…"
+while IFS= read -r line; do
+  handle "$line"
+done
