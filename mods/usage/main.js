@@ -47,17 +47,18 @@ export default class Usage extends View {
     cx.timer.every(REFRESH_MS, (cx) => this.load(cx));
   }
 
-  load(cx) {
+  // maxAge: reuse a scan this recent (usageGroups), 0 to scan now.
+  load(cx, maxAge) {
     if (this.state.phase === "loading") return;
     this.state = { ...this.state, phase: "loading" };
-    this.read(cx);
+    this.read(cx, maxAge);
   }
 
-  read(cx) {
+  read(cx, maxAge) {
     cx.spawn(async (cx) => {
       this.state = await settled(this.state, async () => {
         await configReady();
-        return usageGroups();
+        return usageGroups(maxAge);
       });
       cx.notify();
     });
@@ -140,7 +141,7 @@ export default class Usage extends View {
           .tooltip("Refresh now")
           .on_click((_e, cx) => {
             cx.stop_propagation();
-            this.load(cx);
+            this.load(cx, 0);
           })
           .child("↻"),
       );
