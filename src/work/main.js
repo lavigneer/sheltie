@@ -8,7 +8,8 @@
 // request (review and checks) and the agent status of its space. Click a row to
 // go to its space, or to open one there with the agent. Its ↗ button (shown on
 // hover, on the selected row and while its menu is open) opens a menu: Open PR,
-// Open ticket (in the browser), each only when the row has one.
+// Open ticket (in the browser), each only when the row has one. Its second
+// line ends with what the agents started in its folder have cost (usage.js).
 // "+" opens the tickets popup to start new work; ↻ refreshes everything now.
 //
 // Under each row, buttons for its next step in the ticket workflow (Draft PR,
@@ -70,6 +71,7 @@ import {
 } from "./data.js";
 import { agentIn, agentSaysDone, nextSteps, runStep } from "./flow.js";
 import { tracker } from "./tracker.js";
+import { costIn, dollars, usageGroups } from "./usage.js";
 
 const GIT_MS = 30_000;
 const PR_MS = 120_000;
@@ -78,6 +80,7 @@ const DUE_CHECK_MS = 10_000; // how often to look for due lookups
 const CONFIRM_MS = 4_000;
 const NOTE_MS = 60_000; // how long a step's success note stays
 const TICKET_MS = 600_000;
+const USAGE_MS = 120_000; // agent costs (see usage.js)
 const RETRY_MS = 60_000; // after a failed tracker/GitHub lookup
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
 const WATCH_TRIES = 3;
@@ -161,12 +164,23 @@ export default class Work extends View {
     this.picked = null; // { path, step, active }: see selection()
     this.watchTimer = false;
     this.width = null; // ours, from on_size_change
+    this.usage = null; // usage groups (usage.js), for each row's agent cost
     this.refresh = serial((cx, force) => this.scan(cx, force));
     this.details = serial((cx, force) => this.lookups(cx, force));
     this.refresh(cx);
     cx.timer.every(GIT_MS, (cx) => this.refresh(cx));
     // Ticket/PR lookups that are due, between git scans (only due ones run).
     cx.timer.every(DUE_CHECK_MS, (cx) => this.details(cx));
+    this.costs = serial(async (cx) => {
+      await configReady();
+      this.usage = await usageGroups().catch((e) => {
+        console.error(`work: ${e?.message ?? e}`);
+        return this.usage;
+      });
+      cx.notify();
+    });
+    this.costs(cx);
+    cx.timer.every(USAGE_MS, (cx) => this.costs(cx));
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -295,6 +309,7 @@ export default class Work extends View {
           space: r.space?.id ?? null,
           agent: agentIn(r.space),
           agentDone: agentSaysDone(r.space),
+          cost: this.costOf(r.w),
           selected: i === at,
           step: i === at ? step : null,
           steps: r.steps.map((s) => ({ id: s.id, label: s.label, confirm: Boolean(s.confirm) })),
@@ -321,6 +336,11 @@ export default class Work extends View {
         };
       }),
     };
+  }
+
+  // What the agents started in a row's folder have cost, in $, or null.
+  costOf(w) {
+    return this.usage ? costIn(this.usage, w.path) : null;
   }
 
   // Git only: worktrees and branches. Ticket and PR details follow separately,
@@ -839,9 +859,11 @@ export default class Work extends View {
             ? `${w.branch} · ${tracker().name} unreachable`
             : w.branch
           : "";
+      const cost = this.costOf(w);
       return {
         space,
         isSelected,
+        cost: cost === null ? null : dollars(cost),
         ticket,
         pr,
         prColor,
@@ -857,11 +879,12 @@ export default class Work extends View {
     // The rail (narrower than RAIL px): a row is its status, and a hover says
     // the rest. Clicks and keys work as in the full rows.
     const dot = (w) => {
-      const { space, isSelected, pr, steps, last, title, sub } = look(w);
+      const { space, isSelected, pr, cost, steps, last, title, sub } = look(w);
       const tip = [
         w.hub ? `${w.repo.name} hub: ${title}` : title,
         sub,
         pr?.text,
+        cost && `agents ${cost}`,
         last?.phase === "running"
           ? last.text
           : steps.length
@@ -889,6 +912,7 @@ export default class Work extends View {
       const {
         space,
         isSelected,
+        cost,
         ticket,
         pr,
         prColor,
@@ -979,7 +1003,7 @@ export default class Work extends View {
               ),
             ),
         )
-        .when(Boolean(sub || ticket?.status), (el) =>
+        .when(Boolean(sub || ticket?.status || cost), (el) =>
           el.child(
             h_flex()
               .pl(18)
@@ -1004,6 +1028,17 @@ export default class Work extends View {
                     .text_size(11)
                     .text_color(t.dim)
                     .child(ticket.status),
+                ),
+              )
+              .when(Boolean(cost), (e) =>
+                e.child(
+                  div()
+                    .id(`work-cost-${w.path}`)
+                    .flex_none()
+                    .text_size(11)
+                    .text_color(t.dim)
+                    .tooltip("What its agents have cost (at API prices)")
+                    .child(cost),
                 ),
               ),
           ),

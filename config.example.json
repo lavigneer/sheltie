@@ -7,7 +7,8 @@
     "git": "git",
     "gh": "gh",
     "jira": "jira",
-    "hc": "hc"
+    "hc": "hc",
+    "jq": "jq"
   },
   "tracker": "jira",
   "jira": {
@@ -53,6 +54,9 @@
       "address-comments": "/address-comments",
       "resolve-conflicts": "/resolve-conflicts"
     }
+  },
+  "usage": {
+    "claudeHomes": ["~/.claude"]
   },
   "workflow": {
     "autoMerge": "when-reviews-required",

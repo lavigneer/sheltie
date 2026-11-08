@@ -10,7 +10,7 @@ export const DEFAULTS = {
   depth: 1,
 
   // Programs, found on your login shell's PATH unless given as absolute paths.
-  programs: { git: "git", gh: "gh", jira: "jira", hc: "hc" },
+  programs: { git: "git", gh: "gh", jira: "jira", hc: "hc", jq: "jq" },
 
   // Where tickets come from: "jira" (jira-cli) or "github" (GitHub issues, gh).
   tracker: "jira",
@@ -72,6 +72,12 @@ export const DEFAULTS = {
       "address-comments": "/address-comments",
       "resolve-conflicts": "/resolve-conflicts",
     },
+  },
+
+  usage: {
+    // Claude Code config folders (CLAUDE_CONFIG_DIR) whose transcripts count
+    // toward the usage popup and the Work sidebar's per-row cost.
+    claudeHomes: ["~/.claude"],
   },
 
   workflow: {
