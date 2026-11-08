@@ -8,7 +8,7 @@ import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme } from "herdr";
 import { C, configReady } from "./config.js";
-import { dollars, tokenCount, total, usageGroups } from "./usage.js";
+import { LOADING, dollars, settled, tokenCount, total, usageGroups } from "./usage.js";
 
 const DAY_MS = 86_400_000;
 const REFRESH_MS = 120_000;
@@ -33,36 +33,33 @@ function by(groups, keyOf) {
 
 export default class Usage extends View {
   init(_props, cx) {
-    this.groups = null; // null until the first read
-    this.problem = null;
-    this.loading = false;
+    this.state = LOADING;
     this.width = null;
-    this.load(cx);
+    this.read(cx);
     cx.timer.every(REFRESH_MS, (cx) => this.load(cx));
   }
 
   load(cx) {
-    if (this.loading) return;
-    this.loading = true;
+    if (this.state.phase === "loading") return;
+    this.state = { ...this.state, phase: "loading" };
+    this.read(cx);
+  }
+
+  read(cx) {
     cx.spawn(async (cx) => {
-      try {
+      this.state = await settled(this.state, async () => {
         await configReady();
-        this.groups = await usageGroups();
-        this.problem = null;
-      } catch (e) {
-        this.problem = e?.message ?? String(e);
-        this.groups ??= [];
-      } finally {
-        this.loading = false;
-        cx.notify();
-      }
+        return usageGroups();
+      });
+      cx.notify();
     });
   }
 
   render(cx) {
     const t = theme();
     const rail = this.width !== null && this.width < RAIL;
-    const groups = this.groups ?? [];
+    const { phase, error } = this.state;
+    const groups = this.state.groups ?? [];
     const since = (d) => groups.filter((g) => g.day >= d);
     const recent = since(dayAgo(29));
     const today = total(since(dayAgo(0)));
@@ -142,15 +139,13 @@ export default class Usage extends View {
     const message = (text, color) =>
       div().px(14).py(4).text_size(11.5).text_color(color).child(text);
 
+    const problem = phase === "failed" ? message(error, t.blocked) : null;
     const body =
-      this.groups === null
-        ? message("Reading session logs…", t.dim)
+      this.state.groups === null
+        ? (problem ?? message("Reading session logs…", t.dim))
         : !groups.length
-          ? message(
-              this.problem ??
-                `No sessions yet in ${C.usage.agents.map((a) => a.home).join(", ")}`,
-              this.problem ? t.blocked : t.dim,
-            )
+          ? (problem ??
+            message(`No sessions yet in ${C.usage.agents.map((a) => a.home).join(", ")}`, t.dim))
           : v_flex()
               .pb(6)
               .child(line("usage-today", "Today", today, true))
@@ -181,9 +176,7 @@ export default class Usage extends View {
                     );
                   }),
               )
-              .when(Boolean(this.problem), (el) =>
-                el.child(message(this.problem, t.blocked)),
-              );
+              .when(Boolean(problem), (el) => el.child(problem));
 
     return v_flex()
       .id("usage")
@@ -203,8 +196,8 @@ export default class Usage extends View {
               .justify_center()
               .text_size(9.5)
               .text_color(t.dim)
-              .tooltip(`Agents today: ${amount(today)}`)
-              .child(this.groups === null ? "…" : amount(today))
+              .tooltip(error ?? `Agents today: ${amount(today)}`)
+              .child(this.state.groups === null ? (error ? "!" : "…") : amount(today))
           : v_flex()
               .size_full()
               .min_h(0)

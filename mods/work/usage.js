@@ -185,6 +185,19 @@ export async function usageGroups() {
   return scans.flat().map((g) => ({ ...g, cost: costOf(table, g) }));
 }
 
+// The sidebar's load state: { phase: "loading" | "ready" | "failed", groups,
+// error }. groups is null until a read succeeds; a failed read keeps the last.
+export const LOADING = { phase: "loading", groups: null, error: null };
+
+// The state after `read` (which resolves to groups) finishes.
+export async function settled(state, read) {
+  try {
+    return { phase: "ready", groups: await read(), error: null };
+  } catch (e) {
+    return { phase: "failed", groups: state.groups, error: e?.message ?? String(e) };
+  }
+}
+
 // Sums groups: { cost, tokens, unpriced } (unpriced: tokens of models
 // without a price, left out of cost).
 export function total(groups) {
