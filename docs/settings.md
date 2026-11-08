@@ -4,6 +4,10 @@
 you change. Changes apply when a mod next loads (reopen the popup; the sidebar
 reloads with the layout). [`config.example.json`](../config.example.json)
 shows every setting with its default, and `src/config.js` documents each one.
+[`sheltie.schema.json`](../sheltie.schema.json) is a JSON schema for both
+`sheltie.json` and `.sheltie.json`: point `"$schema"` at
+`https://raw.githubusercontent.com/lavigneer/sheltie/main/sheltie.schema.json`
+(as `install.sh`'s starter file does) for completion and checking in your editor.
 
 | Setting | Default | |
 |---|---|---|

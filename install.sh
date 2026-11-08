@@ -101,7 +101,7 @@ if [ -f "$home/sheltie.json" ]; then
 else
   # Only what you'll want to change first; everything else keeps the defaults
   # (config.example.json shows them all).
-  printf '{\n  "roots": ["~/workspace"],\n  "tracker": "jira"\n}\n' >"$home/sheltie.json"
+  printf '{\n  "$schema": "https://raw.githubusercontent.com/lavigneer/sheltie/main/sheltie.schema.json",\n  "roots": ["~/workspace"],\n  "tracker": "jira"\n}\n' >"$home/sheltie.json"
   echo "settings: $home/sheltie.json (new: edit it; config.example.json has every setting)"
 fi
 

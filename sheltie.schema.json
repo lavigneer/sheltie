@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/lavigneer/sheltie/main/sheltie.schema.json",
+  "title": "sheltie settings",
+  "description": "sheltie.json in the Herdr app home, or a repo's .sheltie.json (there only tracker, jira, github, branch and workflow apply). Merged over the defaults: set only what you change.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "roots": {
+      "description": "Where your git repos are: folders `depth` levels below each root. ~ is your home folder.",
+      "type": "array",
+      "items": { "type": "string" },
+      "default": ["~/workspace"]
+    },
+    "depth": {
+      "description": "How many levels below each root your repos are.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 1
+    },
+    "programs": {
+      "description": "Programs, found on your login shell's PATH unless given as absolute paths. Each is needed only by what uses it.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "git": { "type": "string", "default": "git" },
+        "gh": { "type": "string", "default": "gh" },
+        "jira": {
+          "description": "jira-cli, only with the Jira tracker.",
+          "type": "string",
+          "default": "jira"
+        },
+        "hc": { "type": "string", "default": "hc" },
+        "jq": { "type": "string", "default": "jq" },
+        "curl": { "type": "string", "default": "curl" },
+        "sqlite3": {
+          "description": "Only once opencode has a database to read.",
+          "type": "string",
+          "default": "sqlite3"
+        },
+        "claude": {
+          "description": "For the Usage sidebar's plan limits.",
+          "type": "string",
+          "default": "claude"
+        }
+      }
+    },
+    "tracker": {
+      "description": "Where tickets come from: \"jira\" (jira-cli) or \"github\" (GitHub issues, gh).",
+      "enum": ["jira", "github"],
+      "default": "jira"
+    },
+    "jira": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jql": {
+          "description": "Which tickets to list (jira-cli adds the ORDER BY). Naming `project` makes jira-cli search every project, not just its default one.",
+          "type": "string",
+          "default": "project IS NOT EMPTY AND assignee = currentUser() AND resolution = Unresolved"
+        },
+        "transitions": {
+          "description": "Jira transitions at each step, or null for none.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": { "type": ["string", "null"], "default": null },
+            "review": { "type": ["string", "null"], "default": null },
+            "done": { "type": ["string", "null"], "default": "Resolved" }
+          }
+        },
+        "resolution": {
+          "description": "Resolution set with the `done` transition, if its screen asks for one.",
+          "type": ["string", "null"],
+          "default": null
+        }
+      }
+    },
+    "github": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repos": {
+          "description": "Repos (owner/repo) to list issues from; empty: anywhere you can see.",
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$" },
+          "default": []
+        },
+        "assignee": {
+          "description": "List open issues assigned to this user (\"@me\": you).",
+          "type": "string",
+          "default": "@me"
+        },
+        "search": {
+          "description": "Extra GitHub search terms, e.g. \"label:bug\".",
+          "type": "string",
+          "default": ""
+        },
+        "ref": {
+          "description": "The issue's part of a branch name; {number} is the issue number.",
+          "type": "string",
+          "default": "issue-{number}"
+        },
+        "closeOnFinish": {
+          "description": "Close the issue at Finish if merging its PR didn't already.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "githubOwners": {
+      "description": "GitHub orgs/users searched for pull requests that mention a ticket, in addition to the owners of your local repos and of the repos in repoRules.",
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "repoRules": {
+      "description": "Where new work on a ticket goes. Each rule matches a ticket by any of component, label or project (the Jira project key, or the issue's owner/repo) and names a repo: \"owner/repo\" on GitHub (cloned into the first root if needed) or a local path. Component and label rules win over project rules.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["repo"],
+        "anyOf": [
+          { "required": ["component"] },
+          { "required": ["label"] },
+          { "required": ["project"] }
+        ],
+        "properties": {
+          "component": { "type": "string" },
+          "label": { "type": "string" },
+          "project": { "type": "string" },
+          "repo": { "type": "string" }
+        }
+      },
+      "default": []
+    },
+    "branch": {
+      "description": "A ticket's branch: {ref} is the tracker's part (WEB-142, issue-12), e.g. \"me/{ref}\".",
+      "type": "string",
+      "default": "{ref}"
+    },
+    "worktreeDir": {
+      "description": "Where ticket worktrees go, relative to the repo's main checkout.",
+      "type": "string",
+      "default": ".worktrees"
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "description": "The agent started in a ticket's space; its first message is the last argument (as with `claude \"<task>\"`).",
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "default": ["claude"]
+        },
+        "task": {
+          "description": "First message for new work. {key}, {summary}, {url}, {branch} and {viewCommand} (how to read the ticket) are filled in.",
+          "type": "string",
+          "default": "Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`."
+        },
+        "extraBranchTask": {
+          "description": "First message when asking for another branch of a ticket in a repo that already has one: the agent names and creates it itself. Also {worktreeDir}.",
+          "type": "string",
+          "default": "Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`."
+        },
+        "adhocTask": {
+          "description": "First message for ad-hoc work (not tied to a ticket) on {branch}; {description} is what you typed.",
+          "type": "string",
+          "default": "{description}\n\nThis is ad-hoc work, not tied to a ticket: you're in a new worktree on branch {branch}. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`."
+        },
+        "steps": {
+          "description": "What each Work sidebar step sends to the agent.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "draft-pr": { "type": "string", "default": "/draft-pr" },
+            "fix-ci": { "type": "string", "default": "/fix-ci" },
+            "address-comments": {
+              "type": "string",
+              "default": "/address-comments"
+            },
+            "resolve-conflicts": {
+              "type": "string",
+              "default": "/resolve-conflicts"
+            }
+          }
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agents": {
+          "description": "Whose session logs count toward the Usage sidebar and each Work row's cost: type, in home (CLAUDE_CONFIG_DIR, CODEX_HOME, opencode's data folder).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "home"],
+            "properties": {
+              "type": { "enum": ["claude-code", "codex", "opencode"] },
+              "home": { "type": "string" }
+            }
+          },
+          "default": [
+            { "type": "claude-code", "home": "~/.claude" },
+            { "type": "codex", "home": "~/.codex" },
+            { "type": "opencode", "home": "~/.local/share/opencode" }
+          ]
+        },
+        "prices": {
+          "description": "URL of a LiteLLM-format model price list (file:// works); downloaded when it changes, at most hourly.",
+          "type": "string",
+          "default": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+        }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "autoMerge": {
+          "description": "At Ready: turn on auto-merge \"when-reviews-required\" (it then merges on approval and never at once), or \"never\" (merge with the Merge step).",
+          "enum": ["when-reviews-required", "never"],
+          "default": "when-reviews-required"
+        },
+        "readyWhen": {
+          "description": "When a draft PR is offered Ready: \"green\" (CI passed, no conflicts and nothing unresolved), or \"agent\" (also once its agent runs `hc label \"$HC_TERMINAL_ID\" pr=ready`).",
+          "enum": ["green", "agent"],
+          "default": "green"
+        },
+        "mergeWithoutReview": {
+          "description": "Offer Merge for a ready, green PR that needs no review, not only for an approved one.",
+          "type": "boolean",
+          "default": true
+        },
+        "confirmMerge": {
+          "description": "Merge asks for a second click.",
+          "type": "boolean",
+          "default": true
+        },
+        "confirmFinish": {
+          "description": "Finish and Clean up ask for a second click.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  }
+}

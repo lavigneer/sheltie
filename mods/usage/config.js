@@ -1,6 +1,7 @@
 // Settings: <Herdr app home>/sheltie.json, merged over the defaults below.
 // Every mod awaits configReady() before using them; `C` holds the result.
-// See config.example.json for what each setting does.
+// See config.example.json for what each setting does; sheltie.schema.json
+// describes them for editors (keep it in step with DEFAULTS).
 
 import { appHome, exec, home } from "herdr";
 
@@ -211,7 +212,9 @@ export function repoSettings(over, path) {
   const picked = Object.fromEntries(
     REPO_SETTINGS.filter((k) => k in over).map((k) => [k, over[k]]),
   );
-  const ignored = Object.keys(over).filter((k) => !REPO_SETTINGS.includes(k));
+  const ignored = Object.keys(over).filter(
+    (k) => k !== "$schema" && !REPO_SETTINGS.includes(k),
+  );
   return {
     settings: Object.keys(picked).length ? merge(C, picked) : null,
     problem: ignored.length
