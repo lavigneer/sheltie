@@ -62,12 +62,12 @@ import {
   listTickets,
   listWorktrees,
   localRepos,
-  prLabel,
   repoRoot,
   suggestRepos,
   workFor,
   worktreePath,
 } from "./data.js";
+import { prLabel } from "./flow.js";
 
 const REMEMBER = "tickets.repo"; // shared: ticket key -> repo slug or path
 

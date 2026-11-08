@@ -7,8 +7,7 @@ import path from "node:path";
 import { afterEach, test } from "node:test";
 import { live } from "herdr";
 import { C, useConfig } from "../src/config.js";
-import { prLabel } from "../src/data.js";
-import { agentSaysDone, nextSteps, runStep } from "../src/flow.js";
+import { agentSaysDone, nextSteps, prLabel, runStep } from "../src/flow.js";
 
 const draft = {
   number: 7,
