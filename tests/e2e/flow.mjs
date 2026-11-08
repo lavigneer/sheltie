@@ -86,17 +86,31 @@ export function flow(t, { failures = false } = {}) {
   scenario("the whole flow, from the sidebar's keys", async () => {
     const space = await h.spaceAt(worktree());
     const terminal = space.tabs[0].terminals[0].terminal;
-    const sent = (cmd) =>
-      waitFor(`the agent to get ${cmd}`, async () => (await h.screen(terminal)).includes(cmd));
+    // The agent got `cmd` and is done with it: it prints `done` after
+    // pushing and updating the demo's state. Counts lines, as a command can
+    // come more than once.
+    const seen = new Map();
+    const sent = async (cmd, done) => {
+      const n = (seen.get(done) ?? 0) + 1;
+      await waitFor(`the agent to get ${cmd} and finish it`, async () => {
+        const screen = await h.screen(terminal);
+        return screen.includes(cmd) && screen.split(done).length - 1 >= n;
+      });
+      seen.set(done, n);
+    };
 
     // Draft PR -> the agent opens a draft PR; CI runs and passes.
     await h.step(worktree(), "draft-pr");
-    await sent("/draft-pr");
+    await sent("/draft-pr", "CI is running; it takes");
     assert.equal(h.pr(t.branch)?.draft, true, "a draft PR");
     await h.waitRow(
       "CI passed, Ready offered",
       worktree(),
-      (r) => r.pr?.checks === "passed" && r.steps.some((s) => s.id === "ready"),
+      // The demo's state too: the sidebar may not have seen the latest run start.
+      (r) =>
+        h.pr(t.branch)?.checks === "SUCCESS" &&
+        r.pr?.checks === "passed" &&
+        r.steps.some((s) => s.id === "ready"),
     );
     await h.assertNoErrors("after Draft PR");
 
@@ -110,7 +124,7 @@ export function flow(t, { failures = false } = {}) {
       "only Address comments (not Ready) while comments are unresolved",
     );
     await h.step(worktree(), "address-comments");
-    await sent("/address-comments");
+    await sent("/address-comments", "Addressed the comments");
     assert.equal(h.pr(t.branch).unresolved, 0, "comments resolved");
     await h.assertNoErrors("after Address comments");
 
@@ -126,7 +140,7 @@ export function flow(t, { failures = false } = {}) {
         ["fix-ci"],
       );
       await h.step(worktree(), "fix-ci");
-      await sent("/fix-ci");
+      await sent("/fix-ci", "Pushed a fix; CI is running again");
       await h.assertNoErrors("after Fix CI");
     }
 
@@ -134,7 +148,11 @@ export function flow(t, { failures = false } = {}) {
     await h.waitRow(
       "CI passed, Ready offered",
       worktree(),
-      (r) => r.pr?.checks === "passed" && r.steps.some((s) => s.id === "ready"),
+      // The demo's state too: the sidebar may not have seen the latest run start.
+      (r) =>
+        h.pr(t.branch)?.checks === "SUCCESS" &&
+        r.pr?.checks === "passed" &&
+        r.steps.some((s) => s.id === "ready"),
     );
     const ready = await h.step(worktree(), "ready");
     assert.equal(ready.last.phase, "done", ready.last.text);
@@ -166,7 +184,8 @@ export function flow(t, { failures = false } = {}) {
     }
 
     const done = await h.step(worktree(), "finish");
-    assert.ok(done.gone, "its row is gone");
+    if (!done.gone) assert.equal(done.last.phase, "done", done.last.text);
+    await waitFor("its row to go", async () => !(await h.row(worktree())));
     assert.equal((await h.worktrees(repo())).includes(worktree()), false, "worktree removed");
     assert.equal(fs.existsSync(worktree()), false, "worktree folder removed");
     assert.equal(await h.branchExists(repo(), t.branch), false, "local branch deleted");
