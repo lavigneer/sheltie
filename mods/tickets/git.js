@@ -45,6 +45,10 @@ export async function localRepos() {
       depth,
       "-name",
       ".git",
+      // A directory: a linked worktree's .git is a file, and it is no repo of
+      // its own (it shows as a worktree of its main checkout).
+      "-type",
+      "d",
       "-prune",
     ]).catch(() => null);
     for (const line of r?.stdout.split("\n") ?? [])

@@ -70,6 +70,24 @@ test("workFor: branches by name, PRs linked to the issue (also forks)", async ()
   );
 });
 
+test("localRepos: a worktree outside its repo is no repo of its own", async () => {
+  const storage = (await D.localRepos()).find((r) => r.name === "storage");
+  const outside = `${storage.path}/../storage-elsewhere`;
+  sh(
+    "git",
+    ["worktree", "add", "--quiet", "-b", "elsewhere", outside],
+    storage.path,
+  );
+  try {
+    const names = (await D.localRepos()).map((r) => r.name);
+    assert.ok(names.includes("storage"));
+    assert.ok(!names.includes("storage-elsewhere"));
+  } finally {
+    sh("git", ["worktree", "remove", "--force", outside], storage.path);
+    sh("git", ["branch", "-D", "elsewhere"], storage.path);
+  }
+});
+
 test("suggestRepos: the issue's repo", async () => {
   const repos = await D.localRepos();
   const s = D.suggestRepos(await T.view("acme/storage#5"), repos, null, null);
