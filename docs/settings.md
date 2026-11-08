@@ -8,7 +8,7 @@ shows every setting with its default, and `src/config.js` documents each one.
 | Setting | Default | |
 |---|---|---|
 | `roots`, `depth` | `["~/workspace"]`, `1` | where your repos are: `depth` levels below each root |
-| `programs` | `git`, `gh`, `jira`, `hc`, `jq`, `curl`, `sqlite3` | found on your login shell's PATH; absolute paths win |
+| `programs` | `git`, `gh`, `jira`, `hc`, `jq`, `curl`, `sqlite3` | found on your login shell's PATH; absolute paths win. Each is needed only by what uses it (`jira` by the Jira tracker, `sqlite3` by opencode's usage) |
 | `tracker` | `"jira"` | or `"github"` |
 | `jira.jql` | your unresolved tickets | which tickets to list |
 | `jira.transitions` | `{start: null, review: null, done: "Resolved"}` | Jira transition at each step |

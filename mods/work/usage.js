@@ -80,7 +80,7 @@ const READERS = {
    .out // empty)] ${GROUP}`,
   },
   opencode: {
-    source: `[ -f "$1/opencode.db" ] || exit 0; "$2" -readonly "$1/opencode.db" "SELECT json_object('id', id, 'data', json(data)) FROM message WHERE json_extract(data, '$.role') = 'assistant'"`,
+    source: `[ -f "$1/opencode.db" ] || exit 0; command -v "$2" >/dev/null || { echo "opencode needs sqlite3 (settings: programs.sqlite3)" >&2; exit 127; }; "$2" -readonly "$1/opencode.db" "SELECT json_object('id', id, 'data', json(data)) FROM message WHERE json_extract(data, '$.role') = 'assistant'"`,
     jq: `
 [inputs | fromjson? | .data as $m | select($m.modelID and $m.tokens)
  | $m.tokens as $u
