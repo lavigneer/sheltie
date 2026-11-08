@@ -24,12 +24,12 @@
       "id": "sidebar",
       "type": "column",
       "size": {
-        "px": 268
+        "px": 340
       },
       "min": 44,
       "max": 480,
       "background": "chrome",
-      "resizable": false,
+      "resizable": true,
       "children": [
         {
           "id": "brand",
@@ -64,20 +64,9 @@
                 "mod": "work"
               },
               "size": {
-                "weight": 1
+                "weight": 3
               },
               "min": 90
-            },
-            {
-              "id": "agents",
-              "type": "block",
-              "size": {
-                "weight": 1
-              },
-              "min": 90,
-              "content": {
-                "mod": "agents"
-              }
             }
           ]
         },
