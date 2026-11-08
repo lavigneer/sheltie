@@ -1,0 +1,60 @@
+{
+  "roots": [
+    "~/workspace"
+  ],
+  "depth": 1,
+  "programs": {
+    "git": "git",
+    "gh": "gh",
+    "jira": "jira",
+    "hc": "hc"
+  },
+  "tracker": "jira",
+  "jira": {
+    "jql": "project IS NOT EMPTY AND assignee = currentUser() AND resolution = Unresolved",
+    "transitions": {
+      "start": null,
+      "review": null,
+      "done": "Resolved"
+    },
+    "resolution": null
+  },
+  "github": {
+    "repos": [],
+    "assignee": "@me",
+    "search": "",
+    "ref": "issue-{number}",
+    "closeOnFinish": true
+  },
+  "githubOwners": [
+    "acme"
+  ],
+  "repoRules": [
+    {
+      "component": "Payments",
+      "repo": "acme/payments"
+    },
+    {
+      "project": "WEB",
+      "repo": "acme/web"
+    }
+  ],
+  "branch": "me/{ref}",
+  "worktreeDir": ".worktrees",
+  "agent": {
+    "argv": [
+      "claude"
+    ],
+    "task": "Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments.",
+    "extraBranchTask": "Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments.",
+    "steps": {
+      "draft-pr": "/draft-pr",
+      "fix-ci": "/fix-ci",
+      "address-comments": "/address-comments"
+    }
+  },
+  "workflow": {
+    "autoMerge": "when-reviews-required",
+    "confirmFinish": true
+  }
+}
