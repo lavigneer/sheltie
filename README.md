@@ -155,7 +155,13 @@ refusing uncommitted changes, on Jira). It checks outcomes, not pixels:
 `herdr-app status`, `work.report`, git, `hc read` and the demo's state. It
 needs herdr-app, hc, Xvfb, xdotool, jq and git (Linux), takes under a minute,
 and cleans up after itself; a failed step leaves a screenshot, the app log and
-the state in `e2e-results/`. CI doesn't run it (no Herdr there).
+the state in `e2e-results/`. `nix develop .#e2e -c npm run e2e` brings all of
+that, with Herdr from the nixpkgs pinned in `flake.lock`.
+
+CI runs the end-to-end tests that way, on pull requests and pushes to main,
+against **herdr-desktop 0.1.10 and herdr-core 0.1.15** (update `flake.lock` to
+move on), and weekly against the newest Herdr in nixos-unstable. A failed run
+uploads `e2e-results/` as an artifact.
 
 `src/` holds the shared modules (`config.js`, `lib.js`, `data.js`, `flow.js`,
 `tracker*.js`) and each mod's own `main.js` and `mod.json`. Herdr only resolves

@@ -57,5 +57,33 @@
           };
         };
       });
+
+      # `nix develop .#e2e -c npm run e2e`: everything the end-to-end tests
+      # need, with Herdr from the pinned nixpkgs (flake.lock). CI runs it this
+      # way; its weekly run overrides nixpkgs with the newest nixos-unstable.
+      devShells = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          e2e = pkgs.mkShellNoCC {
+            packages = [
+              pkgs.herdr-desktop
+              pkgs.herdr-core
+              pkgs.nodejs_22
+              pkgs.xvfb
+              pkgs.xdotool
+              pkgs.jq
+              pkgs.git
+            ];
+            # Off NixOS (CI) there's no /run/opengl-driver and no GPU: render
+            # with Mesa's software Vulkan driver (lavapipe).
+            shellHook = ''
+              export VK_DRIVER_FILES=${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.${pkgs.stdenv.hostPlatform.uname.processor}.json
+            '';
+          };
+        }
+      );
     };
 }
