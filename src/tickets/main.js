@@ -215,8 +215,10 @@ export default class Tickets extends View {
         (r) => `${r.ticket.label} ${r.ticket.key} ${r.ticket.summary}`,
       );
       // Whatever was typed can start ad-hoc work; always last, never filtered.
+      // Not before the list loads: Enter on a ticket's key typed early would
+      // start ad-hoc work instead of the ticket.
       const description = this.filter.trim();
-      if (adhocBranch(description))
+      if (d.tickets && adhocBranch(description))
         rows.push({
           kind: "action",
           label: `Start ad-hoc work: ${description}`,
