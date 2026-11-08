@@ -28,9 +28,10 @@ request without leaving Herdr:
      conflict, without auto-merge; it asks for a second click
    - **Finish** (after the merge): closes the space, removes the worktree and
      local branch, and resolves the ticket
-   Every step also runs from the keyboard (see [Keys](#keys)). Click a row's
-   PR label to open the PR in the browser, its ticket key or status to open
-   the ticket (anywhere else on the row: its space).
+   Every step also runs from the keyboard (see [Keys](#keys)). Click a row to
+   go to its space. Its ↗ button (on the right, shown on hover and on the
+   selected row) opens a menu with Open PR and Open ticket, for the browser;
+   each shows only when the row has one.
 
    Each repo's group starts with its **hub**: the main checkout (its branch
    and a "hub" tag), with a space of its own for the repo's longer-running
@@ -98,8 +99,8 @@ With Nix, the flake's `packages.default` has the same files under
 | Alt+Shift+Right / Left | `work.step-next` / `work.step-prev` | pick the selected row's next / previous step button |
 | Alt+Shift+Enter | `work.step` | run the picked step (Finish and Clean up: press twice) |
 | Alt+Shift+O | `work.open` | open the selected row's space, like clicking it |
-| Alt+Shift+P | `work.open-pr` | open the selected row's PR in the browser, like clicking its PR label |
-| Alt+Shift+T | `work.open-ticket` | open the selected row's ticket in the browser, like clicking its key or status |
+| Alt+Shift+P | `work.open-pr` | open the selected row's PR in the browser, like its ↗ menu's Open PR |
+| Alt+Shift+T | `work.open-ticket` | open the selected row's ticket in the browser, like its ↗ menu's Open ticket |
 
 A row without a PR, or whose branch isn't a ticket, or a hub, just says so (a
 notification) for that key. The browser opens with `xdg-open` (Linux) or
