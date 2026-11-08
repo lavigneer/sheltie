@@ -1,5 +1,6 @@
 // A stand-in for Herdr's "herdr" module, enough for the shared code to run in
-// Node: exec runs programs for real; the app's live data is empty.
+// Node: exec runs programs for real; the app's live data is empty unless a
+// test fills `live`.
 import { execFile } from "node:child_process";
 import os from "node:os";
 
@@ -21,9 +22,10 @@ export const exec = (cmd, args = [], opts = {}) =>
   );
 export const appHome = () => process.env.HERDR_APP_HOME;
 export const home = () => os.homedir();
-export const panes = () => [];
-export const spaces = () => [];
-export const agents = () => [];
-export const terminals = () => [];
+export const live = { panes: [], spaces: [], agents: [], terminals: [] };
+export const panes = () => live.panes;
+export const spaces = () => live.spaces;
+export const agents = () => live.agents;
+export const terminals = () => live.terminals;
 export const run = () => null;
 export const notify = () => "";

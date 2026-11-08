@@ -45,8 +45,8 @@
     "argv": [
       "claude"
     ],
-    "task": "Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments.",
-    "extraBranchTask": "Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments.",
+    "task": "Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`.",
+    "extraBranchTask": "Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`.",
     "steps": {
       "draft-pr": "/draft-pr",
       "fix-ci": "/fix-ci",
@@ -55,6 +55,7 @@
   },
   "workflow": {
     "autoMerge": "when-reviews-required",
+    "readyWhen": "green",
     "confirmFinish": true
   }
 }

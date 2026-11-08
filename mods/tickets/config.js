@@ -58,11 +58,13 @@ export const DEFAULTS = {
     argv: ["claude"],
     // First message for new work. {key}, {summary}, {url}, {branch} and
     // {viewCommand} (how to read the ticket) are filled in.
-    task: "Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments.",
+    // Both say how to tell the Work sidebar the PR is done (see
+    // workflow.readyWhen).
+    task: "Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`.",
     // First message when asking for another branch of a ticket in a repo
     // that already has one: the agent names and creates it itself.
     extraBranchTask:
-      "Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments.",
+      "Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`.",
     // What each Work sidebar step sends to the agent.
     steps: {
       "draft-pr": "/draft-pr",
@@ -75,6 +77,12 @@ export const DEFAULTS = {
     // At Ready: turn on auto-merge "when-reviews-required" (it then merges
     // on approval and never at once), or "never" (merge with the Merge step).
     autoMerge: "when-reviews-required",
+    // When a draft PR is offered Ready: "green" (CI passed and nothing is
+    // unresolved), or "agent" (also only once its agent says the PR is done,
+    // by labelling its terminal: `hc label "$HC_TERMINAL_ID" pr=ready`; the
+    // label is cleared whenever a step is sent to the agent). Use "agent"
+    // with agents that know this (the Claude commands in agents/claude do).
+    readyWhen: "green",
     // Finish and Clean up ask for a second click.
     confirmFinish: true,
   },
