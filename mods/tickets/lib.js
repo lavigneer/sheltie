@@ -10,7 +10,49 @@ export const fill = (template, values) =>
   template.replace(/\{(\w+)\}/g, (m, k) => values[k] ?? m);
 
 // Runs one of the configured programs (C.programs: git, gh, jira, hc).
-export const tool = (name, args, opts) => exec(C.programs[name], args, opts);
+// Calls to the APIs behind gh and jira go through `limits` below.
+export const tool = (name, args, opts) =>
+  limits[name] ? limited(limits[name], name, args, opts) : run(name, args, opts);
+
+const run = (name, args, opts) => exec(C.programs[name], args, opts);
+
+// GitHub and Jira rate-limit callers. At most `max` of their calls run at once
+// (GitHub's secondary limits punish bursts). When one answers "rate limited",
+// every call to that program fails at once, without asking, until the backoff
+// (a minute, doubling up to 15 on repeats) has passed; a call that works
+// resets it. Shared by everything in a mod, so polls, popups and steps can't
+// pile on together.
+export const RATE_LIMITED =
+  /rate limit|too many requests|\b429\b|abuse detection/i;
+const BACKOFF_MS = 60_000;
+const MAX_BACKOFF_MS = 15 * 60_000;
+const limits = {
+  gh: { max: 2, active: 0, waiting: [], until: 0, backoff: 0 },
+  jira: { max: 2, active: 0, waiting: [], until: 0, backoff: 0 },
+};
+
+async function limited(l, name, args, opts) {
+  if (l.active >= l.max) await new Promise((go) => l.waiting.push(go));
+  l.active++;
+  try {
+    const wait = l.until - Date.now();
+    if (wait > 0)
+      return {
+        code: 1,
+        stdout: "",
+        stderr: `${name}: rate limited, retrying in ${Math.ceil(wait / 1000)} s`,
+      };
+    const r = await run(name, args, opts);
+    if (r.code !== 0 && RATE_LIMITED.test(`${r.stderr}\n${r.stdout}`)) {
+      l.backoff = Math.min(l.backoff ? l.backoff * 2 : BACKOFF_MS, MAX_BACKOFF_MS);
+      l.until = Date.now() + l.backoff;
+    } else if (r.code === 0) l.backoff = 0;
+    return r;
+  } finally {
+    l.active--;
+    l.waiting.shift()?.();
+  }
+}
 
 // Runs a program and returns its stdout, or throws with its first error line.
 export async function must(name, args, what, opts) {
