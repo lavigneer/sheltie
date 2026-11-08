@@ -687,6 +687,8 @@ export default class Work extends View {
         note,
         title,
         sub,
+        isTicket,
+        link,
       };
     };
 
@@ -733,6 +735,8 @@ export default class Work extends View {
         note,
         title,
         sub,
+        isTicket,
+        link,
       } = look(w);
       return v_flex()
         .id(`work-${w.path}`)
@@ -803,9 +807,12 @@ export default class Work extends View {
               .when(Boolean(ticket?.status), (e) =>
                 e.child(
                   link(
-                    div().flex_shrink(1).min_w(0)
+                    div()
+                      .flex_shrink(1)
+                      .min_w(0)
                       .truncate()
-                      .text_size(10.5).text_color(t.dim),
+                      .text_size(10.5)
+                      .text_color(t.dim),
                     "status",
                     (cx) => this.openTicket(cx, w),
                   ).child(ticket.status),
