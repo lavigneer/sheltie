@@ -9,6 +9,8 @@ request without leaving Herdr:
    ticket. No ticket for it? Type what the work is and choose **Start ad-hoc
    work**, then a repo: you get a worktree on a branch named after it, and
    the same flow below (with no ticket to move).
+   To start several tickets at once, mark them with Tab and press Enter:
+   each gets its own worktree and space, in its best suggested repo.
 2. **Drive the PR from the Work sidebar.** Each worktree shows its ticket, PR
    status and a button for the next step:
    - **Draft PR**, **Fix CI**, **Address comments**, **Resolve conflicts**:
