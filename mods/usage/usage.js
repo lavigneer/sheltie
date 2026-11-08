@@ -112,10 +112,11 @@ async function prices() {
     return priceCache.table;
   const file = `${appHome()}/usage-prices.json`;
   // Downloads only when the list changed (-z), and never replaces the last
-  // good copy with a failed one.
+  // good copy with a failed one. curl gets less than exec's 30 s so a slow
+  // download still leaves time to read the last copy.
   const r = await exec("/bin/sh", [
     "-c",
-    '"$3" -sfL --max-time 30 -z "$1" -o "$1.tmp" "$2" && [ -s "$1.tmp" ] && mv "$1.tmp" "$1"; rm -f "$1.tmp"; [ -f "$1" ] && "$4" -c "$5" "$1"',
+    '"$3" -sfL --max-time 20 -z "$1" -o "$1.tmp" "$2" && [ -s "$1.tmp" ] && mv "$1.tmp" "$1"; rm -f "$1.tmp"; [ -f "$1" ] && "$4" -c "$5" "$1"',
     "sh",
     file,
     C.usage.prices,
@@ -123,12 +124,14 @@ async function prices() {
     C.programs.jq,
     PRICE_JQ,
   ]).catch(() => null);
-  let table = priceCache?.table ?? {};
+  // A failed load isn't cached, so the next refresh tries again.
   try {
-    if (r?.code === 0) table = JSON.parse(r.stdout);
+    if (r?.code === 0) {
+      priceCache = { at: Date.now(), table: JSON.parse(r.stdout) };
+      return priceCache.table;
+    }
   } catch {}
-  priceCache = { at: Date.now(), table };
-  return table;
+  return priceCache?.table ?? {};
 }
 
 // A model's price: its own, else without a [1m]-style tag or date suffix.
