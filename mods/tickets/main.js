@@ -597,7 +597,7 @@ export default class Tickets extends View {
     // Esc mid-action closes the popup and stops after the current step (a
     // clone or fetch that has started finishes); doing it again carries on.
     const hint = this.running
-      ? "working… · Esc stops after this step"
+      ? "Working… · Esc stops after this step"
       : this.screen.name === "list"
         ? "Ctrl+O browser · Ctrl+R reload · Esc"
         : "⌫ back · Esc";
@@ -634,6 +634,7 @@ export default class Tickets extends View {
                 .on_click((_e, cx) => {
                   if (!this.running) this.back(cx);
                 })
+                .tooltip("Back (⌫)")
                 .child("‹"),
             ),
           )

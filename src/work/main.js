@@ -620,7 +620,7 @@ export default class Work extends View {
     this.watchSpaces(cx);
     const t = theme();
     const rail = this.width !== null && this.width < RAIL;
-    const icon = (name, label, onClick) =>
+    const icon = (name, label, tip, onClick) =>
       div()
         .id(`work-${name}`)
         .h(20)
@@ -632,6 +632,7 @@ export default class Work extends View {
         .text_color(t.dim)
         .cursor_pointer()
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .tooltip(tip)
         .on_click((_e, cx) => {
           cx.stop_propagation();
           onClick(cx);
@@ -644,7 +645,7 @@ export default class Work extends View {
           .flex_none()
           .justify_center()
           .items_center()
-          .child(icon("new", "+", () => run("mod.open", { name: "tickets" })))
+          .child(icon("new", "+", "New work (tickets)", () => run("mod.open", { name: "tickets" })))
       : h_flex()
           .h(30)
           .flex_none()
@@ -661,8 +662,8 @@ export default class Work extends View {
               .text_color(t.dim)
               .child("WORK"),
           )
-          .child(icon("refresh", "↻", (cx) => this.refresh(cx, true)))
-          .child(icon("new", "+", () => run("mod.open", { name: "tickets" })));
+          .child(icon("refresh", "↻", "Refresh now", (cx) => this.refresh(cx, true)))
+          .child(icon("new", "+", "New work (tickets)", () => run("mod.open", { name: "tickets" })));
 
     const status = (space) => {
       if (!space) return div().w(12).flex_none().text_color(t.dim).child("○");
@@ -684,7 +685,7 @@ export default class Work extends View {
     const button = (w, s, chosen) => {
       const confirming = this.confirming === `${w.path}:${s.id}`;
       const label = confirming
-        ? `${s.label}? ${this.confirmByKey ? "press" : "click"} again`
+        ? `${s.label}? ${this.confirmByKey ? "Press" : "Click"} again`
         : s.label;
       return div()
         .id(`work-step-${w.path}-${s.id}`)
@@ -698,7 +699,7 @@ export default class Work extends View {
         .border_color(
           confirming ? t.blocked : chosen ? t.accent : (t.border ?? t.dim),
         )
-        .text_size(10.5)
+        .text_size(11)
         .text_color(confirming ? t.blocked : t.foreground)
         .cursor_pointer()
         .hover((st) => st.bg(t.hover))
@@ -923,7 +924,7 @@ export default class Work extends View {
             .child(status(space))
             .child(
               div()
-                .flex_1()
+                .flex_shrink(1)
                 .min_w(64)
                 .flex()
                 .child(
@@ -937,16 +938,23 @@ export default class Work extends View {
                     .child(title),
                 ),
             )
-            .when(Boolean(pr), (el) =>
-              el.child(
-                div()
-                  .flex_shrink(1)
-                  .min_w(0)
-                  .truncate()
-                  .text_size(10.5)
-                  .text_color(prColor)
-                  .child(pr.text),
-              ),
+            // The rest of the line after the title (sized to its text): the
+            // PR, at the right; it also pushes the hub tag and ↗ there.
+            .child(
+              h_flex()
+                .flex_1()
+                .min_w(0)
+                .justify_end()
+                .when(Boolean(pr), (el) =>
+                  el.child(
+                    div()
+                      .min_w(0)
+                      .truncate()
+                      .text_size(11)
+                      .text_color(prColor)
+                      .child(pr.text),
+                  ),
+                ),
             )
             .when(Boolean(w.hub), (el) =>
               el.child(
@@ -956,7 +964,7 @@ export default class Work extends View {
                   .rounded(4)
                   .border_1()
                   .border_color(t.border ?? t.dim)
-                  .text_size(10)
+                  .text_size(11)
                   .text_color(t.dim)
                   .child("hub"),
               ),
@@ -987,11 +995,13 @@ export default class Work extends View {
               )
               .when(Boolean(ticket?.status), (e) =>
                 e.child(
+                  // Capped, so the summary keeps most of the line.
                   div()
                     .flex_shrink(1)
                     .min_w(0)
+                    .max_w(88)
                     .truncate()
-                    .text_size(10.5)
+                    .text_size(11)
                     .text_color(t.dim)
                     .child(ticket.status),
                 ),
@@ -1020,7 +1030,7 @@ export default class Work extends View {
                     .flex_1()
                     .min_w(60)
                     .truncate()
-                    .text_size(10.5)
+                    .text_size(11)
                     .text_color(note.color)
                     .child(note.text),
                 ),
@@ -1077,7 +1087,7 @@ export default class Work extends View {
                 .child(
                   div()
                     .flex_none()
-                    .text_size(10.5)
+                    .text_size(11)
                     .text_color(t.dim)
                     .child(String(g.worktrees.length)),
                 ),
