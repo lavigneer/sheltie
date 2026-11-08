@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/lavigneer/sheltie/main/sheltie.schema.json",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "The JSON schema these settings follow, for editors."
+    },
+    "roots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Where your git repos are: folders `depth` levels below each root. ~ is your home folder.",
+      "default": [
+        "~/workspace"
+      ]
+    },
+    "depth": {
+      "type": "integer",
+      "description": "How many levels below each root your repos are.",
+      "minimum": 0,
+      "default": 1
+    },
+    "programs": {
+      "type": "object",
+      "properties": {
+        "git": {
+          "type": "string",
+          "default": "git"
+        },
+        "gh": {
+          "type": "string",
+          "default": "gh"
+        },
+        "jira": {
+          "type": "string",
+          "description": "jira-cli, only with the Jira tracker.",
+          "default": "jira"
+        },
+        "hc": {
+          "type": "string",
+          "default": "hc"
+        },
+        "jq": {
+          "type": "string",
+          "default": "jq"
+        },
+        "curl": {
+          "type": "string",
+          "default": "curl"
+        },
+        "sqlite3": {
+          "type": "string",
+          "description": "Only once opencode has a database to read.",
+          "default": "sqlite3"
+        },
+        "claude": {
+          "type": "string",
+          "description": "For the Usage sidebar's plan limits.",
+          "default": "claude"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Programs, found on your login shell's PATH unless given as absolute paths. Each is needed only by what uses it."
+    },
+    "tracker": {
+      "type": "string",
+      "enum": [
+        "jira",
+        "github"
+      ],
+      "description": "Where tickets come from: \"jira\" (jira-cli) or \"github\" (GitHub issues, gh).",
+      "default": "jira"
+    },
+    "jira": {
+      "type": "object",
+      "properties": {
+        "jql": {
+          "type": "string",
+          "description": "Which tickets to list (jira-cli adds the ORDER BY). Naming `project` makes jira-cli search every project, not just its default one.",
+          "default": "project IS NOT EMPTY AND assignee = currentUser() AND resolution = Unresolved"
+        },
+        "transitions": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "review": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "done": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": "Resolved"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Jira transitions at each step, or null for none."
+        },
+        "resolution": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Resolution set with the `done` transition, if its screen asks for one.",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "github": {
+      "type": "object",
+      "properties": {
+        "repos": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Repos (owner/repo) to list open issues from; empty: anywhere you can see.",
+          "default": []
+        },
+        "assignee": {
+          "type": "string",
+          "description": "List issues assigned to this user (\"@me\": you).",
+          "default": "@me"
+        },
+        "search": {
+          "type": "string",
+          "description": "Extra GitHub search terms, e.g. \"label:bug\".",
+          "default": ""
+        },
+        "ref": {
+          "type": "string",
+          "description": "The issue's part of a branch name; {number} is the issue number.",
+          "default": "issue-{number}"
+        },
+        "closeOnFinish": {
+          "type": "boolean",
+          "description": "Close the issue at Finish if merging its PR didn't already.",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "githubOwners": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "GitHub orgs/users searched for pull requests that mention a ticket, in addition to the owners of your local repos and of the repos in repoRules.",
+      "default": []
+    },
+    "repoRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Where new work on a ticket goes. Each rule matches a ticket by any of component, label or project (the Jira project key, or the issue's owner/repo) and names a repo: \"owner/repo\" on GitHub (cloned into the first root if needed) or a local path. Component and label rules win over project rules.",
+      "default": []
+    },
+    "branch": {
+      "type": "string",
+      "description": "A ticket's branch: {ref} is the tracker's part (WEB-142, issue-12), e.g. \"me/{ref}\".",
+      "default": "{ref}"
+    },
+    "worktreeDir": {
+      "type": "string",
+      "description": "Where ticket worktrees go, relative to the repo's main checkout.",
+      "default": ".worktrees"
+    },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The agent started in a ticket's space; its first message is the last argument (as with `claude \"<task>\"`).",
+          "minItems": 1,
+          "default": [
+            "claude"
+          ]
+        },
+        "task": {
+          "type": "string",
+          "description": "First message for new work. {key}, {summary}, {url}, {branch} and {viewCommand} (how to read the ticket) are filled in. It says how to tell the Work sidebar the PR is done (see workflow.readyWhen).",
+          "default": "Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`."
+        },
+        "extraBranchTask": {
+          "type": "string",
+          "description": "First message when asking for another branch of a ticket in a repo that already has one: the agent names and creates it itself. Also {worktreeDir}.",
+          "default": "Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`."
+        },
+        "adhocTask": {
+          "type": "string",
+          "description": "First message for ad-hoc work (not tied to a ticket), started from the tickets popup in a new worktree on {branch}; {description} is what you typed.",
+          "default": "{description}\n\nThis is ad-hoc work, not tied to a ticket: you're in a new worktree on branch {branch}. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`."
+        },
+        "steps": {
+          "type": "object",
+          "properties": {
+            "draft-pr": {
+              "type": "string",
+              "default": "/draft-pr"
+            },
+            "fix-ci": {
+              "type": "string",
+              "default": "/fix-ci"
+            },
+            "address-comments": {
+              "type": "string",
+              "default": "/address-comments"
+            },
+            "resolve-conflicts": {
+              "type": "string",
+              "default": "/resolve-conflicts"
+            }
+          },
+          "additionalProperties": false,
+          "description": "What each Work sidebar step sends to the agent."
+        }
+      },
+      "additionalProperties": false
+    },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "claude-code",
+                  "codex",
+                  "opencode"
+                ]
+              },
+              "home": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "home"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Whose session logs count toward the Usage sidebar and each Work row's cost: `type` in `home` (CLAUDE_CONFIG_DIR, CODEX_HOME, opencode's data folder). An agent you don't use costs nothing to list.",
+          "default": [
+            {
+              "type": "claude-code",
+              "home": "~/.claude"
+            },
+            {
+              "type": "codex",
+              "home": "~/.codex"
+            },
+            {
+              "type": "opencode",
+              "home": "~/.local/share/opencode"
+            }
+          ]
+        },
+        "prices": {
+          "type": "string",
+          "description": "URL of a LiteLLM-format model price list (file:// works), downloaded when it changes, at most hourly.",
+          "default": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+        }
+      },
+      "additionalProperties": false
+    },
+    "workflow": {
+      "type": "object",
+      "properties": {
+        "autoMerge": {
+          "type": "string",
+          "enum": [
+            "when-reviews-required",
+            "never"
+          ],
+          "description": "At Ready: turn on auto-merge \"when-reviews-required\" (it then merges on approval and never at once), or \"never\" (merge with the Merge step).",
+          "default": "when-reviews-required"
+        },
+        "readyWhen": {
+          "type": "string",
+          "enum": [
+            "green",
+            "agent"
+          ],
+          "description": "When a draft PR is offered Ready: \"green\" (CI passed, no conflicts with its base and nothing unresolved; a PR with no checks isn't green), or \"agent\" (also only once its agent says the PR is done, by labelling its terminal: `hc label \"$HC_TERMINAL_ID\" pr=ready`; the label is cleared whenever a step is sent to the agent). Use \"agent\" with agents that know this (the skills in skills/ do).",
+          "default": "green"
+        },
+        "mergeWithoutReview": {
+          "type": "boolean",
+          "description": "Offer Merge for a ready, green PR that needs no review (a repo without required reviews), not only for an approved one; false: merge those in the browser.",
+          "default": true
+        },
+        "confirmMerge": {
+          "type": "boolean",
+          "description": "Merge asks for a second click.",
+          "default": true
+        },
+        "confirmFinish": {
+          "type": "boolean",
+          "description": "Finish and Clean up ask for a second click.",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "description": "sheltie.json in the Herdr app home, or a repo's .sheltie.json (there only tracker, jira, github, branch and workflow apply). Merged over the defaults: set only what you change.",
+  "title": "sheltie settings",
+  "definitions": {}
+}

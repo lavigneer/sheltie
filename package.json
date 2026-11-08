@@ -8,7 +8,7 @@
     "build": "node scripts/build.mjs",
     "test": "node --import ./tests/register.mjs --test 'tests/*.test.mjs'",
     "typecheck": "tsc -p .",
-    "check-built": "node scripts/build.mjs && git diff --exit-code -- mods",
+    "check-built": "node scripts/build.mjs && git diff --exit-code -- mods sheltie.schema.json",
     "e2e": "node --test --test-concurrency=1 'tests/e2e/*.test.mjs'",
     "e2e:shots": "node --test tests/e2e/shots.mjs",
     "lint": "biome lint src scripts tests",
@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
+    "ts-json-schema-generator": "^2.9.0",
     "typescript": "^5.9.3"
   }
 }

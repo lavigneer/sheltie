@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/lavigneer/sheltie/main/sheltie.schema.json",
   "roots": [
     "~/workspace"
   ],
