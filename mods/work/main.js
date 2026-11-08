@@ -9,7 +9,7 @@
 // go to its space, or to open one there with the agent. Its ↗ button (shown on
 // hover, on the selected row and while its menu is open) opens a menu: Open PR,
 // Open ticket (in the browser), each only when the row has one. Its second
-// line ends with what the agents started in its folder have cost (usage.js).
+// line ends with what agents working in its folder have cost (usage.js).
 // "+" opens the tickets popup to start new work; ↻ refreshes everything now.
 //
 // Under each row, buttons for its next step in the ticket workflow (Draft PR,
@@ -1037,7 +1037,7 @@ export default class Work extends View {
                     .flex_none()
                     .text_size(11)
                     .text_color(t.dim)
-                    .tooltip("What its agents have cost (at API prices)")
+                    .tooltip("What agents working here have cost (at API prices)")
                     .child(cost),
                 ),
               ),

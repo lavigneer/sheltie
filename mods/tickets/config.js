@@ -10,7 +10,7 @@ export const DEFAULTS = {
   depth: 1,
 
   // Programs, found on your login shell's PATH unless given as absolute paths.
-  programs: { git: "git", gh: "gh", jira: "jira", hc: "hc", jq: "jq" },
+  programs: { git: "git", gh: "gh", jira: "jira", hc: "hc", jq: "jq", curl: "curl" },
 
   // Where tickets come from: "jira" (jira-cli) or "github" (GitHub issues, gh).
   tracker: "jira",
@@ -75,9 +75,16 @@ export const DEFAULTS = {
   },
 
   usage: {
-    // Claude Code config folders (CLAUDE_CONFIG_DIR) whose transcripts count
-    // toward the usage popup and the Work sidebar's per-row cost.
-    claudeHomes: ["~/.claude"],
+    // Whose session logs count toward the Usage sidebar and each Work row's
+    // cost: `type` "claude-code" or "codex", in `home` (CLAUDE_CONFIG_DIR,
+    // CODEX_HOME). An agent you don't use costs nothing to list.
+    agents: [
+      { type: "claude-code", home: "~/.claude" },
+      { type: "codex", home: "~/.codex" },
+    ],
+    // Model prices: LiteLLM's list (downloaded when it changes, at most hourly).
+    prices:
+      "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
   },
 
   workflow: {

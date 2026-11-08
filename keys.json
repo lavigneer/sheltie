@@ -1,8 +1,7 @@
 {
   "global": {
     "ctrl-shift-j": "mod.open:tickets",
-    "ctrl-shift-f": "mod.open:projects",
-    "ctrl-shift-u": "mod.open:usage"
+    "ctrl-shift-f": "mod.open:projects"
   },
   "layout:sheltie": {
     "alt-shift-down": "work.next",

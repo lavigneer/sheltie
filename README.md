@@ -32,8 +32,9 @@ offered, the safety checks and how repos are suggested.
 
 Trackers: **Jira** (via jira-cli) and **GitHub issues**. Code hosting: GitHub.
 A third mod, **projects** (Ctrl+Shift+F), is a plain project switcher, and
-**usage** (Ctrl+Shift+U) shows what your agents cost: today, the last 7 and
-30 days, by model and by folder, from Claude Code's transcripts. The Work
+**usage**, at the bottom of the sidebar, shows what your agents (Claude Code,
+Codex) cost: today, the last 7 and 30 days, and by model, from their session
+logs and [LiteLLM's prices](https://github.com/BerriAI/litellm). The Work
 sidebar shows each row's cost too, so you can see what each PR cost.
 
 > **What it runs.** The mods run `git`, `gh`, `jira` and `hc` as you, to
@@ -75,7 +76,6 @@ and `herdr-demo`.
 |---|---|---|
 | Ctrl+Shift+J | `mod.open:tickets` | pick a ticket |
 | Ctrl+Shift+F | `mod.open:projects` | switch project |
-| Ctrl+Shift+U | `mod.open:usage` | agent cost and usage |
 | Alt+Shift+Down / Up | `work.next` / `work.prev` | select next / previous row |
 | Alt+Shift+Right / Left | `work.step-next` / `work.step-prev` | pick next / previous step |
 | Alt+Shift+Enter | `work.step` | run the picked step |

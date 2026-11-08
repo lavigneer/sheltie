@@ -14,8 +14,7 @@
 #
 # What it does:
 #   mods/*                  copied to <home>/mods/ (replacing earlier versions)
-#   keys.json               ctrl-shift-j (tickets), ctrl-shift-f (projects),
-#                           ctrl-shift-u (usage) and
+#   keys.json               ctrl-shift-j (tickets), ctrl-shift-f (projects) and
 #                           the Work sidebar's alt-shift keys (in the sheltie
 #                           layout only) added to
 #                           <home>/keys.json, unless you use those keys

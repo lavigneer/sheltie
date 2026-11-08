@@ -67,6 +67,17 @@
                 "weight": 3
               },
               "min": 90
+            },
+            {
+              "id": "usage",
+              "type": "block",
+              "content": {
+                "mod": "usage"
+              },
+              "size": {
+                "px": 170
+              },
+              "min": 44
             }
           ]
         },
