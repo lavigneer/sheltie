@@ -1,0 +1,35 @@
+# Settings
+
+`<Herdr app home>/sheltie.json` is merged over the defaults, so set only what
+you change. Changes apply when a mod next loads (reopen the popup; the sidebar
+reloads with the layout). [`config.example.json`](../config.example.json)
+shows every setting with its default, and `src/config.js` documents each one.
+
+| Setting | Default | |
+|---|---|---|
+| `roots`, `depth` | `["~/workspace"]`, `1` | where your repos are: `depth` levels below each root |
+| `programs` | `git`, `gh`, `jira`, `hc` | found on your login shell's PATH; absolute paths win |
+| `tracker` | `"jira"` | or `"github"` |
+| `jira.jql` | your unresolved tickets | which tickets to list |
+| `jira.transitions` | `{start: null, review: null, done: "Resolved"}` | Jira transition at each step |
+| `jira.resolution` | `null` | resolution for the `done` transition |
+| `github.repos` | `[]` (anywhere) | where to look for issues |
+| `github.assignee`, `github.search` | `"@me"`, `""` | which issues |
+| `github.ref` | `"issue-{number}"` | an issue's part of a branch name |
+| `github.closeOnFinish` | `true` | close the issue at Finish if merging didn't |
+| `githubOwners` | `[]` | extra orgs searched for PRs mentioning a Jira key |
+| `repoRules` | `[]` | `{component \| label \| project, repo}`: where new work goes |
+| `branch` | `"{ref}"` | branch name; `{ref}` is `WEB-142` or `issue-12`, e.g. `"me/{ref}"` |
+| `worktreeDir` | `".worktrees"` | relative to the repo's main checkout |
+| `agent.argv` | `["claude"]` | the agent; its first message is the last argument |
+| `agent.task`, `agent.extraBranchTask` | see example | first messages; `{key}`, `{summary}`, `{branch}`, `{viewCommand}` |
+| `agent.steps` | the Claude commands | what each sidebar step sends |
+| `workflow.autoMerge` | `"when-reviews-required"` | or `"never"` |
+| `workflow.readyWhen` | `"green"` | when Ready is offered: CI passed, no conflicts and nothing unresolved; `"agent"`: also once the agent runs `hc label "$HC_TERMINAL_ID" pr=ready` |
+| `workflow.mergeWithoutReview` | `true` | offer Merge for a ready, green PR needing no review; `false`: only once approved |
+| `workflow.confirmMerge` | `true` | Merge needs a second click |
+| `workflow.confirmFinish` | `true` | Finish and Clean up need a second click |
+
+For Jira Server/Data Center, set up jira-cli with
+`jira init --installation local --auth-type bearer` and a personal access
+token.
