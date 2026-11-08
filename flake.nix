@@ -1,5 +1,5 @@
 {
-  description = "Herdr desktop mods: ticket -> worktree -> agent -> PR -> merged";
+  description = "A suite of Herdr desktop mods and layouts, starting with ticket -> worktree -> agent -> PR -> merged";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -52,7 +52,7 @@
             runHook postInstall
           '';
           meta = {
-            description = "Herdr desktop mods: ticket -> worktree -> agent -> PR -> merged";
+            description = "A suite of Herdr desktop mods and layouts, starting with ticket -> worktree -> agent -> PR -> merged";
             license = nixpkgs.lib.licenses.mit;
             platforms = systems;
           };

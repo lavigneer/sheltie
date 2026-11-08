@@ -3,7 +3,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "Herdr desktop mods: ticket -> worktree -> agent -> PR -> merged",
+  "description": "A suite of Herdr desktop mods and layouts, starting with ticket -> worktree -> agent -> PR -> merged",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --import ./tests/register.mjs --test 'tests/*.test.mjs'",
