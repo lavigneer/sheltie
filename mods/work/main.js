@@ -226,17 +226,27 @@ export default class Work extends View {
   // rows with their space's agent (where agent steps go), PR, next steps and
   // last step, and which row and step the keys would act on, and what
   // work.open-pr / work.open-ticket would open (prUrl / ticketUrl).
+  // Everything but the ticket URLs is taken now, so a row's steps and its PR
+  // always agree (a lookup may finish while the URLs are awaited).
   report(cx, rows, at, step) {
+    const out = this.reportNow(rows, at, step);
     cx.spawn(async () => {
       const urls = await Promise.all(
         rows.map((r) => this.ticketUrl(r.w).catch(() => null)),
       );
-      this.writeReport(rows, at, step, urls);
+      out.rows.forEach((row, i) => (row.ticketUrl = urls[i]));
+      const file = `${appHome()}/work-report.json`;
+      await readTextFile(file)
+        .then((old) =>
+          writeTextFile(file, `${JSON.stringify(out, null, 2)}\n`, old),
+        )
+        .catch((e) => console.error(`work.report: ${e?.message ?? e}`));
     });
   }
 
-  writeReport(rows, at, step, ticketUrls) {
-    const out = {
+  // The report, without the ticket URLs (null until report() adds them).
+  reportNow(rows, at, step) {
+    return {
       at: Date.now(),
       loaded: this.groups !== null,
       rows: rows.map((r, i) => {
@@ -257,7 +267,7 @@ export default class Work extends View {
           steps: r.steps.map((s) => ({ id: s.id, label: s.label })),
           confirming,
           ticket: (r.w.key && this.tickets.get(r.w.key)?.value) || null,
-          ticketUrl: ticketUrls[i],
+          ticketUrl: null,
           prUrl: pr?.url ?? null,
           pr: pr && {
             number: pr.number,
@@ -276,12 +286,6 @@ export default class Work extends View {
         };
       }),
     };
-    const file = `${appHome()}/work-report.json`;
-    readTextFile(file)
-      .then((old) =>
-        writeTextFile(file, `${JSON.stringify(out, null, 2)}\n`, old),
-      )
-      .catch((e) => console.error(`work.report: ${e?.message ?? e}`));
   }
 
   // Git only: worktrees and branches. Ticket and PR details follow separately,
