@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-const { joinWork } = await import("../src/data.js");
+const { joinWork } = await import("../src/work.js");
 
 // A tracker whose keys are "#<n>" in a branch name like "me/issue-<n>".
 const tracker = { keysIn: (text) => [...text.matchAll(/issue-(\d+)/g)].map((m) => `#${m[1]}`) };

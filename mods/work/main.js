@@ -60,14 +60,8 @@ import {
 } from "herdr";
 import { C, configReady } from "./config.js";
 import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
-import {
-  hubExcept,
-  keyOfBranch,
-  localRepos,
-  prDetails,
-  repoState,
-  unresolvedThreads,
-} from "./data.js";
+import { hubExcept, keyOfBranch, localRepos, repoState } from "./git.js";
+import { prDetails, unresolvedThreads } from "./prs.js";
 import { agentIn, agentSaysDone, nextSteps, prLabel, runStep } from "./flow.js";
 import { trackerOf } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";

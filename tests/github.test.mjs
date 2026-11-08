@@ -10,7 +10,11 @@ before(async () => {
   const config = await import("../src/config.js");
   await config.configReady();
   C = config.C;
-  D = await import("../src/data.js");
+  D = {
+    ...(await import("../src/git.js")),
+    ...(await import("../src/prs.js")),
+    ...(await import("../src/work.js")),
+  };
   T = (await import("../src/tracker.js")).tracker();
 });
 

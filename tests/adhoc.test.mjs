@@ -4,7 +4,7 @@ import { test } from "node:test";
 import "./herdr-stub.mjs";
 
 const { useConfig } = await import("../src/config.js");
-const { adhocBranch } = await import("../src/data.js");
+const { adhocBranch } = await import("../src/git.js");
 
 test("adhocBranch: a kebab-case slug in C.branch", () => {
   useConfig({ branch: "me/{ref}" });
