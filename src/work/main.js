@@ -71,10 +71,10 @@ import {
   prLabel,
   runStep,
 } from "./flow.js";
-import { hubExcept, keyOfBranch, localRepos, sameSlug } from "./git.js";
+import { hubExcept, localRepos, sameSlug } from "./git.js";
 import { basename, cycle, openUrl, spaceFor } from "./lib.js";
 import { drainRequests } from "./start.js";
-import { trackerOf } from "./tracker.js";
+import { ticketOfBranch } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
 import { serial } from "./watch.js";
 import { prRef, WorkStore } from "./work.js";
@@ -297,7 +297,7 @@ export default class Work extends View {
           path: r.w.path,
           hub: Boolean(r.w.hub),
           branch: r.w.branch,
-          key: r.w.key ?? null,
+          key: r.w.handle?.key ?? null,
           repo: r.w.repo.slug ?? r.w.repo.name,
           space: r.space?.id ?? null,
           agent: agentIn(r.space),
@@ -311,7 +311,8 @@ export default class Work extends View {
             confirm: Boolean(s.confirm),
           })),
           confirming,
-          ticket: (r.w.key && this.tickets.get(r.w.key)?.value) || null,
+          ticket:
+            (r.w.handle && this.tickets.get(r.w.handle.key)?.value) || null,
           ticketUrl: null,
           prUrl: pr?.url ?? null,
           pr: pr && {
@@ -358,7 +359,7 @@ export default class Work extends View {
       worktrees: s.worktrees.map((w) => ({
         ...w,
         repo: s.repo,
-        key: keyOfBranch(w.branch, s.repo),
+        handle: ticketOfBranch(w.branch, s.repo),
       })),
     }));
     this.recheckWatched(cx);
@@ -371,11 +372,11 @@ export default class Work extends View {
   prOf(w) {
     if (w.hub) return null;
     const own = this.store.prEntry(w.repo, w.branch)?.value;
-    if (own || !w.key) return own ?? null;
+    if (own || !w.handle) return own ?? null;
     return (
       this.store
-        .snapshot([w.key])
-        .get(w.key)
+        .snapshot([w.handle.key])
+        .get(w.handle.key)
         ?.find((i) => i.worktree === w.path)?.pr ?? null
     );
   }
@@ -402,7 +403,7 @@ export default class Work extends View {
     );
     // Each key once, with the tracker of the repo it's from.
     const keys = new Map(
-      all.filter((w) => w.key).map((w) => [w.key, trackerOf(w.repo)]),
+      all.filter((w) => w.handle).map((w) => [w.handle.key, w.handle.tracker]),
     );
     await this.store.refresh(keys, {
       force,
@@ -543,9 +544,7 @@ export default class Work extends View {
       run("space.new", {
         name: w.hub
           ? w.repo.name
-          : w.key
-            ? trackerOf(w.repo).labelOf(w.key)
-            : w.branch.split("/").pop(),
+          : (w.handle?.label ?? w.branch.split("/").pop()),
         folder: w.path,
         argv: C.agent.argv,
       });
@@ -555,12 +554,14 @@ export default class Work extends View {
   // know (e.g. "UTF-8" in "fix-utf-8") isn't. Not looked up yet, or
   // unreachable: still a ticket.
   isTicket(w) {
-    return Boolean(w.key) && this.tickets.get(w.key)?.state !== "none";
+    return (
+      Boolean(w.handle) && this.tickets.get(w.handle.key)?.state !== "none"
+    );
   }
 
   // Where `w`'s ticket is in the browser; null when its branch isn't a ticket.
   async ticketUrl(w) {
-    return this.isTicket(w) ? await trackerOf(w.repo).url(w.key) : null;
+    return this.isTicket(w) ? await w.handle.url() : null;
   }
 
   // Opens `w`'s PR in the browser; without one, says so.
@@ -587,14 +588,14 @@ export default class Work extends View {
       const url = await this.ticketUrl(w).catch(() => null);
       if (url) return openUrl(url);
       notify({
-        title: `${this.who(w)}: ${this.isTicket(w) ? `no link for ${trackerOf(w.repo).labelOf(w.key)}` : "not a ticket"}`,
+        title: `${this.who(w)}: ${this.isTicket(w) ? `no link for ${w.handle.label}` : "not a ticket"}`,
         level: "info",
       });
     });
   }
 
   who(w) {
-    return w.key ? trackerOf(w.repo).labelOf(w.key) : basename(w.path);
+    return w.handle?.label ?? basename(w.path);
   }
 
   render(cx) {
@@ -773,7 +774,7 @@ export default class Work extends View {
     const look = (w) => {
       const space = spaceOf(w);
       const isSelected = w.path === selected;
-      const entry = w.key ? this.tickets.get(w.key) : null;
+      const entry = w.handle ? this.tickets.get(w.handle.key) : null;
       const ticket = entry?.value ?? null;
       const prValue = this.prOf(w);
       const pr = prLabel(prValue);
@@ -816,13 +817,13 @@ export default class Work extends View {
       const title = w.hub
         ? (w.branch ?? "detached")
         : isTicket
-          ? trackerOf(w.repo).labelOf(w.key)
+          ? w.handle.label
           : w.branch;
       const sub = ticket
         ? ticket.summary
         : isTicket
           ? entry?.state === "failed"
-            ? `${w.branch} · ${trackerOf(w.repo).name} unreachable`
+            ? `${w.branch} · ${w.handle.tracker.name} unreachable`
             : w.branch
           : "";
       const cost = this.costOf(w);

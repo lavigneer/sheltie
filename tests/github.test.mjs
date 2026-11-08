@@ -106,13 +106,19 @@ test("merging a PR that closes an issue closes it; Finish then has nothing to do
 
 test("Finish closes an issue merging didn't", async () => {
   const { runStep } = await import("../src/flow.js");
+  const { ticketOfBranch } = await import("../src/tracker.js");
   const storage = (await D.localRepos()).find((r) => r.name === "storage");
   const wt = `${storage.path}/.worktrees/issue-3`;
   const pr = { ...(await D.prDetails("acme/storage", 12)), state: "MERGED" };
   // #12 says "Closes #3", but pretend GitHub didn't act on it.
   const note = await runStep(
     "finish",
-    { path: wt, branch: "issue-3", key: "acme/storage#3", repo: storage },
+    {
+      path: wt,
+      branch: "issue-3",
+      handle: ticketOfBranch("issue-3", storage),
+      repo: storage,
+    },
     pr,
   );
   assert.match(note, /worktree removed · storage#3 closed/);

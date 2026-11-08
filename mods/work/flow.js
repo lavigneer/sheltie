@@ -30,7 +30,6 @@ import { C, settingsOf } from "./config.js";
 import { assertClean, removeWorktree } from "./git.js";
 import { basename, inside, spaceFor, tool } from "./lib.js";
 import { markReady, mergePr, prDetails } from "./prs.js";
-import { trackerOf } from "./tracker.js";
 
 const AGENT_STEPS = [
   "draft-pr",
@@ -248,7 +247,7 @@ async function tellAgent(w, id) {
     });
   else
     run("space.new", {
-      name: w.key ? trackerOf(w.repo).labelOf(w.key) : basename(w.path),
+      name: w.handle?.label ?? basename(w.path),
       folder: w.path,
       argv: C.agent.argv,
       task: text,
@@ -258,7 +257,7 @@ async function tellAgent(w, id) {
 
 // --- Steps ------------------------------------------------------------------
 
-// Runs step `id` for worktree `w` ({ path, branch, key, repo }) whose PR is
+// Runs step `id` for worktree `w` ({ path, branch, handle, repo }) whose PR is
 // `pr`. `others`: the other worktrees with their PRs ([{ w, pr }]), to tell
 // whether the ticket still has open work. Returns a short note, or throws.
 export async function runStep(id, w, pr, others = []) {
@@ -278,8 +277,8 @@ export async function runStep(id, w, pr, others = []) {
         notes.push("auto-merge on approval");
       }
     }
-    if (w.key) {
-      const moved = await trackerOf(w.repo).move(w.key, "review");
+    if (w.handle) {
+      const moved = await w.handle.move("review");
       if (moved) notes.push(moved);
     }
     return notes.join(" · ");
@@ -296,17 +295,18 @@ export async function runStep(id, w, pr, others = []) {
         run("space.close", { id: s.id, confirmed: true });
     await removeWorktree(w.repo, w.path, w.branch, pr?.head ?? null);
     const notes = ["worktree removed"];
-    if (id === "finish" && w.key) {
+    if (id === "finish" && w.handle) {
       const open = others.filter(
         (o) =>
-          o.w.key === w.key && !["merged", "closed"].includes(stageOf(o.pr)),
+          o.w.handle?.key === w.handle.key &&
+          !["merged", "closed"].includes(stageOf(o.pr)),
       );
       if (open.length)
         notes.push(
-          `${trackerOf(w.repo).labelOf(w.key)} left open: ${open.map((o) => basename(o.w.path)).join(", ")} still in progress`,
+          `${w.handle.label} left open: ${open.map((o) => basename(o.w.path)).join(", ")} still in progress`,
         );
       else {
-        const moved = await trackerOf(w.repo).move(w.key, "done");
+        const moved = await w.handle.move("done");
         if (moved) notes.push(moved);
       }
     }

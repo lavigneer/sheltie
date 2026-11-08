@@ -10,7 +10,7 @@ import {
   settingsOf,
 } from "./config.js";
 import { basename, fill, firstLine, must, pool, tool } from "./lib.js";
-import { tracker, trackerOf } from "./tracker.js";
+import { tracker } from "./tracker.js";
 
 const git = (cwd, ...args) => tool("git", args, { cwd });
 
@@ -172,10 +172,6 @@ export async function repoState(repo) {
     linked: linked.map((w) => w.path),
   };
 }
-
-// The tracker's key for a branch in `repo`, or null.
-export const keyOfBranch = (branch, repo) =>
-  trackerOf(repo).keysIn(branch, repo?.slug ?? null)[0] ?? null;
 
 // --- Worktrees --------------------------------------------------------------
 

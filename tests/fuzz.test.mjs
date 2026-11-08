@@ -7,11 +7,10 @@ import { resolve, sep } from "node:path";
 import { test } from "node:test";
 
 const { C, DEFAULTS, merge } = await import("../src/config.js");
-const { adhocBranch, branchFor, keyOfBranch, worktreePath } = await import(
-  "../src/git.js"
-);
+const { adhocBranch, branchFor, worktreePath } = await import("../src/git.js");
 const github = await import("../src/tracker-github.js");
 const jira = await import("../src/tracker-jira.js");
+const { ticketOfBranch } = await import("../src/tracker.js");
 
 // mulberry32: a small seeded generator.
 function rng(seed) {
@@ -77,7 +76,7 @@ property("github: a ticket's branch gives back its key", (r) => {
     ref: s.github.ref.replace("{number}", number),
   };
   const branch = branchFor(ticket, repo);
-  assert.equal(keyOfBranch(branch, repo), ticket.key, branch);
+  assert.equal(ticketOfBranch(branch, repo)?.key, ticket.key, branch);
 });
 
 property("jira: a ticket's branch gives back its key", (r) => {
@@ -90,7 +89,7 @@ property("jira: a ticket's branch gives back its key", (r) => {
   };
   const key = `${r.pick(upper)}${r.str(upper + digits, 1, 5)}-${r.int(1, 99999)}`;
   const branch = branchFor({ key, ref: key }, repo);
-  assert.equal(keyOfBranch(branch, repo), key, branch);
+  assert.equal(ticketOfBranch(branch, repo)?.key, key, branch);
 });
 
 // Any characters, weighted toward the ones git and paths care about.
