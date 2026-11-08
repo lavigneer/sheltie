@@ -69,7 +69,7 @@ function shortTmp() {
 
 // Starts Xvfb on a free display (it picks one and tells us through fd 3).
 async function startXvfb() {
-  const x = spawn("Xvfb", ["-displayfd", "3", "-screen", "0", "1600x1000x24", "-nolisten", "tcp"], {
+  const x = spawn("Xvfb", ["-displayfd", "3", "-screen", "0", "2560x1600x24", "-nolisten", "tcp"], {
     stdio: ["ignore", "ignore", "pipe", "pipe"],
     detached: false,
   });
@@ -305,7 +305,29 @@ export class Herdr {
     );
   }
 
+  // Saves the window as it is now as a PNG.
+  async shot(file) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    await this.sh("herdr-app", ["shot", file]);
+    return file;
+  }
+
   // --- Doing ---------------------------------------------------------------
+
+  // The window's size, in px (there's no window manager to refuse it).
+  resize(width, height) {
+    return this.sh("xdotool", ["windowsize", "--sync", this.window, String(width), String(height)]);
+  }
+
+  // Merges `patch` into the app home's settings.json (applied live).
+  async settings(patch) {
+    const file = path.join(this.home, "settings.json");
+    let old = {};
+    try {
+      old = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch {}
+    fs.writeFileSync(file, `${JSON.stringify({ ...old, ...patch }, null, 2)}\n`);
+  }
 
   key(...keys) {
     return this.sh("xdotool", ["key", "--delay", "60", ...keys]);

@@ -134,7 +134,9 @@ export default class Projects extends View {
         )
         .child(
           div()
-            .flex_none()
+            .flex_shrink(1)
+            .min_w(80)
+            .truncate()
             .text_color(t.foreground)
             .when(Boolean(r.space?.active), (d) => d.font_semibold())
             .child(r.name),
@@ -142,13 +144,16 @@ export default class Projects extends View {
         .child(
           div()
             .flex_1()
+            .min_w(80)
             .truncate()
             .text_size(11)
             .text_color(t.dim)
             .child(tilde(r.path)),
         )
         .when(Boolean(r.space), (el) =>
-          el.child(div().text_size(11).text_color(t.dim).child("open")),
+          el.child(
+            div().flex_none().text_size(11).text_color(t.dim).child("open"),
+          ),
         );
 
     const problem = this.problems[0] ? tilde(this.problems[0]) : null;
