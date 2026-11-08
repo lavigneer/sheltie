@@ -5,7 +5,13 @@ npm run build      # src/ -> mods/ (commit the result)
 npm test           # node --test against throwaway demos
 npm run e2e        # the real Herdr with the mods, on throwaway demos
 npm run e2e:shots  # screenshots of the mods at a few sizes, in e2e-results/shots/
+npm run ci:lint    # Biome lint and format check, exactly as CI runs it
+npm run format     # apply Biome's fixes and formatting
 ```
+
+Run these inside `nix develop` (on NixOS npm's Biome binary won't start; the
+shell points `BIOME_BINARY` at Nix's), or elsewhere after `npm ci`, so the
+pinned `@biomejs/biome` is used rather than another `biome` on your PATH.
 
 ## Layout
 
@@ -46,7 +52,7 @@ no errors and the sidebar still offers every step.
 
 ## CI
 
-CI checks that `mods/` is up to date, runs ShellCheck and the tests, and runs
+CI checks that `mods/` is up to date, runs `npm run ci:lint`, ShellCheck and the tests, and runs
 the end-to-end tests on pull requests and pushes to main against
 herdr-desktop 0.1.10 and herdr-core 0.1.15 (update `flake.lock` to move on),
 and weekly against the newest Herdr in nixos-unstable. A failed run uploads
