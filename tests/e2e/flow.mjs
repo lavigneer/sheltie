@@ -50,7 +50,7 @@ export function flow(t, { failures = false } = {}) {
   after(() => h.stop(), { timeout: 60_000 });
 
   scenario("the mods load", async () => {
-    for (const mod of ["tickets", "work", "projects"])
+    for (const mod of ["tickets", "work", "projects", "usage"])
       await h.sh("herdr-app", ["check", path.join(h.home, "mods", mod)]);
     await waitFor("the sidebar's first scan", async () => (await h.report()).loaded);
     await h.assertNoErrors("after start");

@@ -7,7 +7,9 @@
     "git": "git",
     "gh": "gh",
     "jira": "jira",
-    "hc": "hc"
+    "hc": "hc",
+    "jq": "jq",
+    "curl": "curl"
   },
   "tracker": "jira",
   "jira": {
@@ -53,6 +55,13 @@
       "address-comments": "/address-comments",
       "resolve-conflicts": "/resolve-conflicts"
     }
+  },
+  "usage": {
+    "agents": [
+      { "type": "claude-code", "home": "~/.claude" },
+      { "type": "codex", "home": "~/.codex" }
+    ],
+    "prices": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
   },
   "workflow": {
     "autoMerge": "when-reviews-required",

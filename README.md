@@ -31,7 +31,11 @@ See [docs/workflow.md](docs/workflow.md) for exactly when each step is
 offered, the safety checks and how repos are suggested.
 
 Trackers: **Jira** (via jira-cli) and **GitHub issues**. Code hosting: GitHub.
-A third mod, **projects** (Ctrl+Shift+F), is a plain project switcher.
+A third mod, **projects** (Ctrl+Shift+F), is a plain project switcher, and
+**usage**, at the bottom of the sidebar, shows what your agents (Claude Code,
+Codex) cost: today, the last 7 and 30 days, and by model, from their session
+logs and [LiteLLM's prices](https://github.com/BerriAI/litellm). The Work
+sidebar shows each row's cost too, so you can see what each PR cost.
 
 > **What it runs.** The mods run `git`, `gh`, `jira` and `hc` as you, to
 > create branches and worktrees, mark PRs ready, merge, clean up and move

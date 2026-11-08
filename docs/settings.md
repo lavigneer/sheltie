@@ -8,7 +8,7 @@ shows every setting with its default, and `src/config.js` documents each one.
 | Setting | Default | |
 |---|---|---|
 | `roots`, `depth` | `["~/workspace"]`, `1` | where your repos are: `depth` levels below each root |
-| `programs` | `git`, `gh`, `jira`, `hc` | found on your login shell's PATH; absolute paths win |
+| `programs` | `git`, `gh`, `jira`, `hc`, `jq`, `curl` | found on your login shell's PATH; absolute paths win |
 | `tracker` | `"jira"` | or `"github"` |
 | `jira.jql` | your unresolved tickets | which tickets to list |
 | `jira.transitions` | `{start: null, review: null, done: "Resolved"}` | Jira transition at each step |
@@ -24,6 +24,8 @@ shows every setting with its default, and `src/config.js` documents each one.
 | `agent.argv` | `["claude"]` | the agent; its first message is the last argument |
 | `agent.task`, `agent.extraBranchTask` | see example | first messages; `{key}`, `{summary}`, `{branch}`, `{viewCommand}` |
 | `agent.steps` | `/draft-pr` etc. (the skills in `skills/`) | what each sidebar step sends; change for agents that invoke skills differently |
+| `usage.agents` | Claude Code in `~/.claude`, Codex in `~/.codex` | `{type: "claude-code" \| "codex", home}`: whose session logs the Usage and Work sidebars' costs count |
+| `usage.prices` | LiteLLM's model price list | URL of a LiteLLM-format price list (`file://` works) |
 | `workflow.autoMerge` | `"when-reviews-required"` | or `"never"` |
 | `workflow.readyWhen` | `"green"` | when Ready is offered: CI passed, no conflicts and nothing unresolved; `"agent"`: also once the agent runs `hc label "$HC_TERMINAL_ID" pr=ready` |
 | `workflow.mergeWithoutReview` | `true` | offer Merge for a ready, green PR needing no review; `false`: only once approved |
