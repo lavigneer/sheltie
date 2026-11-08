@@ -49,6 +49,10 @@ test('readyWhen "green" (the default): Ready once green, whatever the agent says
   assert.deepEqual(ids({ ...draft, unresolved: 2 }), ["address-comments"]);
 });
 
+test("no Ready while the agent is working: it may still be iterating", () => {
+  assert.deepEqual(ids(draft, { working: true }), []);
+});
+
 test('readyWhen "agent": Ready only once the agent says the PR is done', () => {
   useConfig({ workflow: { readyWhen: "agent" } });
   assert.deepEqual(ids(draft), []);
@@ -178,6 +182,13 @@ test("resolve-conflicts is an agent step, sent like the others", async () => {
 
 // A ready PR, CI passed, nothing unresolved, auto-merge off.
 const ready = { ...draft, draft: false };
+
+test("no Merge while the agent is working: it may still be pushing", () => {
+  assert.deepEqual(
+    ids({ ...ready, review: "APPROVED" }, { working: true }),
+    [],
+  );
+});
 
 test("Merge: approved, or no review required, and CI passed, without auto-merge", () => {
   const merge = (pr) => nextSteps(pr).find((s) => s.id === "merge");
