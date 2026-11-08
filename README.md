@@ -19,6 +19,8 @@ request without leaving Herdr:
    - **Merge**: once approved (or no review is required) and green.
    - **Finish**: closes the space, removes the worktree and branch, and
      resolves the ticket.
+   Click a row to go to its space; its ↗ menu opens the PR or ticket in
+   the browser.
 
    Each repo also has a **hub** row: the main checkout, with its own space for
    longer-running agents.

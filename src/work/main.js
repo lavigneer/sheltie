@@ -6,8 +6,9 @@
 // shows while it has worktrees or its hub has a space.
 // A row shows the ticket its branch names (key, summary, status), its pull
 // request (review and checks) and the agent status of its space. Click a row to
-// go to its space, or to open one there with the agent; click its PR label to
-// open the PR in the browser, its ticket key or status to open the ticket.
+// go to its space, or to open one there with the agent. Its ↗ button (shown on
+// hover, on the selected row and while its menu is open) opens a menu: Open PR,
+// Open ticket (in the browser), each only when the row has one.
 // "+" opens the tickets popup to start new work; ↻ refreshes everything now.
 //
 // Under each row, buttons for its next step in the ticket workflow (Draft PR,
@@ -22,7 +23,7 @@
 // next steps (the first by default), work.step runs that step (Finish and
 // Clean up: press twice) and work.open opens the row's space, like a click.
 // work.open-pr / work.open-ticket open the row's PR / ticket in the browser,
-// like clicking its PR label / its ticket key or status (a hub: says there's
+// like its ↗ menu's Open PR / Open ticket (a hub: says there's
 // nothing to open).
 // work.refresh refreshes everything now, like ↻. work.report writes what the
 // sidebar shows to <app home>/work-report.json, for scripts and tests.
@@ -45,7 +46,7 @@
 // while CI runs or a merge is pending), tickets every 10 min.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { Popover, v_flex, h_flex } from "gpui-base";
 import {
   appHome,
   nextCommand,
@@ -83,6 +84,7 @@ const WATCH_TRIES = 3;
 // Narrower than this, the sidebar draws a rail (as Herdr's own sidebar mods
 // do): a status per row, its details on hover.
 const RAIL = 160;
+const LINKS_W = 18; // a row's ↗ button
 
 // Runs `body(cx, force)` one at a time. Asked again while running, it runs once
 // more afterwards (forced if any of the requests was), rather than dropping it.
@@ -154,6 +156,8 @@ export default class Work extends View {
     this.confirming = null; // `${path}:${step id}`
     this.confirmByKey = false; // the confirmation was asked for by a key
     this.confirmAsked = 0; // counts confirmation requests, for their timers
+    this.hovered = null; // the path of the row under the pointer
+    this.linksOpen = null; // the path of the row whose ↗ menu is open
     this.picked = null; // { path, step, active }: see selection()
     this.watchTimer = false;
     this.width = null; // ours, from on_size_change
@@ -705,6 +709,71 @@ export default class Work extends View {
         .child(div().min_w(0).truncate().child(label));
     };
 
+    // A row's ↗: a menu of what it opens in the browser (see look()'s links).
+    // It keeps its place while hidden, so showing it moves nothing.
+    const linksMenu = (w, links) => {
+      const close = (cx) => {
+        this.linksOpen = null;
+        cx.notify();
+      };
+      return Popover.new(`work-links-${w.path}`)
+        .anchor("top_right")
+        .open(this.linksOpen === w.path)
+        .on_open_change((open, cx) => {
+          if (open) this.linksOpen = w.path;
+          else if (this.linksOpen === w.path) this.linksOpen = null;
+          cx.notify();
+        })
+        .trigger(
+          div()
+            .id(`work-links-button-${w.path}`)
+            .w(LINKS_W)
+            .h(18)
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(5)
+            .text_size(11)
+            .text_color(this.linksOpen === w.path ? t.foreground : t.dim)
+            .cursor_pointer()
+            .hover((s) => s.bg(t.hover).text_color(t.foreground))
+            .tooltip("Open in the browser")
+            .on_click((_e, cx) => cx.stop_propagation())
+            .child("↗"),
+        )
+        .content(
+          v_flex()
+            .p(4)
+            .min_w(120)
+            .rounded(7)
+            .border_1()
+            .border_color(t.border ?? t.dim)
+            .bg(t.popover)
+            .children(
+              links.map((l) =>
+                div()
+                  .id(`work-open-${l.id}-${w.path}`)
+                  .h(24)
+                  .px(8)
+                  .flex()
+                  .items_center()
+                  .rounded(5)
+                  .text_size(12)
+                  .text_color(t.foreground)
+                  .cursor_pointer()
+                  .hover((s) => s.bg(t.hover))
+                  .on_click((_e, cx) => {
+                    cx.stop_propagation();
+                    close(cx);
+                    l.open(cx);
+                  })
+                  .child(l.label),
+              ),
+            ),
+        );
+    };
+
     const sel = this.selection();
     const selected = sel.rows[sel.at]?.w.path ?? null;
 
@@ -742,15 +811,21 @@ export default class Work extends View {
         pr?.tone === "bad" ? t.blocked : pr?.tone === "good" ? t.done : t.muted;
       // A branch that isn't a ticket (see isTicket) shows the branch.
       const isTicket = this.isTicket(w);
-      // A label that opens something in the browser instead of the space.
-      const link = (el, id, open) =>
-        el
-          .id(`work-${id}-${w.path}`)
-          .hover((s) => s.text_color(t.foreground))
-          .on_click((_e, cx) => {
-            cx.stop_propagation();
-            open(cx);
-          });
+      // What the row's ↗ menu offers: only what applies.
+      const links = w.hub
+        ? []
+        : [
+            prValue?.url
+              ? { id: "pr", label: "Open PR", open: () => this.openPR(w) }
+              : null,
+            isTicket
+              ? {
+                  id: "ticket",
+                  label: "Open ticket",
+                  open: (cx) => this.openTicket(cx, w),
+                }
+              : null,
+          ].filter(Boolean);
       const title = w.hub
         ? (w.branch ?? "detached")
         : isTicket
@@ -774,8 +849,7 @@ export default class Work extends View {
         note,
         title,
         sub,
-        isTicket,
-        link,
+        links,
       };
     };
 
@@ -822,8 +896,7 @@ export default class Work extends View {
         note,
         title,
         sub,
-        isTicket,
-        link,
+        links,
       } = look(w);
       return v_flex()
         .id(`work-${w.path}`)
@@ -837,6 +910,11 @@ export default class Work extends View {
         .cursor_pointer()
         .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
         .hover((s) => s.bg(t.hover))
+        .on_hover((hovered, cx) => {
+          if (hovered) this.hovered = w.path;
+          else if (this.hovered === w.path) this.hovered = null;
+          cx.notify();
+        })
         .on_click(() => this.open(w))
         .child(
           h_flex()
@@ -856,24 +934,18 @@ export default class Work extends View {
                     .text_size(12.5)
                     .text_color(t.foreground)
                     .when(Boolean(space?.active), (d) => d.font_semibold())
-                    .when(isTicket, (d) =>
-                      link(d, "ticket", (cx) => this.openTicket(cx, w)),
-                    )
                     .child(title),
                 ),
             )
             .when(Boolean(pr), (el) =>
               el.child(
-                link(
-                  div()
-                    .flex_shrink(1)
-                    .min_w(0)
-                    .truncate()
-                    .text_size(10.5)
-                    .text_color(prColor),
-                  "pr",
-                  () => this.openPR(w),
-                ).child(pr.text),
+                div()
+                  .flex_shrink(1)
+                  .min_w(0)
+                  .truncate()
+                  .text_size(10.5)
+                  .text_color(prColor)
+                  .child(pr.text),
               ),
             )
             .when(Boolean(w.hub), (el) =>
@@ -887,6 +959,15 @@ export default class Work extends View {
                   .text_size(10)
                   .text_color(t.dim)
                   .child("hub"),
+              ),
+            )
+            .when(links.length > 0, (el) =>
+              el.child(
+                isSelected ||
+                  this.hovered === w.path ||
+                  this.linksOpen === w.path
+                  ? linksMenu(w, links)
+                  : div().w(LINKS_W).flex_none(),
               ),
             ),
         )
@@ -906,16 +987,13 @@ export default class Work extends View {
               )
               .when(Boolean(ticket?.status), (e) =>
                 e.child(
-                  link(
-                    div()
-                      .flex_shrink(1)
-                      .min_w(0)
-                      .truncate()
-                      .text_size(10.5)
-                      .text_color(t.dim),
-                    "status",
-                    (cx) => this.openTicket(cx, w),
-                  ).child(ticket.status),
+                  div()
+                    .flex_shrink(1)
+                    .min_w(0)
+                    .truncate()
+                    .text_size(10.5)
+                    .text_color(t.dim)
+                    .child(ticket.status),
                 ),
               ),
           ),

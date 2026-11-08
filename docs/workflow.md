@@ -33,8 +33,10 @@ starts right away; otherwise you pick (or pick any repo, cloning it if needed).
 - **Finish** (after the merge) closes the space, removes the worktree and
   local branch, and resolves the ticket.
 
-Click a row's PR label to open the PR in the browser, its ticket key or status
-to open the ticket, and anywhere else on the row to go to its space.
+Click a row to go to its space. Its ↗ button (on the right, shown on hover,
+on the selected row and while its menu is open) opens a menu with Open PR and
+Open ticket, for the browser; each shows only when the row has one, like the
+keys `work.open-pr` and `work.open-ticket`.
 
 ## Hubs
 
