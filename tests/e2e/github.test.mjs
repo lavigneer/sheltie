@@ -11,6 +11,7 @@ flow({
   repo: "storage",
   worktree: "storage/.worktrees/issue-5",
   branch: "issue-5",
+  ticketUrl: "https://github.com/acme/storage/issues/5",
   task: /Task: Work on .*Stream large files/,
   started: (s) => assert.equal(issue(s).state, "OPEN"),
   ticketDone: (s) => issue(s).state === "CLOSED",

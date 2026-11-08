@@ -7,6 +7,8 @@
     "alt-shift-right": "work.step-next",
     "alt-shift-left": "work.step-prev",
     "alt-shift-enter": "work.step",
-    "alt-shift-o": "work.open"
+    "alt-shift-o": "work.open",
+    "alt-shift-p": "work.open-pr",
+    "alt-shift-t": "work.open-ticket"
   }
 }

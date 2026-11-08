@@ -16,7 +16,9 @@ your tracker to a merged pull request without leaving Herdr:
    - **Merge**: when it's approved and green without auto-merge
    - **Finish** (after the merge): closes the space, removes the worktree and
      local branch, and resolves the ticket
-   Every step also runs from the keyboard (see [Keys](#keys)).
+   Every step also runs from the keyboard (see [Keys](#keys)). Click a row's
+   PR label to open the PR in the browser, its ticket key or status to open
+   the ticket (anywhere else on the row: its space).
 3. **Get told** when CI finishes, review comments or a review arrive, or the PR
    merges.
 
@@ -77,6 +79,12 @@ With Nix, the flake's `packages.default` has the same files under
 | Alt+Shift+Right / Left | `work.step-next` / `work.step-prev` | pick the selected row's next / previous step button |
 | Alt+Shift+Enter | `work.step` | run the picked step (Finish and Clean up: press twice) |
 | Alt+Shift+O | `work.open` | open the selected row's space, like clicking it |
+| Alt+Shift+P | `work.open-pr` | open the selected row's PR in the browser, like clicking its PR label |
+| Alt+Shift+T | `work.open-ticket` | open the selected row's ticket in the browser, like clicking its key or status |
+
+A row without a PR, or whose branch isn't a ticket, just says so (a
+notification) for that key. The browser opens with `xdg-open` (Linux) or
+`open` (macOS).
 
 The selected row has an accent outline and its picked step an accent border.
 It follows the focused space (its first step picked) until you move it, and
@@ -89,7 +97,8 @@ from the command line, e.g. `herdr-app do work.step`. Rebind them in
 
 Two more, for scripts (no key): `herdr-app do work.refresh` refreshes the
 sidebar now, like its ↻, and `herdr-app do work.report` writes what it shows
-(rows, their PRs and next steps, the selected row and step) to
+(rows, their PRs and next steps, the selected row and step, and the PR and
+ticket URLs `work.open-pr` / `work.open-ticket` would open) to
 `<Herdr app home>/work-report.json`.
 
 ## Settings
@@ -154,7 +163,8 @@ npm run e2e:shots  # screenshots of the mods at a few sizes, in e2e-results/shot
 display (with its own app home and herdr-core session, so your Herdr is
 untouched), and drives it with the keyboard: the mods load without errors, a
 fresh ticket starts from the tickets popup, and its whole flow runs from the
-Work sidebar's keys through to Finish (with CI failing once and Finish
+Work sidebar's keys through to Finish, opening the row's PR and ticket on the
+way (with a stub `xdg-open` that records the URL; with CI failing once and Finish
 refusing uncommitted changes, on Jira). It checks outcomes, not pixels:
 `herdr-app status`, `work.report`, git, `hc read` and the demo's state. It
 needs herdr-app, hc, Xvfb, xdotool, jq and git (Linux), takes under a minute,
