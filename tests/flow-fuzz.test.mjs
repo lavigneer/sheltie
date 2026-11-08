@@ -88,6 +88,9 @@ test(`nextSteps/stageOf invariants hold over random PR states (FUZZ_SEED=${SEED}
         `agent step while working; ${ctx}`,
       );
     if (flags.working)
-      assert.ok(!ids.includes("ready"), `ready while working; ${ctx}`);
+      assert.ok(
+        !ids.includes("ready") && !ids.includes("merge"),
+        `ready/merge while working; ${ctx}`,
+      );
   }
 });

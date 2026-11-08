@@ -183,6 +183,10 @@ test("resolve-conflicts is an agent step, sent like the others", async () => {
 // A ready PR, CI passed, nothing unresolved, auto-merge off.
 const ready = { ...draft, draft: false };
 
+test("no Merge while the agent is working: it may still be pushing", () => {
+  assert.deepEqual(ids({ ...ready, review: "APPROVED" }, { working: true }), []);
+});
+
 test("Merge: approved, or no review required, and CI passed, without auto-merge", () => {
   const merge = (pr) => nextSteps(pr).find((s) => s.id === "merge");
   assert.deepEqual(ids({ ...ready, review: "APPROVED" }), ["merge"]);
