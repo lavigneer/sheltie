@@ -29,3 +29,9 @@ export const agents = () => live.agents;
 export const terminals = () => live.terminals;
 export const run = () => null;
 export const notify = () => "";
+const sharedDoc = new Map();
+export const shared = (key) => sharedDoc.get(key);
+export const setShared = (key, value) => {
+  sharedDoc.set(key, value);
+  return null;
+};

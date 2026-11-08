@@ -37,45 +37,32 @@
 
 import { h_flex, Input, InputState, v_flex } from "gpui-base";
 import { div, svg, View } from "gpui-kit";
-import {
-  closeOverlay,
-  focused,
-  notify,
-  props,
-  run,
-  setShared,
-  shared,
-  theme,
-} from "herdr";
+import { closeOverlay, focused, props, run, theme } from "herdr";
 import { C, configReady } from "./config.js";
 import { prLabel } from "./flow.js";
 import {
   addWorktree,
   adhocBranch,
-  branchFor,
   cloneRepo,
   listWorktrees,
   localRepos,
   repoRoot,
   worktreePath,
 } from "./git.js";
+import { basename, fill, moveKey, openUrl, score, spaceFor } from "./lib.js";
 import {
-  basename,
-  fill,
-  firstLine,
-  moveKey,
-  openUrl,
-  score,
-  spaceFor,
-} from "./lib.js";
+  errorText,
+  openSpaces,
+  prepareStart,
+  remember,
+  rememberedRepo,
+  repoId,
+  spaceName,
+  taskValues,
+} from "./start.js";
 import { listTickets, suggestRepos, workFor } from "./work.js";
 
-const REMEMBER = "tickets.repo"; // shared: ticket key -> repo slug or path
-
-const repoId = (repo) => repo.slug || repo.path;
 const repoLabel = (repo) => repo.slug || repo.name;
-const errorText = (e) =>
-  firstLine(`${e?.message ?? e}`) || "Something went wrong";
 
 export default class Tickets extends View {
   init(_props, cx) {
@@ -314,7 +301,7 @@ export default class Tickets extends View {
       ticket,
       this.data.repos,
       this.data.here,
-      shared(REMEMBER)?.[ticket.key],
+      rememberedRepo(ticket.key),
     );
   }
 
@@ -336,7 +323,7 @@ export default class Tickets extends View {
 
   // What a piece of existing work shows (`tag`) and does, decided together.
   itemRow(ticket, item) {
-    const name = this.spaceName(ticket, item.repo);
+    const name = spaceName(ticket, item.repo, this.data.work.get(ticket.key));
     let tag, run;
     if (item.worktree) {
       tag = spaceFor(item.worktree) ? "open" : "worktree";
@@ -349,7 +336,7 @@ export default class Tickets extends View {
           const path = await addWorktree(repo, item.branch, {
             pr: item.pr?.number ?? null,
           });
-          this.remember(ticket, repo);
+          remember(ticket, repo);
           this.openSpace(name, path);
         });
     } else {
@@ -402,13 +389,6 @@ export default class Tickets extends View {
       : false;
   }
 
-  remember(ticket, repo) {
-    setShared(REMEMBER, {
-      ...(shared(REMEMBER) ?? {}),
-      [ticket.key]: repoId(repo),
-    });
-  }
-
   // The repo, cloned first if it isn't local yet.
   async local(repo, cx) {
     if (repo.path) return repo;
@@ -424,37 +404,7 @@ export default class Tickets extends View {
 
   openSpaces(spaces) {
     this.dismiss();
-    for (const { name, folder, task } of spaces) {
-      const open = spaceFor(folder);
-      if (open) run("space.select", { id: open.id });
-      else
-        run("space.new", {
-          name,
-          folder,
-          argv: C.agent.argv,
-          ...(task ? { task } : {}),
-        });
-    }
-  }
-
-  spaceName(ticket, repo) {
-    const others = (this.data.work.get(ticket.key) ?? []).filter(
-      (w) => repoId(w.repo) !== repoId(repo),
-    );
-    return others.length ? `${ticket.label} ${repo.name}` : ticket.label;
-  }
-
-  // What the agent's first messages can say about a ticket.
-  taskValues(ticket, extra = {}) {
-    return {
-      key: ticket.key,
-      label: ticket.label,
-      summary: ticket.summary,
-      branch: branchFor(ticket, extra.repo),
-      worktreeDir: C.worktreeDir,
-      viewCommand: ticket.tracker.viewCommand(ticket.key),
-      ...extra,
-    };
+    openSpaces(spaces);
   }
 
   // New work on the ticket's own branch (C.branch) in `target`.
@@ -463,37 +413,16 @@ export default class Tickets extends View {
     this.openSpaces([s]);
   }
 
-  // start()'s work up to opening the space: { name, folder, task }.
+  // start()'s work up to opening the space: { name, folder, task }. Before
+  // opening it, which closes this popup and with it any work still to do here.
   async prepare(ticket, target, cx) {
     const repo = await this.local(target, cx);
-    const branch = branchFor(ticket, repo);
-    const existing = (this.data.work.get(ticket.key) ?? []).find(
-      (w) => w.repo.path === repo.path && w.branch === branch && w.worktree,
+    return prepareStart(
+      ticket,
+      repo,
+      this.data.work.get(ticket.key) ?? [],
+      (m) => this.setAction({ phase: "running", message: m }, cx),
     );
-    const path =
-      existing?.worktree ?? (await addWorktree(repo, branch, { create: true }));
-    this.remember(ticket, repo);
-    // Work has started: the tracker's "start" step (a Jira transition, if
-    // configured). Before opening the space, which closes this popup and with
-    // it any work still to do here. A failure is reported and stops nothing.
-    this.setAction(
-      { phase: "running", message: `Starting ${ticket.label}…` },
-      cx,
-    );
-    await ticket.tracker.move(ticket.key, "start", ticket.status).catch((e) =>
-      notify({
-        title: `${ticket.label}: couldn't update the ticket`,
-        body: errorText(e),
-        level: "warning",
-      }),
-    );
-    return {
-      name: this.spaceName(ticket, repo),
-      folder: path,
-      task: existing
-        ? null
-        : fill(C.agent.task, this.taskValues(ticket, { repo })),
-    };
   }
 
   // Every marked ticket in its best suggested repo, then all their spaces at
@@ -553,7 +482,7 @@ export default class Tickets extends View {
       name: `${ticket.label} ${repo.name}+`,
       folder: repo.path,
       argv: C.agent.argv,
-      task: fill(C.agent.extraBranchTask, this.taskValues(ticket, { repo })),
+      task: fill(C.agent.extraBranchTask, taskValues(ticket, { repo })),
     });
   }
 

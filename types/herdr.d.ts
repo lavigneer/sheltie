@@ -40,3 +40,16 @@ export function panes(): Pane[];
 export function agents(): Agent[];
 export function terminals(): Terminal[];
 export function run(action: string, args?: Record<string, unknown>): unknown;
+export function notify(n: {
+  title: string;
+  body?: string;
+  level?: "info" | "warning" | "error";
+}): void;
+export function shared(key: string): any;
+export function setShared(key: string, value: unknown): void;
+export function readTextFile(path: string): Promise<string | null>;
+export function writeTextFile(
+  path: string,
+  text: string,
+  expected: string | null,
+): Promise<null>;
