@@ -1,6 +1,12 @@
 {
   "global": {
     "ctrl-shift-j": "mod.open:tickets",
-    "ctrl-shift-f": "mod.open:projects"
+    "ctrl-shift-f": "mod.open:projects",
+    "alt-shift-down": "work.next",
+    "alt-shift-up": "work.prev",
+    "alt-shift-right": "work.step-next",
+    "alt-shift-left": "work.step-prev",
+    "alt-shift-enter": "work.step",
+    "alt-shift-o": "work.open"
   }
 }

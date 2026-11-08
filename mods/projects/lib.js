@@ -103,3 +103,6 @@ export function moveKey(e, view, n, close) {
   else return false;
   return true;
 }
+
+// The index `delta` steps from `at` among `n` items, wrapping around.
+export const cycle = (n, at, delta) => (((at + delta) % n) + n) % n;
