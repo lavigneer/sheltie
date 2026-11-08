@@ -150,11 +150,19 @@ export default class Tickets extends View {
         if (!current()) return;
         base = { gen, tickets, repos, here };
         this.setData({ ...base, phase: "work", work: new Map() }, cx);
-        // Local branches first, so a ticket's screen needn't wait for PRs.
+        // Local branches first, so a ticket's screen needn't wait for PRs;
+        // then linked PRs, all a fresh ticket's auto-start waits for.
         const work = await workFor(tickets, repos, {
-          onLocal: (work) =>
-            current() &&
-            this.setData({ ...base, phase: "work", work, local: true }, cx),
+          onLocal: (work) => {
+            if (!current()) return;
+            base = { ...base, work, local: true };
+            this.setData({ ...base, phase: "work" }, cx);
+          },
+          onLinked: (linked) => {
+            if (!current()) return;
+            base = { ...base, linked };
+            this.setData({ ...base, phase: "work" }, cx);
+          },
         });
         if (!current()) return;
         this.setData({ ...base, phase: "ready", work }, cx);
@@ -361,11 +369,9 @@ export default class Tickets extends View {
 
   openTicket(ticket, cx) {
     // A fresh ticket with one clear home: just start. Only once its work is
-    // known; before that, its screen waits (and says so).
-    if (
-      this.data.phase === "ready" &&
-      !this.data.work.get(ticket.key)?.length
-    ) {
+    // known: its local branches and the PRs its tracker links (not every PR's
+    // details); before that, its screen waits (and says so).
+    if (this.fresh(ticket)) {
       const s = this.suggestions(ticket);
       // The current repo is only a hint; a single mapped/remembered repo decides.
       const decided = s.filter((x) => x.why !== "current repo");
@@ -375,6 +381,17 @@ export default class Tickets extends View {
         );
     }
     this.go({ name: "ticket", ticket }, cx);
+  }
+
+  // No work on `ticket`, known for sure: once everything's in, or from its
+  // local branches and linked PRs while PR details are still loading.
+  fresh(ticket) {
+    const d = this.data;
+    if (d.work?.get(ticket.key)?.length) return false;
+    if (d.phase === "ready") return true;
+    return d.phase === "work" && d.local && d.linked
+      ? !d.linked.get(ticket.key)?.length
+      : false;
   }
 
   remember(ticket, repo) {

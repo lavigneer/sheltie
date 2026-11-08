@@ -155,9 +155,15 @@ export function joinWork(
 // Every piece of work for each ticket (from listTickets), by key: [{ repo,
 // branch, worktree, pr }], from local branches/worktrees whose name has the
 // key and PRs the ticket's tracker links to it. Fetches joinWork's inputs.
-// onLocal, if given, gets the local-only work first, before any PR lookup.
-/** @param {Ticket[]} tickets @param {Repo[]} repos @param {{ prs?: boolean, onLocal?: (work: Map<string, WorkItem[]>) => void }} [opts] @returns {Promise<Map<string, WorkItem[]>>} */
-export async function workFor(tickets, repos, { prs = true, onLocal } = {}) {
+// onLocal, if given, gets the local-only work first, before any PR lookup;
+// onLinked then gets the PRs each ticket's tracker links (key -> PRRef[]),
+// before their details are looked up.
+/** @param {Ticket[]} tickets @param {Repo[]} repos @param {{ prs?: boolean, onLocal?: (work: Map<string, WorkItem[]>) => void, onLinked?: (linked: Map<string, PRRef[]>) => void }} [opts] @returns {Promise<Map<string, WorkItem[]>>} */
+export async function workFor(
+  tickets,
+  repos,
+  { prs = true, onLocal, onLinked } = {},
+) {
   const keys = tickets.map((t) => t.key);
   const states = await pool(
     repos
@@ -181,6 +187,7 @@ export async function workFor(tickets, repos, { prs = true, onLocal } = {}) {
     ),
   ))
     for (const [k, v] of found) linked.set(k, v);
+  onLinked?.(linked);
   const lookups = new Map();
   for (const [key, items] of local) {
     for (const item of items)
