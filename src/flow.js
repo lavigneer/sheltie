@@ -55,6 +55,31 @@ export function stageOf(pr) {
   return pr.review === "APPROVED" ? "approved" : "in-review";
 }
 
+// "#881 draft approved ✓" (or "#881 draft conflicts") and a tone for
+// coloring: "bad" | "good" | null.
+export function prLabel(pr) {
+  if (!pr) return null;
+  const parts = [`#${pr.number}`];
+  if (pr.state === "MERGED") parts.push("merged");
+  else if (pr.state === "CLOSED") parts.push("closed");
+  else {
+    if (pr.draft) parts.push("draft");
+    if (pr.review === "APPROVED") parts.push("approved");
+    else if (pr.review === "CHANGES_REQUESTED") parts.push("changes requested");
+    else if (!pr.draft && !pr.review) parts.push("no review needed");
+    if (pr.checks)
+      parts.push({ failed: "✗", pending: "◌", passed: "✓" }[pr.checks]);
+  }
+  const conflicts = pr.state === "OPEN" && pr.mergeable === "CONFLICTING";
+  if (conflicts) parts.push("conflicts");
+  const bad =
+    conflicts || pr.checks === "failed" || pr.review === "CHANGES_REQUESTED";
+  const good =
+    pr.state === "MERGED" ||
+    (pr.review === "APPROVED" && pr.checks === "passed");
+  return { text: parts.join(" "), tone: bad ? "bad" : good ? "good" : null };
+}
+
 // Whether a PR is offered Merge: open, ready, CI passed (not failed, pending
 // or missing) on a PR GitHub says can merge, nothing unresolved, auto-merge
 // off, and approved, or needing no review at all (a repo without required

@@ -65,11 +65,10 @@ import {
   keyOfBranch,
   localRepos,
   prDetails,
-  prLabel,
   repoState,
   unresolvedThreads,
 } from "./data.js";
-import { agentIn, agentSaysDone, nextSteps, runStep } from "./flow.js";
+import { agentIn, agentSaysDone, nextSteps, prLabel, runStep } from "./flow.js";
 import { trackerOf } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
 

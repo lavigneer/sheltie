@@ -140,7 +140,7 @@ test("a conflicting PR: mergeable CONFLICTING, no checks, no auto-merge", async 
   pr = await D.prDetails("acme/docs", 56);
   assert.equal(pr.mergeable, "CONFLICTING");
   assert.equal(pr.checks, null, "GitHub runs no CI on it");
-  assert.deepEqual(D.prLabel(pr), { text: "#56 conflicts", tone: "bad" });
+  assert.deepEqual((await import("../src/flow.js")).prLabel(pr), { text: "#56 conflicts", tone: "bad" });
   assert.deepEqual(nextSteps({ ...pr, unresolved: 0 }).map((s) => s.id), ["resolve-conflicts"]);
   // Approved with auto-merge on: still doesn't merge.
   const s = state();
