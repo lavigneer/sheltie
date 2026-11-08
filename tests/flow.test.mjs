@@ -140,6 +140,11 @@ test("an open PR with no checks is never offered Ready or Merge", () => {
     tone: null,
   });
   assert.deepEqual(prLabel(approved), { text: "#7 approved ✓", tone: "good" });
+  // With counts, GitHub's "passed/total" follows the icon.
+  assert.deepEqual(
+    prLabel({ ...approved, checks: "failed", checksPassed: 2, checksTotal: 5 }),
+    { text: "#7 approved ✗ 2/5", tone: "bad" },
+  );
   // With checks that passed, it's as before.
   assert.deepEqual(ids(draft), ["ready"]);
   assert.deepEqual(ids(approved), ["merge"]);

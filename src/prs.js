@@ -31,7 +31,8 @@ const BY_BRANCH = `query($owner: String!, $name: String!, $branch: String!) {
 // Details for a PR (number or branch) in `slug`, or null when there is none,
 // from one GraphQL call. Throws when GitHub can't be asked, so callers can
 // tell "no PR" from "failed".
-// `checks`: "passed" | "failed" | "pending", or null when the PR has none
+// `checks`: "passed" | "failed" | "pending", or null when the PR has none,
+// with `checksPassed` of `checksTotal` passed (GitHub's "3/5")
 // (CI not started, or never will: GitHub runs no pull_request CI on a PR that
 // conflicts with its base). `mergeable`: "MERGEABLE" | "CONFLICTING" |
 // "UNKNOWN" (GitHub works it out lazily, so it's UNKNOWN for a little while
@@ -84,6 +85,8 @@ export async function prDetails(slug, ref) {
     draft: pr.isDraft,
     review: pr.reviewDecision || null,
     checks,
+    checksPassed: results.filter((x) => OK.includes(x)).length,
+    checksTotal: results.length,
     branch: pr.headRefName,
     head: pr.headRefOid,
     autoMerge: Boolean(pr.autoMergeRequest),

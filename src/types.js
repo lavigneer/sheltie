@@ -46,6 +46,8 @@
  * @property {boolean} draft
  * @property {string | null} review reviewDecision, e.g. "APPROVED"
  * @property {Checks | null} checks null when the PR has no checks
+ * @property {number} [checksPassed] how many of its checks passed
+ * @property {number} [checksTotal] how many checks it has
  * @property {string} branch
  * @property {string} head
  * @property {boolean} autoMerge
