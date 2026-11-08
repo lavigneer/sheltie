@@ -60,7 +60,7 @@
 /** A PR a tracker links to a ticket. @typedef {{ slug: string, number: number }} PRRef */
 
 /**
- * One piece of work on a ticket (work.js workFor): a branch, maybe checked out
+ * One piece of work on a ticket (work.js joinWork): a branch, maybe checked out
  * in a worktree, maybe with a PR.
  * @typedef {object} WorkItem
  * @property {Repo} repo

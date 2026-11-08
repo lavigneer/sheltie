@@ -34,9 +34,10 @@
 // State:
 //   git refresh, details   each runs one at a time; a request during a run
 //                          queues one more (serial(), watch.js), merging "force"
-//   tickets, prs           caches (Cache, watch.js) of { state: "found" | "none" | "failed",
-//                          value, at }; "failed" (tracker/GitHub unreachable) is
-//                          retried after a minute and never shown as "none"
+//   store                  repo state, plus caches (WorkStore, work.js) of tickets,
+//                          tracker-linked PRs and PR details: { state: "found" |
+//                          "none" | "failed", value, at }; "failed" (tracker/GitHub
+//                          unreachable) is retried after a minute, never shown as "none"
 //   steps                  per worktree: the last step run from here
 //                          (running / done / failed, with a note)
 //   confirming             the step waiting for its second click, if any
@@ -46,7 +47,8 @@
 //                          rechecked a few times (the tickets popup makes the
 //                          worktree first; an agent may make it later)
 // Git refreshes every 30 s and at once for a new space; PRs every 2 min (20 s
-// while CI runs or a merge is pending), tickets every 10 min.
+// while CI runs or a merge is pending), tickets and their linked PRs every
+// 10 min (the rules live in work.js).
 
 import { h_flex, Popover, v_flex } from "gpui-base";
 import { div, svg, View } from "gpui-kit";
@@ -69,23 +71,19 @@ import {
   prLabel,
   runStep,
 } from "./flow.js";
-import { hubExcept, keyOfBranch, localRepos, repoState } from "./git.js";
-import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
-import { prDetails } from "./prs.js";
+import { hubExcept, keyOfBranch, localRepos, sameSlug } from "./git.js";
+import { basename, cycle, openUrl, spaceFor } from "./lib.js";
 import { drainRequests } from "./start.js";
 import { trackerOf } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
-import { Cache, serial } from "./watch.js";
+import { serial } from "./watch.js";
+import { prRef, WorkStore } from "./work.js";
 
 const GIT_MS = 30_000;
-const PR_MS = 120_000;
-const ACTIVE_PR_MS = 20_000; // CI running, waiting to merge, or conflicts
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
 const CONFIRM_MS = 4_000;
 const NOTE_MS = 60_000; // how long a step's success note stays
-const TICKET_MS = 600_000;
 const USAGE_MS = 120_000; // agent costs (see usage.js)
-const RETRY_MS = 60_000; // after a failed tracker/GitHub lookup
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
 const START_MS = 30_000; // how long a new space's agent may take to start working
 const WATCH_TRIES = 3;
@@ -112,8 +110,9 @@ export default class Work extends View {
     // [{ repo, hub: { path, branch, hub: true, except }, worktrees: [{ path, branch, key }] }]
     this.groups = null;
     this.mainCheckouts = new Set();
-    this.tickets = new Cache({ retryMs: RETRY_MS }); // by ticket key
-    this.prs = new Cache({ retryMs: RETRY_MS }); // by worktree path
+    // Repo state, tickets and PRs, and when each is due (work.js).
+    this.store = new WorkStore();
+    this.tickets = this.store.tickets; // by ticket key
     this.folded = new Set();
     this.watched = new Map(); // space folder -> tries
     // Folders of spaces that appeared while we run, and when: their agent is
@@ -197,16 +196,17 @@ export default class Work extends View {
   // (null then means "not known yet", not "no PR": guessing Draft PR would
   // flash a wrong, clickable button and shift the rows below when it goes).
   stepsOf(w, space) {
-    const entry = this.prs.get(w.path);
-    if (w.hub || !entry || (entry.state === "failed" && !entry.value))
-      return [];
+    if (w.hub) return [];
+    const pr = this.prOf(w);
+    const entry = this.store.prEntry(w.repo, w.branch);
+    if (!pr && (!entry || entry.state === "failed")) return [];
     // A step just ran (Merge, Ready…): its PR is stale until looked up again,
     // and would offer that step once more.
     if (this.steps.get(w.path)?.staleAt) return [];
     const born = this.starting.get(w.path);
     if (space?.status === "working" || Date.now() - born >= START_MS)
       this.starting.delete(w.path);
-    return nextSteps(entry.value, {
+    return nextSteps(pr, {
       working: space?.status === "working" || this.starting.has(w.path),
       agentDone: agentSaysDone(space),
       repo: w.repo,
@@ -288,7 +288,7 @@ export default class Work extends View {
       at: Date.now(),
       loaded: this.groups !== null,
       rows: rows.map((r, i) => {
-        const pr = this.prs.get(r.w.path)?.value ?? null;
+        const pr = this.prOf(r.w);
         const last = this.steps.get(r.w.path) ?? null;
         const confirming = this.confirm?.id.startsWith(`${r.w.path}:`)
           ? this.confirm.id.slice(r.w.path.length + 1)
@@ -345,14 +345,9 @@ export default class Work extends View {
   async scan(cx, force) {
     await configReady();
     const repos = await this.localRepos(force);
-    const states = await pool(
-      repos.map((repo) => async () => ({
-        repo,
-        ...(await repoState(repo)),
-      })),
-    );
+    await this.store.scan(repos);
     this.mainCheckouts = new Set(repos.map((r) => r.path));
-    this.groups = states.filter(Boolean).map((s) => ({
+    this.groups = this.store.states.filter(Boolean).map((s) => ({
       repo: s.repo,
       hub: {
         path: s.repo.path,
@@ -371,6 +366,20 @@ export default class Work extends View {
     this.details(cx, force);
   }
 
+  // A worktree's PR: the one from its branch, else one its ticket's tracker
+  // links with that branch (joinWork); null for a hub or none known.
+  prOf(w) {
+    if (w.hub) return null;
+    const own = this.store.prEntry(w.repo, w.branch)?.value;
+    if (own || !w.key) return own ?? null;
+    return (
+      this.store
+        .snapshot([w.key])
+        .get(w.key)
+        ?.find((i) => i.worktree === w.path)?.pr ?? null
+    );
+  }
+
   // The local repos, found again when forced, when a watched space folder is
   // still unknown (it may be a new clone), or every REPOS_MS.
   async localRepos(force) {
@@ -385,52 +394,36 @@ export default class Work extends View {
     return this.repos.list;
   }
 
+  // The ticket and PR lookups that are due (WorkStore.refresh).
   async lookups(cx, force) {
     if (!this.groups) return;
     const all = this.groups.flatMap((g) =>
       g.worktrees.map((w) => ({ ...w, repo: g.repo })),
     );
-    // Each key once, with the repo whose tracker it's from.
-    const keys = [
-      ...new Map(all.filter((w) => w.key).map((w) => [w.key, w.repo])),
-    ].filter(([k]) => this.tickets.due(k, TICKET_MS, { force }));
-    const prs = all.filter((w) => {
-      const entry = this.prs.get(w.path);
-      const pr = entry?.value;
-      // Conflicts (or not known yet): soon after the fix is pushed, CI starts.
-      const active =
-        pr?.state === "OPEN" &&
-        (pr.checks === "pending" ||
-          pr.autoMerge ||
-          pr.review === "APPROVED" ||
-          pr.mergeable !== "MERGEABLE");
-      return (
-        w.repo.slug &&
-        this.prs.due(w.path, active ? ACTIVE_PR_MS : PR_MS, { force })
-      );
-    });
-    await Promise.all([
-      pool(
-        keys.map(([key, repo]) => async () => {
-          await this.tickets.refresh(key, () => trackerOf(repo).view(key));
-          cx.notify();
-        }),
-      ),
-      pool(
-        prs.map((w) => async () => {
-          const before = this.prs.get(w.path)?.value;
-          const asked = Date.now();
-          const entry = await this.prs.refresh(w.path, () =>
-            prDetails(w.repo.slug, w.branch, before),
-          );
-          if (entry.state === "found" && before)
-            this.tell(w, before, entry.value);
+    // Each key once, with the tracker of the repo it's from.
+    const keys = new Map(
+      all.filter((w) => w.key).map((w) => [w.key, trackerOf(w.repo)]),
+    );
+    await this.store.refresh(keys, {
+      force,
+      view: true,
+      onTicket: () => cx.notify(),
+      onPR: (ref, was, entry, asked) => {
+        const pr = entry.value;
+        for (const w of all) {
+          const mine =
+            (w.repo.slug && prRef(w.repo.slug, w.branch) === ref) ||
+            (pr &&
+              this.prOf(w)?.number === pr.number &&
+              sameSlug(this.prOf(w)?.slug, pr.slug));
+          if (!mine) continue;
+          if (entry.state === "found" && was) this.tell(w, was, pr);
           const last = this.steps.get(w.path);
           if (last?.staleAt <= asked) delete last.staleAt;
-          cx.notify();
-        }),
-      ),
-    ]);
+        }
+        cx.notify();
+      },
+    });
   }
 
   // Render runs whenever spaces change. A local space whose folder isn't one of
@@ -512,11 +505,11 @@ export default class Work extends View {
     this.confirm = null;
     this.steps.set(path, { phase: "running", text: `${step.label}…` });
     cx.notify();
-    const pr = this.prs.get(path)?.value ?? null;
+    const pr = this.prOf(w);
     const others = this.groups
       .flatMap((g) => g.worktrees.map((o) => ({ ...o, repo: g.repo })))
       .filter((o) => o.path !== path)
-      .map((o) => ({ w: o, pr: this.prs.get(o.path)?.value ?? null }));
+      .map((o) => ({ w: o, pr: this.prOf(o) }));
     cx.spawn(async (cx) => {
       const who = this.who(w);
       try {
@@ -573,7 +566,7 @@ export default class Work extends View {
   // Opens `w`'s PR in the browser; without one, says so.
   openPR(w) {
     if (w.hub) return this.nothingToOpen(w);
-    const url = this.prs.get(w.path)?.value?.url;
+    const url = this.prOf(w)?.url;
     if (url) return openUrl(url);
     notify({ title: `${this.who(w)}: no pull request`, level: "info" });
   }
@@ -782,7 +775,7 @@ export default class Work extends View {
       const isSelected = w.path === selected;
       const entry = w.key ? this.tickets.get(w.key) : null;
       const ticket = entry?.value ?? null;
-      const prValue = this.prs.get(w.path)?.value ?? null;
+      const prValue = this.prOf(w);
       const pr = prLabel(prValue);
       const extras = [
         prValue?.state === "OPEN" && prValue.autoMerge ? "auto-merge" : null,
