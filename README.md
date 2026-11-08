@@ -6,7 +6,9 @@ request without leaving Herdr:
 
 1. **Pick a ticket** (Ctrl+Shift+J). Sheltie creates a branch and worktree,
    opens a space there and starts your agent (Claude Code by default) on the
-   ticket.
+   ticket. No ticket for it? Type what the work is and choose **Start ad-hoc
+   work**, then a repo: you get a worktree on a branch named after it, and
+   the same flow below (with no ticket to move).
 2. **Drive the PR from the Work sidebar.** Each worktree shows its ticket, PR
    status and a button for the next step:
    - **Draft PR**, **Fix CI**, **Address comments**, **Resolve conflicts**:

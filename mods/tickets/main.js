@@ -8,6 +8,10 @@
 //   - otherwise: choose from its work (open the space, or add a worktree for a
 //     branch or PR), start it in a suggested repo (component / project maps, last
 //     used, current repo) or any other repo, or ask the agent for another branch.
+// Ad-hoc work, tied to no ticket: type what it is and choose "Start ad-hoc
+// work" (the list's last row), then a repo: a worktree on a branch named after
+// it (C.branch, {ref} a slug of the text) and the agent with it as its task
+// (C.agent.adhocTask).
 // Repos that aren't cloned yet are cloned into the first root with gh.
 //
 // Keys: type to filter, Up/Down or Ctrl+N/Ctrl+P to move, Enter to choose,
@@ -16,7 +20,8 @@
 // Opened with mod.open:tickets (prefix+t).
 //
 // State, each in one field and changed only through its setter (which redraws):
-//   screen  list -> ticket -> pick                 go(); back() goes back one
+//   screen  list -> ticket -> pick; list -> adhoc (a repo for ad-hoc work)
+//                                                                 go(); back() goes back one
 //   data    tickets -> work -> ready | failed      load(); a reload supersedes
 //           an older load, whose results are then dropped (gen)
 //   action  idle -> running -> idle | failed       act(); while running, keys
@@ -51,13 +56,16 @@ import {
 } from "./lib.js";
 import {
   addWorktree,
+  adhocBranch,
   branchFor,
   cloneRepo,
+  listWorktrees,
   localRepos,
   prLabel,
   repoRoot,
   suggestRepos,
   workFor,
+  worktreePath,
 } from "./data.js";
 import { tracker } from "./tracker.js";
 
@@ -70,7 +78,7 @@ const errorText = (e) =>
 
 export default class Tickets extends View {
   init(_props, cx) {
-    this.screen = { name: "list" }; // | { name: "ticket" | "pick", ticket }
+    this.screen = { name: "list" }; // | { name: "ticket" | "pick", ticket } | { name: "adhoc", description }
     this.data = { phase: "tickets", gen: 0 };
     this.action = { phase: "idle" }; // | { phase: "running", message } | { phase: "failed", error }
     this.filter = "";
@@ -201,7 +209,7 @@ export default class Tickets extends View {
         .sort((a, b) => a.s - b.s)
         .map((x) => x.r);
     if (this.screen.name === "list") {
-      return keep(
+      const rows = keep(
         (d.tickets ?? []).map((ticket) => ({
           kind: "ticket",
           ticket,
@@ -209,6 +217,35 @@ export default class Tickets extends View {
           run: (cx) => this.openTicket(ticket, cx),
         })),
         (r) => `${r.ticket.label} ${r.ticket.key} ${r.ticket.summary}`,
+      );
+      // Whatever was typed can start ad-hoc work; always last, never filtered.
+      const description = this.filter.trim();
+      if (adhocBranch(description))
+        rows.push({
+          kind: "action",
+          label: `Start ad-hoc work: ${description}`,
+          run: (cx) => this.go({ name: "adhoc", description }, cx),
+        });
+      return rows;
+    }
+    if (this.screen.name === "adhoc") {
+      const { description } = this.screen;
+      return keep(
+        (d.repos ?? []).map((repo) => {
+          const label = `Start in ${repoLabel(repo)}${repo.path ? "" : " (clone)"}`;
+          const why = repo.path === d.here ? "current repo" : "";
+          return {
+            kind: "action",
+            label,
+            why,
+            text: `${label} ${repo.name} ${why}`,
+            run: (cx) =>
+              this.act(cx, `Creating worktree in ${repoLabel(repo)}…`, (cx) =>
+                this.startAdhoc(description, repo, cx),
+              ),
+          };
+        }),
+        (r) => r.text,
       );
     }
     // A ticket's screens need its work: wait for it (see the header).
@@ -418,6 +455,27 @@ export default class Tickets extends View {
     );
   }
 
+  // Ad-hoc work in `target`: its own branch (see adhocBranch), reused if it's
+  // already there, and the agent told what it is.
+  async startAdhoc(description, target, cx) {
+    const repo = await this.local(target, cx);
+    const branch = adhocBranch(description);
+    const path = worktreePath(repo, branch);
+    const existing = (await listWorktrees(repo.path)).linked.some((w) => w.path === path);
+    if (!existing) await addWorktree(repo, branch, { create: true });
+    this.openSpace(
+      basename(path),
+      path,
+      existing
+        ? null
+        : fill(C.agent.adhocTask, {
+            description,
+            branch,
+            worktreeDir: C.worktreeDir,
+          }),
+    );
+  }
+
   // The agent names and creates the extra branch itself (C.branch + a short description).
   another(ticket, repo) {
     this.dismiss();
@@ -593,7 +651,9 @@ export default class Tickets extends View {
     const title =
       this.screen.name === "list"
         ? "Tickets"
-        : `${this.screen.ticket.label}  ${this.screen.ticket.summary}`;
+        : this.screen.name === "adhoc"
+          ? `Ad-hoc: ${this.screen.description}`
+          : `${this.screen.ticket.label}  ${this.screen.ticket.summary}`;
     // Esc mid-action closes the popup and stops after the current step (a
     // clone or fetch that has started finishes); doing it again carries on.
     const hint = this.running

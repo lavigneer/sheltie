@@ -10,6 +10,9 @@ Use whatever you have for talking to GitHub and Jira (an MCP server, a CLI
 such as `gh` or `jira`, a custom script, or the API); the steps say what to
 do, not which tool to do it with.
 
+A branch that names no ticket is ad-hoc work: leave out everything about the
+ticket (reading it, the commit and title prefix, the link in the PR body).
+
 1. Find the ticket from the current branch name: a Jira key (e.g.
    `me/WEB-142` → `WEB-142`), or a GitHub issue number (e.g. `issue-12` → #12
    in this repo). Read the ticket.
