@@ -101,7 +101,7 @@ async function scan(agent) {
   if (!reader) throw new Error(`usage: unknown agent type ${agent.type}`);
   const r = await exec("/bin/sh", [
     "-c",
-    `set -o pipefail 2>/dev/null; { ${reader.source}; } | "$3" -R -n -c "$4"`,
+    `(set -o pipefail) 2>/dev/null && set -o pipefail; { ${reader.source}; } | "$3" -R -n -c "$4"`,
     "sh",
     expandHome(agent.home),
     C.programs.sqlite3,
