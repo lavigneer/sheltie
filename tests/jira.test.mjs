@@ -75,7 +75,7 @@ test("PR details, review threads, check results", async () => {
   assert.match(p12.head, /^[0-9a-f]{40}$/);
   assert.equal(await D.prDetails("acme/storage", "me/nope"), null);
   assert.equal((await D.prDetails("acme/web-app", 34)).checks, "failed");
-  assert.equal(await D.unresolvedThreads("acme/web-app", 34), 2);
+  assert.equal((await D.prDetails("acme/web-app", 34)).unresolved, 2);
 });
 
 test("workFor: worktrees, branches and PRs per ticket, fork PRs included", async () => {

@@ -62,7 +62,7 @@ import { C, configReady } from "./config.js";
 import { agentIn, agentSaysDone, nextSteps, prLabel, runStep } from "./flow.js";
 import { hubExcept, keyOfBranch, localRepos, repoState } from "./git.js";
 import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
-import { prDetails, unresolvedThreads } from "./prs.js";
+import { prDetails } from "./prs.js";
 import { trackerOf } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
 import { Cache, serial } from "./watch.js";
@@ -380,11 +380,6 @@ export default class Work extends View {
                 pr.mergeable === "UNKNOWN"
                   ? (before?.settled ?? null)
                   : pr.mergeable;
-            if (pr?.state === "OPEN")
-              pr.unresolved = await unresolvedThreads(
-                w.repo.slug,
-                pr.number,
-              ).catch(() => before?.unresolved ?? null);
             return pr;
           });
           if (entry.state === "found" && before)
