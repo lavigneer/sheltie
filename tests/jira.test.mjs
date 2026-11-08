@@ -14,6 +14,7 @@ before(async () => {
     ...(await import("../src/git.js")),
     ...(await import("../src/prs.js")),
     ...(await import("../src/work.js")),
+    ...(await import("../src/tracker.js")),
   };
   T = (await import("../src/tracker.js")).tracker();
 });
@@ -148,7 +149,13 @@ test("ready, auto-merge on approval, finish refuses unpushed work", async () => 
   });
   writeState(s);
   const { runStep } = await import("../src/flow.js");
-  const w = { path: wt, branch: "me/WEB-103", key: "WEB-103", repo: web };
+  const { ticketOfBranch } = await import("../src/tracker.js");
+  const w = {
+    path: wt,
+    branch: "me/WEB-103",
+    handle: ticketOfBranch("me/WEB-103", web),
+    repo: web,
+  };
   let pr = await D.prDetails("acme/web-app", 36);
   assert.match(
     await runStep("ready", w, pr),
@@ -252,7 +259,7 @@ test("a repo's own .sheltie.json: its tracker lists its tickets and names its br
       ".sheltie.json",
     );
 
-    assert.equal(D.keyOfBranch("issue-77", own), "acme/storage#77");
+    assert.equal(D.ticketOfBranch("issue-77", own)?.key, "acme/storage#77");
     assert.equal(D.branchFor(issue, own), "x/issue-77");
     assert.equal(D.branchFor(issue, null), `me/issue-77`);
     assert.equal(D.adhocBranch("Tidy up", own), "x/tidy-up");
@@ -271,10 +278,10 @@ test("a repo's own .sheltie.json: its tracker lists its tickets and names its br
     );
     assert.equal(nextSteps(pr).find((s) => s.id === "merge").confirm, true);
     assert.equal(
-      D.keyOfBranch(
+      D.ticketOfBranch(
         "me/WEB-101",
         repos.find((r) => r.name === "web-app"),
-      ),
+      )?.key,
       "WEB-101",
     );
   } finally {
@@ -319,4 +326,15 @@ test("prDetails: settled carries the last worked-out mergeable over UNKNOWN", as
     (await D.prDetails("acme/docs", 56, pushed)).settled,
     "MERGEABLE",
   );
+});
+
+test("a branch's ticket handle carries its key, label and bound tracker", async () => {
+  const { ticketOfBranch } = await import("../src/tracker.js");
+  const web = (await D.localRepos()).find((r) => r.name === "web-app");
+  const h = ticketOfBranch("me/WEB-103", web);
+  assert.equal(h.key, "WEB-103");
+  assert.equal(h.label, T.labelOf("WEB-103"));
+  assert.equal(h.tracker, T);
+  assert.equal(await h.url(), await T.url("WEB-103"));
+  assert.equal(ticketOfBranch("main", web), null);
 });

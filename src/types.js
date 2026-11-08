@@ -91,4 +91,15 @@
  *   repos the tracker itself suggests
  */
 
+/**
+ * A ticket a worktree's branch names, resolved to its tracker (tracker.js
+ * ticketOfBranch).
+ * @typedef {object} TicketHandle
+ * @property {string} key
+ * @property {string} label short form for display
+ * @property {Tracker} tracker the one it's in
+ * @property {() => Promise<string | null>} url
+ * @property {(step: Step, status?: string | null) => Promise<string | null>} move
+ */
+
 export {};
