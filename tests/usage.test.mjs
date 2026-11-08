@@ -156,3 +156,16 @@ test("usageGroups: opencode's database", { skip: !hasSqlite && "no sqlite3" }, a
   );
   assert.ok(Math.abs(g.cost - (6000 * 1 + 4000 * 0.1 + 1000 * 10) * M) < 1e-9);
 });
+
+test("settled: ready, then a failed refresh keeps the last groups", async () => {
+  const { LOADING, settled } = await import("../src/usage.js");
+  const fail = async () => { throw new Error("no logs"); };
+  assert.deepEqual(await settled(LOADING, fail), { phase: "failed", groups: null, error: "no logs" });
+  const ready = await settled(LOADING, async () => [{ cost: 1 }]);
+  assert.deepEqual(ready, { phase: "ready", groups: [{ cost: 1 }], error: null });
+  assert.deepEqual(await settled({ ...ready, phase: "loading" }, fail), {
+    phase: "failed",
+    groups: [{ cost: 1 }],
+    error: "no logs",
+  });
+});

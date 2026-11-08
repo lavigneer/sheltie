@@ -58,16 +58,16 @@ export function findRepo(target, repos) {
   );
 }
 
-// Every piece of work for each ticket (from listTickets), by key: [{ repo,
-// branch, worktree, pr }], from local branches/worktrees whose name has the
-// key and PRs the ticket's tracker links to it.
-export async function workFor(tickets, repos, { prs = true } = {}) {
-  const keys = tickets.map((t) => t.key);
-  const states = await pool(
-    repos
-      .filter((r) => r.path)
-      .map((repo) => async () => ({ repo, ...(await repoState(repo)) })),
-  );
+// Where a PR lookup's result lives in joinWork's `details`: by branch or number.
+const prRef = (slug, ref) => `${slug}#${ref}`;
+
+// The merge rules behind workFor, on plain data: key -> [{ repo, branch,
+// worktree, pr }]. `states` are repoState results with their `repo`; a branch
+// listed both as a worktree and a branch is one item. `linked` maps a key to
+// the PRs ({ slug, number }) its tracker links; `details` maps prRef(slug,
+// branch or number) to prDetails (missing = failed lookup, the item keeps pr
+// null). A linked PR not already attached becomes its own item.
+export function joinWork(keys, states, linked = new Map(), details = new Map(), repos = []) {
   const work = new Map(keys.map((k) => [k, []]));
   const add = (key, item) => {
     const list = work.get(key);
@@ -100,7 +100,43 @@ export async function workFor(tickets, repos, { prs = true } = {}) {
       for (const key of mentioned(name))
         add(key, { repo: s.repo, branch: name, worktree: null, pr: null });
   }
-  if (!prs) return work;
+  for (const [key, items] of work) {
+    for (const item of items)
+      if (item.repo.slug)
+        item.pr = details.get(prRef(item.repo.slug, item.branch)) ?? item.pr;
+    for (const p of linked.get(key) ?? []) {
+      const pr = details.get(prRef(p.slug, p.number));
+      if (
+        pr &&
+        !work
+          .get(key)
+          .some(
+            (w) => sameSlug(w.repo.slug, pr.slug) && w.pr?.number === pr.number,
+          )
+      )
+        add(key, {
+          repo: findRepo(pr.slug, repos),
+          branch: pr.branch,
+          worktree: null,
+          pr,
+        });
+    }
+  }
+  return work;
+}
+
+// Every piece of work for each ticket (from listTickets), by key: [{ repo,
+// branch, worktree, pr }], from local branches/worktrees whose name has the
+// key and PRs the ticket's tracker links to it. Fetches joinWork's inputs.
+export async function workFor(tickets, repos, { prs = true } = {}) {
+  const keys = tickets.map((t) => t.key);
+  const states = await pool(
+    repos
+      .filter((r) => r.path)
+      .map((repo) => async () => ({ repo, ...(await repoState(repo)) })),
+  );
+  const local = joinWork(keys, states);
+  if (!prs) return local;
 
   // PRs: the branches we found, plus any PR the tracker links to the key.
   const byTracker = new Map();
@@ -111,37 +147,21 @@ export async function workFor(tickets, repos, { prs = true } = {}) {
     [...byTracker].map(([t, ks]) => t.linkedPRs(ks, repos).catch(() => new Map())),
   ))
     for (const [k, v] of found) linked.set(k, v);
-  const lookups = [];
-  for (const [key, items] of work) {
+  const lookups = new Map();
+  for (const [key, items] of local) {
     for (const item of items)
       if (item.repo.slug)
-        lookups.push({ key, slug: item.repo.slug, ref: item.branch, item });
+        lookups.set(prRef(item.repo.slug, item.branch), [item.repo.slug, item.branch]);
     for (const p of linked.get(key) ?? [])
-      lookups.push({ key, slug: p.slug, ref: p.number });
+      lookups.set(prRef(p.slug, p.number), [p.slug, p.number]);
   }
-  // A failed lookup just leaves that item without PR details here.
-  const details = await pool(
-    lookups.map((l) => () => prDetails(l.slug, l.ref)),
+  // A failed lookup just leaves that item without PR details.
+  const found = await pool(
+    [...lookups.values()].map(([slug, ref]) => () => prDetails(slug, ref)),
   );
-  lookups.forEach((l, i) => {
-    const pr = details[i];
-    if (!pr) return;
-    if (l.item) l.item.pr = pr;
-    else if (
-      !work
-        .get(l.key)
-        .some(
-          (w) => sameSlug(w.repo.slug, pr.slug) && w.pr?.number === pr.number,
-        )
-    )
-      add(l.key, {
-        repo: findRepo(pr.slug, repos),
-        branch: pr.branch,
-        worktree: null,
-        pr,
-      });
-  });
-  return work;
+  const details = new Map();
+  [...lookups.keys()].forEach((k, i) => found[i] && details.set(k, found[i]));
+  return joinWork(keys, states, linked, details, repos);
 }
 
 // Where new work on a ticket should go: [{ repo, why }] best first (may be

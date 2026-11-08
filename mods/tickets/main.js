@@ -64,7 +64,7 @@ import {
   repoRoot,
   worktreePath,
 } from "./git.js";
-import { prLabel } from "./prs.js";
+import { prLabel } from "./flow.js";
 import { listTickets, suggestRepos, workFor } from "./work.js";
 
 const REMEMBER = "tickets.repo"; // shared: ticket key -> repo slug or path

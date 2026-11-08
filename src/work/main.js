@@ -61,8 +61,8 @@ import {
 import { C, configReady } from "./config.js";
 import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
 import { hubExcept, keyOfBranch, localRepos, repoState } from "./git.js";
-import { prDetails, prLabel, unresolvedThreads } from "./prs.js";
-import { agentIn, agentSaysDone, nextSteps, runStep } from "./flow.js";
+import { prDetails, unresolvedThreads } from "./prs.js";
+import { agentIn, agentSaysDone, nextSteps, prLabel, runStep } from "./flow.js";
 import { trackerOf } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
 
