@@ -735,14 +735,16 @@ export default class Tickets extends View {
               .text_color(t.foreground),
           ),
       )
-      .when(Boolean(status), (el) =>
-        el.child(
-          div()
-            .px(10)
-            .py(4)
-            .text_color(status[1] ? t.blocked : t.dim)
-            .child(status[0]),
-        ),
+      // The status line always keeps its space, so the list below doesn't
+      // jump when a loading message comes or goes.
+      .child(
+        div()
+          .flex_none()
+          .px(10)
+          .py(4)
+          .truncate()
+          .text_color(status?.[1] ? t.blocked : t.dim)
+          .child(status?.[0] ?? "\u00a0"),
       )
       .when(rows.length > 0, (el) =>
         el.child(

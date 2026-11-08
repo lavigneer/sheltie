@@ -211,15 +211,25 @@ export default class Work extends View {
       .map((w) => {
         const space = spaceOf(w);
         const steps =
-          w.hub || this.steps.get(w.path)?.phase === "running"
+          this.steps.get(w.path)?.phase === "running"
             ? []
-            : nextSteps(this.prs.get(w.path)?.value ?? null, {
-                working: space?.status === "working",
-                agentDone: agentSaysDone(space),
-                repo: w.repo,
-              });
+            : this.stepsOf(w, space);
         return { w, space, steps };
       });
+  }
+
+  // A row's next steps; none for a hub, or until its PR lookup has answered
+  // (null then means "not known yet", not "no PR": guessing Draft PR would
+  // flash a wrong, clickable button and shift the rows below when it goes).
+  stepsOf(w, space) {
+    const entry = this.prs.get(w.path);
+    if (w.hub || !entry || (entry.state === "failed" && !entry.value))
+      return [];
+    return nextSteps(entry.value, {
+      working: space?.status === "working",
+      agentDone: agentSaysDone(space),
+      repo: w.repo,
+    });
   }
 
   // The selected row and step: the one the keys moved to while the same
@@ -812,13 +822,7 @@ export default class Work extends View {
       const extras = [
         prValue?.state === "OPEN" && prValue.autoMerge ? "auto-merge" : null,
       ].filter(Boolean);
-      const steps = w.hub
-        ? []
-        : nextSteps(prValue, {
-            working: space?.status === "working",
-            agentDone: agentSaysDone(space),
-            repo: w.repo,
-          });
+      const steps = this.stepsOf(w, space);
       const step = this.steps.get(w.path);
       // A success note fades after a minute; a failure stays until the next step.
       const last =
@@ -1007,8 +1011,10 @@ export default class Work extends View {
               ),
             ),
         )
-        .when(Boolean(sub || ticket?.status || cost), (el) =>
-          el.child(
+        // Always there, even while empty: a ticket's status and the cost
+        // come from lookups that finish later, and the line appearing then
+        // would push every row below it down.
+        .child(
             h_flex()
               .pl(18)
               .gap(6)
@@ -1045,7 +1051,6 @@ export default class Work extends View {
                     .child(cost),
                 ),
               ),
-          ),
         )
         .when(steps.length > 0 || Boolean(note), (el) =>
           el.child(

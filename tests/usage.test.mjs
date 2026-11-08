@@ -1,4 +1,4 @@
-// Agent cost from Claude Code and Codex session logs, priced from a
+// Agent cost from Claude Code, Codex and opencode session logs, priced from a
 // LiteLLM-format list.
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -114,4 +114,45 @@ test("costOf: unknown models have no price; dated ids match; totals", () => {
     ]),
     { cost: 4, tokens: 2e6, unpriced: 1e6 },
   );
+});
+
+const hasSqlite = (await import("node:child_process")).spawnSync("sqlite3", ["-version"]).status === 0;
+
+test("usageGroups: opencode's database", { skip: !hasSqlite && "no sqlite3" }, async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const home = path.join(tmp, "opencode");
+  fs.mkdirSync(home, { recursive: true });
+  const db = new DatabaseSync(path.join(home, "opencode.db"));
+  db.exec("CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, data TEXT)");
+  const add = db.prepare("INSERT INTO message VALUES (?, 's', ?)");
+  const msg = (role, tokens) =>
+    JSON.stringify({
+      role,
+      modelID: "gpt-5-codex",
+      providerID: "openai",
+      path: { cwd: "/work/oc", root: "/work/oc" },
+      time: { created: Date.parse("2026-11-07T12:00:00Z") },
+      tokens,
+    });
+  const tokens = { input: 3000, output: 400, reasoning: 100, cache: { read: 2000, write: 0 } };
+  add.run("m1", msg("assistant", tokens));
+  add.run("m2", msg("assistant", tokens));
+  add.run("m3", msg("user"));
+  db.close();
+  useConfig({
+    usage: {
+      agents: [
+        { type: "opencode", home },
+        { type: "opencode", home: path.join(tmp, "never-used") },
+      ],
+      prices: `file://${tmp}/prices.json`,
+    },
+  });
+  const [g, ...rest] = await usageGroups();
+  assert.equal(rest.length, 0);
+  assert.deepEqual(
+    [g.agent, g.dir, g.day, g.input, g.read, g.output],
+    ["opencode", "/work/oc", "2026-11-07", 6000, 4000, 1000],
+  );
+  assert.ok(Math.abs(g.cost - (6000 * 1 + 4000 * 0.1 + 1000 * 10) * M) < 1e-9);
 });
