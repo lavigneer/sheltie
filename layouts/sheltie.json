@@ -67,17 +67,6 @@
                 "weight": 3
               },
               "min": 90
-            },
-            {
-              "id": "agents",
-              "type": "block",
-              "size": {
-                "weight": 1
-              },
-              "min": 90,
-              "content": {
-                "mod": "agents"
-              }
             }
           ]
         },
