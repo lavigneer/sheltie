@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Installs sheltie into a Herdr app home. Safe to run again (to
-# update): it only replaces its own mods and layout.
+# Installs sheltie's mods and layouts into a Herdr app home. Safe to run
+# again (to update): it only replaces its own mods and layouts.
 #
 #   ./install.sh [--home DIR] [--skills] [--force-skills]
 #
@@ -18,7 +18,8 @@
 #                           the Work sidebar's alt-shift keys (in the sheltie
 #                           layout only) added to
 #                           <home>/keys.json, unless you use those keys
-#   layouts/sheltie.*       copied to <home>/layouts/ (Herdr with the Work sidebar)
+#   layouts/*               copied to <home>/layouts/ (sheltie: Herdr with the
+#                           Work sidebar)
 #   sheltie.json        a starter settings file if there is none
 # Needs bash and jq.
 
@@ -37,7 +38,7 @@ while [ $# -gt 0 ]; do
   --skills | --claude-commands) skills=1 ;;
   --force-skills | --force-commands) skills=1 force_skills=1 ;;
   -h | --help)
-    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
   *)
@@ -86,14 +87,18 @@ jq --slurpfile ours "$here/keys.json" '
 mv "$tmp" "$home/keys.json"
 echo "keys: $(jq -r 'to_entries | map(.value | to_entries[] | "\(.key) → \(.value)") | join(", ")' "$here/keys.json")"
 
-# Layout.
+# Layouts: each layouts/<name>.json, with its <name>.svg preview if any.
 mkdir -p "$home/layouts"
-writable "$home/layouts/sheltie.json"
-writable "$home/layouts/sheltie.svg"
-cp "$here/layouts/sheltie.json" "$here/layouts/sheltie.svg" "$home/layouts/"
-writable "$home/layouts/sheltie.json"
-writable "$home/layouts/sheltie.svg"
-echo "layout: sheltie (switch with: herdr-app do layout.switch --name sheltie)"
+for layout in "$here"/layouts/*.json; do
+  name="$(basename "$layout" .json)"
+  for f in "$layout" "$here/layouts/$name.svg"; do
+    [ -f "$f" ] || continue
+    writable "$home/layouts/$(basename "$f")"
+    cp "$f" "$home/layouts/"
+    writable "$home/layouts/$(basename "$f")"
+  done
+  echo "layout: $name (switch with: herdr-app do layout.switch --name $name)"
+done
 
 # Settings.
 if [ -f "$home/sheltie.json" ]; then

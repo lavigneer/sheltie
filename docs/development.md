@@ -22,6 +22,16 @@ and `mod.json`. Herdr only resolves imports inside a mod's folder, so the build 
 (with Herdr running) loads a mod once; it leaves `gpui-kit.d.ts` and
 `jsconfig.json` in the folder, which `npm run build` removes.
 
+## Adding a mod or layout
+
+A mod is a `src/<name>/` folder with its `mod.json` and `main.js`; it can
+import any shared module in `src/`, and `npm run build` makes `mods/<name>/`.
+A layout is `layouts/<name>.json`, with an optional `<name>.svg` preview, and
+its keys go in a `"layout:<name>"` section of `keys.json`. `install.sh`
+installs every mod and layout, so neither needs changes there. Settings live
+in the one `sheltie.json`: give a new mod its own top-level key in
+`types/settings.d.ts` and `src/defaults.js`.
+
 A new tracker is a `src/tracker-<name>.js` with the functions listed in
 `src/tracker.js`, added to its `trackers` map.
 

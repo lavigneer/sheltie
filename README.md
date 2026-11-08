@@ -1,7 +1,20 @@
 # Sheltie
 
 A herding dog for your [Herdr](https://herdr.dev) desktop app, named for
-Hopper, a Sheltie. These mods take a ticket from your tracker to a merged pull
+Hopper, a Sheltie: a suite of Herdr mods and layouts. Install it all, then use
+the parts you want.
+
+| Mod / layout | |
+|---|---|
+| **tickets** + **work** mods, **sheltie** layout | the ticket flow: a ticket from your tracker to a merged PR (below) |
+| **projects** mod | a plain project switcher (Ctrl+Shift+F) |
+| **usage** mod | what your agents cost, and your Claude plan's limits |
+
+More are welcome; see [Adding a mod or layout](docs/development.md#adding-a-mod-or-layout).
+
+## The ticket flow
+
+The tickets and work mods take a ticket from your tracker to a merged pull
 request without leaving Herdr:
 
 1. **Pick a ticket** (Ctrl+Shift+J). Sheltie creates a branch and worktree,
@@ -35,7 +48,7 @@ See [docs/workflow.md](docs/workflow.md) for exactly when each step is
 offered, the safety checks and how repos are suggested.
 
 Trackers: **Jira** (via jira-cli) and **GitHub issues**. Code hosting: GitHub.
-A third mod, **projects** (Ctrl+Shift+F), is a plain project switcher, and
+The **projects** mod (Ctrl+Shift+F) is a plain project switcher, and
 **usage**, at the bottom of the sidebar, shows what your agents (Claude Code,
 Codex, opencode) cost: today, the last 7 and 30 days, and by model, from their session
 logs and [LiteLLM's prices](https://github.com/BerriAI/litellm). The Work
