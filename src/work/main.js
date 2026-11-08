@@ -216,6 +216,7 @@ export default class Work extends View {
             : nextSteps(this.prs.get(w.path)?.value ?? null, {
                 working: space?.status === "working",
                 agentDone: agentSaysDone(space),
+                repo: w.repo,
               });
         return { w, space, steps };
       });
@@ -816,6 +817,7 @@ export default class Work extends View {
         : nextSteps(prValue, {
             working: space?.status === "working",
             agentDone: agentSaysDone(space),
+            repo: w.repo,
           });
       const step = this.steps.get(w.path);
       // A success note fades after a minute; a failure stays until the next step.

@@ -167,9 +167,10 @@ export async function readSettings(path) {
 }
 
 // A repo's own settings: REPO_FILE in its main checkout, merged over the
-// global ones. Only REPO_SETTINGS (where its tickets come from) apply there.
+// global ones. Only REPO_SETTINGS apply there: where its tickets come from,
+// its branch names and its PR workflow.
 export const REPO_FILE = ".sheltie.json";
-export const REPO_SETTINGS = ["tracker", "jira", "github"];
+export const REPO_SETTINGS = ["tracker", "jira", "github", "branch", "workflow"];
 
 // The settings for a repo whose REPO_FILE holds `over`, or null when it sets
 // none of REPO_SETTINGS (the global ones apply). `problem` names keys that
@@ -186,6 +187,9 @@ export function repoSettings(over, path) {
       : null,
   };
 }
+
+// The settings for work in `repo` (from localRepos): its own, or the global ones.
+export const settingsOf = (repo) => repo?.settings ?? C;
 
 // Replaces the settings in use (for tests, and after loading).
 export function useConfig(settings, problem = null) {

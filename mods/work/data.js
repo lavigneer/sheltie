@@ -3,7 +3,7 @@
 // from the tracker in use (tracker.js).
 
 import { exec } from "herdr";
-import { C, REPO_FILE, readSettings, repoSettings } from "./config.js";
+import { C, REPO_FILE, readSettings, repoSettings, settingsOf } from "./config.js";
 import {
   NOT_FOUND,
   basename,
@@ -30,9 +30,10 @@ const sameSlug = (a, b) =>
 
 // --- Repos ------------------------------------------------------------------
 
-// Local repos under the roots (main checkouts): [{ path, name, slug, tracker,
-// problem }]. `tracker` is set when the repo's REPO_FILE picks its own
-// (config.js repoSettings); `problem` says what's wrong with that file.
+// Local repos under the roots (main checkouts): [{ path, name, slug, settings,
+// tracker, problem }]. `settings` (see config.js settingsOf) and `tracker` are
+// set when the repo's REPO_FILE sets any of REPO_SETTINGS; `problem` says
+// what's wrong with that file.
 export async function localRepos() {
   const paths = new Set();
   for (const root of C.roots) {
@@ -72,11 +73,12 @@ async function ownSettings(repoPath) {
   const { settings, problem } = repoSettings(read.over, file);
   try {
     return {
+      settings,
       tracker: settings ? tracker(settings) : null,
       problem: read.problem ?? problem,
     };
   } catch (e) {
-    return { tracker: null, problem: `${file}: ${e.message}` };
+    return { settings: null, tracker: null, problem: `${file}: ${e.message}` };
   }
 }
 
@@ -213,19 +215,19 @@ export const keyOfBranch = (branch, repo) =>
 
 // --- Worktrees --------------------------------------------------------------
 
-// A ticket's branch (C.branch, e.g. "{ref}" or "me/{ref}").
-export const branchFor = (ticket) =>
-  fill(C.branch, { ref: ticket.ref, key: ticket.key });
+// A ticket's branch in `repo` (its `branch` setting, e.g. "{ref}" or "me/{ref}").
+export const branchFor = (ticket, repo) =>
+  fill(settingsOf(repo).branch, { ref: ticket.ref, key: ticket.key });
 
-// An ad-hoc branch (not tied to a ticket): C.branch with a short kebab-case
+// An ad-hoc branch (not tied to a ticket) in `repo`: its `branch` setting with a short kebab-case
 // slug of the description as its {ref}, or null when nothing's left of it.
-export function adhocBranch(description) {
+export function adhocBranch(description, repo) {
   const slug = description
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .slice(0, 40)
     .replace(/^-+|-+$/g, "");
-  return slug ? fill(C.branch, { ref: slug, key: slug }) : null;
+  return slug ? fill(settingsOf(repo).branch, { ref: slug, key: slug }) : null;
 }
 
 export const worktreePath = (repo, branch) =>

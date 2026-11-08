@@ -409,7 +409,7 @@ export default class Tickets extends View {
       key: ticket.key,
       label: ticket.label,
       summary: ticket.summary,
-      branch: branchFor(ticket),
+      branch: branchFor(ticket, extra.repo),
       worktreeDir: C.worktreeDir,
       viewCommand: ticket.tracker.viewCommand(ticket.key),
       ...extra,
@@ -419,7 +419,7 @@ export default class Tickets extends View {
   // New work on the ticket's own branch (C.branch) in `target`.
   async start(ticket, target, cx) {
     const repo = await this.local(target, cx);
-    const branch = branchFor(ticket);
+    const branch = branchFor(ticket, repo);
     const existing = (this.data.work.get(ticket.key) ?? []).find(
       (w) => w.repo.path === repo.path && w.branch === branch && w.worktree,
     );
@@ -445,7 +445,7 @@ export default class Tickets extends View {
     this.openSpace(
       this.spaceName(ticket, repo),
       path,
-      existing ? null : fill(C.agent.task, this.taskValues(ticket)),
+      existing ? null : fill(C.agent.task, this.taskValues(ticket, { repo })),
     );
   }
 
@@ -453,7 +453,7 @@ export default class Tickets extends View {
   // already there, and the agent told what it is.
   async startAdhoc(description, target, cx) {
     const repo = await this.local(target, cx);
-    const branch = adhocBranch(description);
+    const branch = adhocBranch(description, repo);
     const path = worktreePath(repo, branch);
     const existing = (await listWorktrees(repo.path)).linked.some((w) => w.path === path);
     if (!existing) await addWorktree(repo, branch, { create: true });
@@ -477,7 +477,7 @@ export default class Tickets extends View {
       name: `${ticket.label} ${repo.name}+`,
       folder: repo.path,
       argv: C.agent.argv,
-      task: fill(C.agent.extraBranchTask, this.taskValues(ticket)),
+      task: fill(C.agent.extraBranchTask, this.taskValues(ticket, { repo })),
     });
   }
 

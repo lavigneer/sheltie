@@ -158,13 +158,21 @@ test("a repo's own .sheltie.json: its tracker lists its tickets and names its br
   const storage = (await D.localRepos()).find((r) => r.name === "storage");
   fs.writeFileSync(
     `${storage.path}/.sheltie.json`,
-    JSON.stringify({ tracker: "github", github: { repos: ["acme/storage"] }, branch: "x/{ref}" }),
+    JSON.stringify({
+      tracker: "github",
+      github: { repos: ["acme/storage"] },
+      branch: "x/{ref}",
+      workflow: { confirmMerge: false },
+      roots: ["/elsewhere"],
+    }),
   );
   try {
     const repos = await D.localRepos();
     const own = repos.find((r) => r.name === "storage");
     assert.equal(own.tracker.name, "github");
-    assert.match(own.problem, /branch can only be set in sheltie\.json/);
+    assert.match(own.problem, /roots can only be set in sheltie\.json/);
+    assert.equal(own.settings.workflow.confirmMerge, false);
+    assert.equal(own.settings.workflow.autoMerge, C.workflow.autoMerge);
     assert.equal(repos.find((r) => r.name === "web-app").tracker, null);
 
     const tickets = await D.listTickets(repos);
@@ -175,6 +183,13 @@ test("a repo's own .sheltie.json: its tracker lists its tickets and names its br
     assert.equal(D.suggestRepos(issue, repos, null, null)[0].why, ".sheltie.json");
 
     assert.equal(D.keyOfBranch("issue-77", own), "acme/storage#77");
+    assert.equal(D.branchFor(issue, own), "x/issue-77");
+    assert.equal(D.branchFor(issue, null), `me/issue-77`);
+    assert.equal(D.adhocBranch("Tidy up", own), "x/tidy-up");
+    const { nextSteps } = await import("../src/flow.js");
+    const pr = { state: "OPEN", draft: false, review: "APPROVED", checks: "passed", mergeable: "MERGEABLE", unresolved: 0 };
+    assert.equal(nextSteps(pr, { repo: own }).find((s) => s.id === "merge").confirm, false);
+    assert.equal(nextSteps(pr).find((s) => s.id === "merge").confirm, true);
     assert.equal(D.keyOfBranch("me/WEB-101", repos.find((r) => r.name === "web-app")), "WEB-101");
   } finally {
     fs.rmSync(`${storage.path}/.sheltie.json`);
