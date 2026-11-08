@@ -94,6 +94,51 @@ export function canMerge(pr, workflow = C.workflow) {
   return pr.review === null && workflow.mergeWithoutReview !== false;
 }
 
+// What changed on a PR worth telling, from one snapshot (`was`) to the next
+// (`pr`): [{ title, level: "success" | "error" | "warning", body? }]. A
+// conflict compares against `was.settled` (the last mergeable GitHub worked
+// out), so it's told once, not again after every push that doesn't fix it.
+export function prEvents(was, pr) {
+  const events = [];
+  const add = (title, level, body) => events.push({ title, level, body });
+  if (was.checks === "pending" && pr.checks === "passed")
+    add(
+      "CI passed",
+      "success",
+      pr.draft ? "Ready to mark ready for review." : undefined,
+    );
+  if (was.checks === "pending" && pr.checks === "failed")
+    add("CI failed", "error");
+  if (
+    pr.state === "OPEN" &&
+    pr.mergeable === "CONFLICTING" &&
+    was.settled !== "CONFLICTING"
+  )
+    add(
+      "merge conflicts",
+      "warning",
+      "It conflicts with its base, so CI won't run: Resolve conflicts.",
+    );
+  const added = (pr.unresolved ?? 0) - (was.unresolved ?? 0);
+  if (added > 0)
+    add(`${added} new review comment${added === 1 ? "" : "s"}`, "warning");
+  if (was.review !== pr.review && pr.review === "APPROVED")
+    add(
+      "approved",
+      "success",
+      pr.autoMerge ? "Auto-merge will merge it." : undefined,
+    );
+  if (was.review !== pr.review && pr.review === "CHANGES_REQUESTED")
+    add("changes requested", "warning");
+  if (was.state !== "MERGED" && pr.state === "MERGED")
+    add(
+      "merged",
+      "success",
+      "Finish removes the worktree and resolves the ticket.",
+    );
+  return events;
+}
+
 // The next steps for a worktree: [{ id, label, kind: "agent" | "direct", confirm }].
 // `working`: its agent is busy, so nothing is sent to it. `agentDone`: its
 // agent says the PR is done (see agentSaysDone), which Ready waits for with

@@ -7,7 +7,13 @@ import path from "node:path";
 import { afterEach, test } from "node:test";
 import { live } from "herdr";
 import { C, useConfig } from "../src/config.js";
-import { agentSaysDone, nextSteps, prLabel, runStep } from "../src/flow.js";
+import {
+  agentSaysDone,
+  nextSteps,
+  prEvents,
+  prLabel,
+  runStep,
+} from "../src/flow.js";
 
 const draft = {
   number: 7,
@@ -230,4 +236,130 @@ test("Merge: workflow.mergeWithoutReview false only offers it once approved", ()
 test("Merge: workflow.confirmMerge false runs it on the first click", () => {
   useConfig({ workflow: { confirmMerge: false } });
   assert.equal(nextSteps({ ...ready, review: null })[0].confirm, false);
+});
+
+// PR change events: each transition from one snapshot to the next.
+test("prEvents: each transition from was to now", () => {
+  const open = { ...draft, checks: "pending", settled: "MERGEABLE" };
+  const cases = [
+    ["nothing changed", open, {}, []],
+    [
+      "CI passed on a draft",
+      open,
+      { checks: "passed" },
+      [["CI passed", "success", "Ready to mark ready for review."]],
+    ],
+    [
+      "CI passed, ready",
+      open,
+      { checks: "passed", draft: false },
+      [["CI passed", "success", undefined]],
+    ],
+    [
+      "CI failed",
+      open,
+      { checks: "failed" },
+      [["CI failed", "error", undefined]],
+    ],
+    [
+      "CI already passed",
+      { ...open, checks: "passed" },
+      { checks: "passed" },
+      [],
+    ],
+    [
+      "new conflict",
+      open,
+      { mergeable: "CONFLICTING" },
+      [
+        [
+          "merge conflicts",
+          "warning",
+          "It conflicts with its base, so CI won't run: Resolve conflicts.",
+        ],
+      ],
+    ],
+    [
+      "conflict already told",
+      { ...open, settled: "CONFLICTING" },
+      { mergeable: "CONFLICTING" },
+      [],
+    ],
+    [
+      "conflict on a closed PR",
+      open,
+      { mergeable: "CONFLICTING", state: "CLOSED" },
+      [],
+    ],
+    [
+      "one new comment",
+      open,
+      { unresolved: 1 },
+      [["1 new review comment", "warning", undefined]],
+    ],
+    [
+      "comments from unknown",
+      { ...open, unresolved: null },
+      { unresolved: 3 },
+      [["3 new review comments", "warning", undefined]],
+    ],
+    ["comments resolved", { ...open, unresolved: 2 }, { unresolved: 1 }, []],
+    [
+      "approved",
+      open,
+      { review: "APPROVED" },
+      [["approved", "success", undefined]],
+    ],
+    [
+      "approved with auto-merge",
+      open,
+      { review: "APPROVED", autoMerge: true },
+      [["approved", "success", "Auto-merge will merge it."]],
+    ],
+    [
+      "still approved",
+      { ...open, review: "APPROVED" },
+      { review: "APPROVED" },
+      [],
+    ],
+    [
+      "changes requested",
+      open,
+      { review: "CHANGES_REQUESTED" },
+      [["changes requested", "warning", undefined]],
+    ],
+    [
+      "merged",
+      open,
+      { state: "MERGED" },
+      [
+        [
+          "merged",
+          "success",
+          "Finish removes the worktree and resolves the ticket.",
+        ],
+      ],
+    ],
+    ["already merged", { ...open, state: "MERGED" }, { state: "MERGED" }, []],
+    [
+      "several at once, in order",
+      open,
+      { checks: "failed", unresolved: 2, review: "CHANGES_REQUESTED" },
+      [
+        ["CI failed", "error", undefined],
+        ["2 new review comments", "warning", undefined],
+        ["changes requested", "warning", undefined],
+      ],
+    ],
+  ];
+  for (const [name, was, change, want] of cases)
+    assert.deepEqual(
+      prEvents(was, { ...was, ...change }).map((e) => [
+        e.title,
+        e.level,
+        e.body,
+      ]),
+      want,
+      name,
+    );
 });

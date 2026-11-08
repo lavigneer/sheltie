@@ -61,7 +61,14 @@ import {
   writeTextFile,
 } from "herdr";
 import { C, configReady } from "./config.js";
-import { agentIn, agentSaysDone, nextSteps, prLabel, runStep } from "./flow.js";
+import {
+  agentIn,
+  agentSaysDone,
+  nextSteps,
+  prEvents,
+  prLabel,
+  runStep,
+} from "./flow.js";
 import { hubExcept, keyOfBranch, localRepos, repoState } from "./git.js";
 import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
 import { prDetails } from "./prs.js";
@@ -490,45 +497,8 @@ export default class Work extends View {
     const action = space
       ? { name: "space.select", args: { id: space.id } }
       : undefined;
-    const say = (title, level, body) =>
+    for (const { title, level, body } of prEvents(was, pr))
       notify({ title: `${who}: ${title}`, body, level, action });
-    if (was.checks === "pending" && pr.checks === "passed")
-      say(
-        "CI passed",
-        "success",
-        pr.draft ? "Ready to mark ready for review." : undefined,
-      );
-    if (was.checks === "pending" && pr.checks === "failed")
-      say("CI failed", "error");
-    if (
-      pr.state === "OPEN" &&
-      pr.mergeable === "CONFLICTING" &&
-      was.settled !== "CONFLICTING"
-    )
-      say(
-        "merge conflicts",
-        "warning",
-        "It conflicts with its base, so CI won't run: Resolve conflicts.",
-      );
-    if ((pr.unresolved ?? 0) > (was.unresolved ?? 0))
-      say(
-        `${pr.unresolved - (was.unresolved ?? 0)} new review comment${pr.unresolved - (was.unresolved ?? 0) === 1 ? "" : "s"}`,
-        "warning",
-      );
-    if (was.review !== pr.review && pr.review === "APPROVED")
-      say(
-        "approved",
-        "success",
-        pr.autoMerge ? "Auto-merge will merge it." : undefined,
-      );
-    if (was.review !== pr.review && pr.review === "CHANGES_REQUESTED")
-      say("changes requested", "warning");
-    if (was.state !== "MERGED" && pr.state === "MERGED")
-      say(
-        "merged",
-        "success",
-        "Finish removes the worktree and resolves the ticket.",
-      );
   }
 
   // Runs a next step for worktree `w`; one asking for confirmation runs on its
