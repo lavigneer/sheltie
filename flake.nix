@@ -4,7 +4,7 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   # Packaging only: the built mods and the rest of the repo under
-  # share/herdr-ticket-flow, plus `herdr-ticket-flow-install` (install.sh) and
+  # share/sheltie, plus `sheltie-install` (install.sh) and
   # `herdr-demo`. Configuring Herdr is left to whoever uses the package.
   outputs =
     { self, nixpkgs }:
@@ -20,17 +20,17 @@
     {
       packages = forAllSystems (pkgs: {
         default = pkgs.stdenvNoCC.mkDerivation {
-          pname = "herdr-ticket-flow";
+          pname = "sheltie";
           version = "0.1.0";
           src = self;
           nativeBuildInputs = [ pkgs.makeWrapper ];
           dontBuild = true;
           installPhase = ''
             runHook preInstall
-            share=$out/share/herdr-ticket-flow
+            share=$out/share/sheltie
             mkdir -p $share $out/bin
             cp -R mods agents demo keys.json config.example.json install.sh $share/
-            makeWrapper $share/install.sh $out/bin/herdr-ticket-flow-install \
+            makeWrapper $share/install.sh $out/bin/sheltie-install \
               --prefix PATH : ${
                 pkgs.lib.makeBinPath [
                   pkgs.jq

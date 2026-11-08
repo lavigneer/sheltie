@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs herdr-ticket-flow into a Herdr app home. Safe to run again (to
+# Installs sheltie into a Herdr app home. Safe to run again (to
 # update): it only replaces its own mods and the generated Work layout.
 #
 #   ./install.sh [--home DIR] [--claude-commands] [--force-commands]
@@ -19,7 +19,7 @@
 #                           <home>/keys.json, unless you use those keys
 #   layouts/work.json       Herdr's main layout with the Work sidebar block under
 #                           Spaces, regenerated from <home>/layouts/main.json
-#   ticket-flow.json        a starter settings file if there is none
+#   sheltie.json        a starter settings file if there is none
 # Needs bash and jq.
 
 set -euo pipefail
@@ -99,13 +99,13 @@ else
 fi
 
 # Settings.
-if [ -f "$home/ticket-flow.json" ]; then
-  echo "settings: $home/ticket-flow.json (kept)"
+if [ -f "$home/sheltie.json" ]; then
+  echo "settings: $home/sheltie.json (kept)"
 else
   # Only what you'll want to change first; everything else keeps the defaults
   # (config.example.json shows them all).
-  printf '{\n  "roots": ["~/workspace"],\n  "tracker": "jira"\n}\n' >"$home/ticket-flow.json"
-  echo "settings: $home/ticket-flow.json (new: edit it; config.example.json has every setting)"
+  printf '{\n  "roots": ["~/workspace"],\n  "tracker": "jira"\n}\n' >"$home/sheltie.json"
+  echo "settings: $home/sheltie.json (new: edit it; config.example.json has every setting)"
 fi
 
 # Claude Code commands.

@@ -23,7 +23,7 @@ const tryErr = async (f) => {
   }
 };
 
-test("settings come from the app home's ticket-flow.json", () => {
+test("settings come from the app home's sheltie.json", () => {
   assert.equal(C.tracker, "jira");
   assert.equal(C.branch, "me/{ref}");
   assert.equal(C.problem, null);
