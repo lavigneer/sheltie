@@ -5,6 +5,7 @@
 // The Work sidebar shows each row's cost from the same data. Above them, a
 // Claude subscription's plan limits (limits.js): how much of the 5-hour
 // session and the week is used, which is what a Pro or Max plan is billed by.
+// They refresh every 5 minutes (and with ↻).
 
 import { h_flex, v_flex } from "gpui-base";
 import { div, View } from "gpui-kit";
@@ -22,6 +23,7 @@ import {
 
 const DAY_MS = 86_400_000;
 const REFRESH_MS = 120_000;
+const LIMITS_MS = 300_000;
 const RAIL = 160;
 const TOP = 5;
 
@@ -49,7 +51,9 @@ export default class Usage extends View {
     // [{ home, windows }] once read; error: why the last read failed.
     this.limits = { list: null, error: null };
     this.read(cx);
+    this.readLimits(cx);
     cx.timer.every(REFRESH_MS, (cx) => this.load(cx));
+    cx.timer.every(LIMITS_MS, (cx) => this.readLimits(cx));
   }
 
   // maxAge: reuse a scan this recent (usageGroups), 0 to scan now.
@@ -59,7 +63,9 @@ export default class Usage extends View {
     this.read(cx, maxAge);
   }
 
-  read(cx, maxAge) {
+  readLimits(cx) {
+    if (this.limitsLoading) return;
+    this.limitsLoading = true;
     cx.spawn(async (cx) => {
       try {
         await configReady();
@@ -67,8 +73,12 @@ export default class Usage extends View {
       } catch (e) {
         this.limits = { ...this.limits, error: `${e.message ?? e}` };
       }
+      this.limitsLoading = false;
       cx.notify();
     });
+  }
+
+  read(cx, maxAge) {
     cx.spawn(async (cx) => {
       this.state = await settled(this.state, async () => {
         await configReady();
@@ -156,6 +166,7 @@ export default class Usage extends View {
           .on_click((_e, cx) => {
             cx.stop_propagation();
             this.load(cx, 0);
+            this.readLimits(cx);
           })
           .child("↻"),
       );
