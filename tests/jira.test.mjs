@@ -74,7 +74,9 @@ test("PR details, review threads, check results", async () => {
   assert.equal(p12.number, 12);
   assert.match(p12.head, /^[0-9a-f]{40}$/);
   assert.equal(await D.prDetails("acme/storage", "me/nope"), null);
-  assert.equal((await D.prDetails("acme/web-app", 34)).checks, "failed");
+  const p34 = await D.prDetails("acme/web-app", 34);
+  assert.equal(p34.checks, "failed");
+  assert.equal(p34.checksTotal, p34.checksPassed + 1);
   assert.equal(await D.unresolvedThreads("acme/web-app", 34), 2);
 });
 

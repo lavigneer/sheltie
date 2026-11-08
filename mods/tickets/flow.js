@@ -50,7 +50,7 @@ export function stageOf(pr) {
   return pr.review === "APPROVED" ? "approved" : "in-review";
 }
 
-// "#881 draft approved ✓" (or "#881 draft conflicts") and a tone for
+// "#881 draft approved ✓ 3/3" (or "#881 draft conflicts") and a tone for
 // coloring: "bad" | "good" | null.
 export function prLabel(pr) {
   if (!pr) return null;
@@ -62,8 +62,13 @@ export function prLabel(pr) {
     if (pr.review === "APPROVED") parts.push("approved");
     else if (pr.review === "CHANGES_REQUESTED") parts.push("changes requested");
     else if (!pr.draft && !pr.review) parts.push("no review needed");
-    if (pr.checks)
-      parts.push({ failed: "✗", pending: "◌", passed: "✓" }[pr.checks]);
+    if (pr.checks) {
+      // GitHub's icon and count of passed checks: "✗ 2/5".
+      const icon = { failed: "✗", pending: "◌", passed: "✓" }[pr.checks];
+      parts.push(
+        pr.checksTotal ? `${icon} ${pr.checksPassed}/${pr.checksTotal}` : icon,
+      );
+    }
   }
   const conflicts = pr.state === "OPEN" && pr.mergeable === "CONFLICTING";
   if (conflicts) parts.push("conflicts");
