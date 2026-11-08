@@ -100,7 +100,7 @@ export async function prDetails(slug, ref, previous = null) {
     settled:
       mergeable === "UNKNOWN"
         ? previous?.number === pr.number
-          ? (previous.settled ?? null)
+          ? (previous?.settled ?? null)
           : null
         : mergeable,
     unresolved:
