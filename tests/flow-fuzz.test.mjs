@@ -31,11 +31,19 @@ function gen(rand) {
           draft: pick([true, false]),
           checks: pick([null, "pending", "failed", "passed"]),
           mergeable: pick(["MERGEABLE", "CONFLICTING", "UNKNOWN"]),
-          review: pick([null, "REVIEW_REQUIRED", "APPROVED", "CHANGES_REQUESTED"]),
+          review: pick([
+            null,
+            "REVIEW_REQUIRED",
+            "APPROVED",
+            "CHANGES_REQUESTED",
+          ]),
           autoMerge: pick([true, false]),
           unresolved: pick([null, 0, 0, 1, 3]),
         };
-  const flags = { working: pick([true, false]), agentDone: pick([true, false]) };
+  const flags = {
+    working: pick([true, false]),
+    agentDone: pick([true, false]),
+  };
   const workflow = {
     readyWhen: pick(["green", "agent"]),
     mergeWithoutReview: pick([true, false]),
@@ -57,9 +65,17 @@ test(`nextSteps/stageOf invariants hold over random PR states (FUZZ_SEED=${SEED}
     const steps = nextSteps(pr, flags);
     const ids = steps.map((s) => s.id);
 
-    assert.equal(new Set(ids).size, ids.length, `duplicate step ids ${ids}; ${ctx}`);
+    assert.equal(
+      new Set(ids).size,
+      ids.length,
+      `duplicate step ids ${ids}; ${ctx}`,
+    );
     if (ids.includes("merge")) {
-      assert.notEqual(pr.mergeable, "CONFLICTING", `merge while conflicting; ${ctx}`);
+      assert.notEqual(
+        pr.mergeable,
+        "CONFLICTING",
+        `merge while conflicting; ${ctx}`,
+      );
       assert.notEqual(pr.checks, "failed", `merge with failed checks; ${ctx}`);
     }
     if (ids.includes("ready"))
@@ -67,6 +83,9 @@ test(`nextSteps/stageOf invariants hold over random PR states (FUZZ_SEED=${SEED}
     if (stage === "merged") assert.deepEqual(ids, ["finish"], ctx);
     if (stage === "closed") assert.deepEqual(ids, ["clean-up"], ctx);
     if (flags.working)
-      assert.ok(steps.every((s) => s.kind !== "agent"), `agent step while working; ${ctx}`);
+      assert.ok(
+        steps.every((s) => s.kind !== "agent"),
+        `agent step while working; ${ctx}`,
+      );
   }
 });
