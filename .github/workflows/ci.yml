@@ -49,6 +49,17 @@ jobs:
           git config --global user.email ci@example.invalid
           git config --global init.defaultBranch main
           nix develop .#e2e -c npm run e2e
+      # The mods at a few window sizes, sidebar widths, zooms, light and dark,
+      # to look at (the weekly run: with the newest Herdr).
+      - name: Screenshots at a few sizes
+        run: nix develop .#e2e -c npm run e2e:shots
+      - name: Keep the screenshots
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-shots
+          path: e2e-results/shots/
+          if-no-files-found: ignore
       - name: Screenshots and logs of the failed steps
         if: failure()
         uses: actions/upload-artifact@v4

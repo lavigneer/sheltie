@@ -80,7 +80,10 @@ With Nix, the flake's `packages.default` has the same files under
 
 The selected row has an accent outline and its picked step an accent border.
 It follows the focused space (its first step picked) until you move it, and
-goes back to following when you focus another space. The commands also work
+goes back to following when you focus another space. On a narrow sidebar the
+step buttons wrap; narrower than 160 px (like Herdr's folded sidebar) the
+Work sidebar is a rail of row statuses, with each row's ticket, PR and next
+steps on hover, and the keys work as before. The commands also work
 from the command line, e.g. `herdr-app do work.step`. Rebind them in
 `<Herdr app home>/keys.json`.
 
@@ -144,6 +147,7 @@ demo/herdr-demo --stop             # --reset to start over
 npm run build   # src/ -> mods/ (commit the result)
 npm test        # node --test against throwaway demos
 npm run e2e     # the real Herdr with the mods, on throwaway demos
+npm run e2e:shots  # screenshots of the mods at a few sizes, in e2e-results/shots/
 ```
 
 `npm run e2e` launches Herdr on the demo, once per tracker, on its own Xvfb
@@ -157,6 +161,14 @@ needs herdr-app, hc, Xvfb, xdotool, jq and git (Linux), takes under a minute,
 and cleans up after itself; a failed step leaves a screenshot, the app log and
 the state in `e2e-results/`. `nix develop .#e2e -c npm run e2e` brings all of
 that, with Herdr from the nixpkgs pinned in `flake.lock`.
+
+`npm run e2e:shots` (same needs) saves screenshots of the Work sidebar, from
+the folded rail to wide, and of the tickets and projects popups in a small, a
+default and a large window, light and dark, at zoom 1, 1.5 and 2, on the Jira
+demo with its long ticket, branch and repo names. They're for looking at after
+a Herdr update or a UI change; the run itself only checks there are no errors
+and the sidebar still offers every step. CI keeps them as the `e2e-shots`
+artifact.
 
 CI runs the end-to-end tests that way, on pull requests and pushes to main,
 against **herdr-desktop 0.1.10 and herdr-core 0.1.15** (update `flake.lock` to

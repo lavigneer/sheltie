@@ -59,6 +59,15 @@
         "me/API-7"
       ],
       "branches": []
+    },
+    {
+      "name": "customer-onboarding-and-billing-service",
+      "slug": "acme/customer-onboarding-and-billing-service",
+      "worktrees": [
+        "me/WEB-106",
+        "me/spike-try-the-new-invoice-renderer-against-last-years-data"
+      ],
+      "branches": []
     }
   ],
   "uncloned": [
@@ -106,6 +115,12 @@
       "components": [
         "Storage"
       ]
+    },
+    {
+      "key": "WEB-106",
+      "summary": "Billing: when a customer changes plans in the middle of a billing period, prorate the invoice, email them a receipt and keep the old plan's limits until the period ends",
+      "status": "Waiting for review",
+      "components": []
     },
     {
       "key": "API-7",
@@ -181,6 +196,18 @@
       "fork": true,
       "state": "OPEN",
       "unresolved": 0
+    },
+    {
+      "repo": "acme/customer-onboarding-and-billing-service",
+      "number": 1287,
+      "branch": "me/WEB-106",
+      "title": "WEB-106: prorate plan changes",
+      "body": "",
+      "draft": true,
+      "review": "CHANGES_REQUESTED",
+      "checks": "FAILURE",
+      "state": "OPEN",
+      "unresolved": 12
     }
   ]
 }

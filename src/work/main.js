@@ -71,6 +71,9 @@ const TICKET_MS = 600_000;
 const RETRY_MS = 60_000; // after a failed tracker/GitHub lookup
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
 const WATCH_TRIES = 3;
+// Narrower than this, the sidebar draws a rail (as Herdr's own sidebar mods
+// do): a status per row, its details on hover.
+const RAIL = 160;
 
 // Runs `body(cx, force)` one at a time. Asked again while running, it runs once
 // more afterwards (forced if any of the requests was), rather than dropping it.
@@ -132,6 +135,7 @@ export default class Work extends View {
     this.confirmByKey = false; // the confirmation was asked for by a key
     this.picked = null; // { path, step, active }: see selection()
     this.watchTimer = false;
+    this.width = null; // ours, from on_size_change
     this.refresh = serial((cx, force) => this.scan(cx, force));
     this.details = serial((cx, force) => this.lookups(cx, force));
     this.refresh(cx);
@@ -477,6 +481,7 @@ export default class Work extends View {
   render(cx) {
     this.watchSpaces(cx);
     const t = theme();
+    const rail = this.width !== null && this.width < RAIL;
     const icon = (name, label, onClick) =>
       div()
         .id(`work-${name}`)
@@ -495,22 +500,31 @@ export default class Work extends View {
         })
         .child(label);
 
-    const header = h_flex()
-      .h(30)
-      .flex_none()
-      .px(12)
-      .gap(4)
-      .items_center()
-      .child(
-        div()
-          .flex_1()
-          .text_size(11)
-          .font_semibold()
-          .text_color(t.dim)
-          .child("WORK"),
-      )
-      .child(icon("refresh", "↻", (cx) => this.refresh(cx, true)))
-      .child(icon("new", "+", () => run("mod.open", { name: "tickets" })));
+    const header = rail
+      ? h_flex()
+          .h(30)
+          .flex_none()
+          .justify_center()
+          .items_center()
+          .child(icon("new", "+", () => run("mod.open", { name: "tickets" })))
+      : h_flex()
+          .h(30)
+          .flex_none()
+          .px(12)
+          .gap(4)
+          .items_center()
+          .child(
+            div()
+              .flex_1()
+              .min_w(0)
+              .truncate()
+              .text_size(11)
+              .font_semibold()
+              .text_color(t.dim)
+              .child("WORK"),
+          )
+          .child(icon("refresh", "↻", (cx) => this.refresh(cx, true)))
+          .child(icon("new", "+", () => run("mod.open", { name: "tickets" })));
 
     const status = (space) => {
       if (!space) return div().w(12).flex_none().text_color(t.dim).child("○");
@@ -527,11 +541,16 @@ export default class Work extends View {
         .child("●");
     };
 
+    // A step button keeps its label's width while it fits, and on its own
+    // line (the steps wrap) narrower than that shrinks to an ellipsis.
     const button = (w, s, chosen) => {
       const confirming = this.confirming === `${w.path}:${s.id}`;
+      const label = confirming
+        ? `${s.label}? ${this.confirmByKey ? "press" : "click"} again`
+        : s.label;
       return div()
         .id(`work-step-${w.path}-${s.id}`)
-        .flex_none()
+        .min_w(0)
         .h(18)
         .px(6)
         .flex()
@@ -549,17 +568,14 @@ export default class Work extends View {
           cx.stop_propagation();
           this.step(cx, w, s);
         })
-        .child(
-          confirming
-            ? `${s.label}? ${this.confirmByKey ? "press" : "click"} again`
-            : s.label,
-        );
+        .child(div().min_w(0).truncate().child(label));
     };
 
     const sel = this.selection();
     const selected = sel.rows[sel.at]?.w.path ?? null;
 
-    const row = (w) => {
+    // What a row shows, for the full row and the rail.
+    const look = (w) => {
       const space = spaceFor(w.path);
       const isSelected = w.path === selected;
       const entry = w.key ? this.tickets.get(w.key) : null;
@@ -599,6 +615,64 @@ export default class Work extends View {
             ? `${w.branch} · ${tracker().name} unreachable`
             : w.branch
           : "";
+      return {
+        space,
+        isSelected,
+        ticket,
+        pr,
+        prColor,
+        steps,
+        last,
+        note,
+        title,
+        sub,
+      };
+    };
+
+    // The rail (narrower than RAIL px): a row is its status, and a hover says
+    // the rest. Clicks and keys work as in the full rows.
+    const dot = (w) => {
+      const { space, isSelected, pr, steps, last, title, sub } = look(w);
+      const tip = [
+        title,
+        sub,
+        pr?.text,
+        last?.phase === "running"
+          ? last.text
+          : steps.length
+            ? `Next: ${steps.map((s) => s.label).join(", ")}`
+            : null,
+      ].filter(Boolean);
+      return h_flex()
+        .id(`work-${w.path}`)
+        .mx(4)
+        .h(24)
+        .justify_center()
+        .items_center()
+        .rounded(6)
+        .border_1()
+        .border_color(isSelected ? t.accent : "#00000000")
+        .cursor_pointer()
+        .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
+        .hover((s) => s.bg(t.hover))
+        .tooltip(tip.join(" · "))
+        .on_click(() => this.open(w))
+        .child(status(space));
+    };
+
+    const row = (w) => {
+      const {
+        space,
+        isSelected,
+        ticket,
+        pr,
+        prColor,
+        steps,
+        last,
+        note,
+        title,
+        sub,
+      } = look(w);
       return v_flex()
         .id(`work-${w.path}`)
         .mx(6)
@@ -647,6 +721,7 @@ export default class Work extends View {
               .child(
                 div()
                   .flex_1()
+                  .min_w(48)
                   .truncate()
                   .text_size(11)
                   .text_color(t.dim)
@@ -655,7 +730,9 @@ export default class Work extends View {
               .when(Boolean(ticket?.status), (e) =>
                 e.child(
                   div()
-                    .flex_none()
+                    .flex_shrink(1)
+                    .min_w(0)
+                    .truncate()
                     .text_size(10.5)
                     .text_color(t.dim)
                     .child(ticket.status),
@@ -666,9 +743,11 @@ export default class Work extends View {
         .when(steps.length > 0 || Boolean(note), (el) =>
           el.child(
             h_flex()
+              .flex_wrap()
               .pl(18)
               .pt(2)
-              .gap(4)
+              .gap_x(4)
+              .gap_y(3)
               .items_center()
               .children(
                 last?.phase === "running"
@@ -681,6 +760,7 @@ export default class Work extends View {
                 e.child(
                   div()
                     .flex_1()
+                    .min_w(60)
                     .truncate()
                     .text_size(10.5)
                     .text_color(note.color)
@@ -697,11 +777,16 @@ export default class Work extends View {
         .child(
           h_flex()
             .id(`work-repo-${g.repo.path}`)
-            .mx(6)
+            .mx(rail ? 4 : 6)
             .px(6)
             .h(24)
             .gap(5)
             .items_center()
+            .when(rail, (el) =>
+              el
+                .justify_center()
+                .tooltip(`${g.repo.name} (${g.worktrees.length})`),
+            )
             .rounded(6)
             .cursor_pointer()
             .hover((s) => s.bg(t.hover))
@@ -719,52 +804,68 @@ export default class Work extends View {
                 .flex_none()
                 .text_color(t.dim),
             )
-            .child(
-              div()
-                .flex_1()
-                .truncate()
-                .text_size(12)
-                .font_semibold()
-                .text_color(t.muted)
-                .child(g.repo.name),
-            )
-            .child(
-              div()
-                .flex_none()
-                .text_size(10.5)
-                .text_color(t.dim)
-                .child(String(g.worktrees.length)),
+            .when(!rail, (el) =>
+              el
+                .child(
+                  div()
+                    .flex_1()
+                    .min_w(0)
+                    .truncate()
+                    .text_size(12)
+                    .font_semibold()
+                    .text_color(t.muted)
+                    .child(g.repo.name),
+                )
+                .child(
+                  div()
+                    .flex_none()
+                    .text_size(10.5)
+                    .text_color(t.dim)
+                    .child(String(g.worktrees.length)),
+                ),
             ),
         )
         .when(open, (el) =>
-          el.children(g.worktrees.map((w) => row({ ...w, repo: g.repo }))),
+          el.children(
+            g.worktrees.map((w) => (rail ? dot : row)({ ...w, repo: g.repo })),
+          ),
         );
     };
 
-    const problem = C.problem
-      ? div().px(14).py(4).text_size(11).text_color(t.blocked).child(C.problem)
-      : null;
+    // Messages: in full on the rail too, on hover.
+    const message = (id, text, color) =>
+      rail
+        ? div()
+            .id(`work-${id}`)
+            .py(4)
+            .flex()
+            .justify_center()
+            .text_size(12)
+            .text_color(color)
+            .tooltip(text)
+            .child(id === "problem" ? "!" : "…")
+        : div().px(14).py(4).text_size(11.5).text_color(color).child(text);
+    const problem = C.problem ? message("problem", C.problem, t.blocked) : null;
     const body =
       this.groups === null
-        ? div()
-            .px(14)
-            .py(6)
-            .text_size(12)
-            .text_color(t.dim)
-            .child("Loading worktrees…")
+        ? message("loading", "Loading worktrees…", t.dim)
         : this.groups.length
           ? v_flex().gap(4).children(this.groups.map(group))
-          : div()
-              .px(14)
-              .py(6)
-              .text_size(12)
-              .text_color(t.dim)
-              .child("No worktrees yet. Press + to start a ticket.");
+          : message(
+              "empty",
+              "No worktrees yet. Press + to start a ticket.",
+              t.dim,
+            );
 
     return v_flex()
       .id("work")
       .size_full()
       .min_h(0)
+      .on_size_change((size, cx) => {
+        const was = this.width !== null && this.width < RAIL;
+        this.width = size.width;
+        if (size.width < RAIL !== was) cx.notify();
+      })
       .child(header)
       .when(Boolean(problem), (el) => el.child(problem))
       .child(

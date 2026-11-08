@@ -497,8 +497,17 @@ export default class Tickets extends View {
         : label?.tone === "good"
           ? t.done
           : t.muted;
+    // Tags at a row's end: at most 150 px, and they shrink to an ellipsis
+    // before the text they follow goes below its minimum.
     const small = (text, color = t.dim) =>
-      div().flex_none().text_size(11).text_color(color).child(text);
+      div()
+        .flex_shrink(1)
+        .min_w(0)
+        .max_w(150)
+        .truncate()
+        .text_size(11)
+        .text_color(color)
+        .child(text);
     const dot = (on) =>
       div()
         .w(12)
@@ -530,11 +539,13 @@ export default class Tickets extends View {
           div()
             .w(100)
             .flex_none()
+            .truncate()
             .font_semibold()
             .text_color(t.foreground)
             .child(r.ticket.label),
           div()
             .flex_1()
+            .min_w(120)
             .truncate()
             .text_color(t.foreground)
             .child(r.ticket.summary),
@@ -559,6 +570,7 @@ export default class Tickets extends View {
             .child(repoLabel(r.item.repo)),
           div()
             .flex_1()
+            .min_w(100)
             .truncate()
             .text_color(t.muted)
             .child(r.item.branch ?? r.item.pr?.title ?? ""),
@@ -568,7 +580,12 @@ export default class Tickets extends View {
       }
       return line(r, i, [
         div().w(12).flex_none().text_color(t.dim).child("+"),
-        div().flex_1().truncate().text_color(t.foreground).child(r.label),
+        div()
+          .flex_1()
+          .min_w(100)
+          .truncate()
+          .text_color(t.foreground)
+          .child(r.label),
         r.why ? small(r.why) : null,
       ]);
     };
@@ -623,13 +640,22 @@ export default class Tickets extends View {
           .child(
             div()
               .flex_1()
+              .min_w(120)
               .truncate()
               .text_size(15)
               .font_semibold()
               .text_color(t.foreground)
               .child(title),
           )
-          .child(small(hint)),
+          .child(
+            div()
+              .flex_shrink(1)
+              .min_w(0)
+              .truncate()
+              .text_size(11)
+              .text_color(t.dim)
+              .child(hint),
+          ),
       )
       .child(
         h_flex()
