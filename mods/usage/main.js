@@ -2,12 +2,15 @@
 // comes from). Today, the last 7 and 30 days, then the last 30 days by agent
 // and model, most expensive first. Days are UTC. ↻ refreshes now; it also
 // refreshes every 2 minutes. Narrower than RAIL, it shows today's cost only.
-// The Work sidebar shows each row's cost from the same data.
+// The Work sidebar shows each row's cost from the same data. Above them, a
+// Claude subscription's plan limits (limits.js): how much of the 5-hour
+// session and the week is used, which is what a Pro or Max plan is billed by.
 
 import { h_flex, v_flex } from "gpui-base";
 import { div, View } from "gpui-kit";
 import { theme } from "herdr";
 import { C, configReady } from "./config.js";
+import { planLimits, resetsIn } from "./limits.js";
 import {
   dollars,
   LOADING,
@@ -43,6 +46,8 @@ export default class Usage extends View {
   init(_props, cx) {
     this.state = LOADING;
     this.width = null;
+    // [{ home, windows }] once read; error: why the last read failed.
+    this.limits = { list: null, error: null };
     this.read(cx);
     cx.timer.every(REFRESH_MS, (cx) => this.load(cx));
   }
@@ -55,6 +60,15 @@ export default class Usage extends View {
   }
 
   read(cx, maxAge) {
+    cx.spawn(async (cx) => {
+      try {
+        await configReady();
+        this.limits = { list: await planLimits(), error: null };
+      } catch (e) {
+        this.limits = { ...this.limits, error: `${e.message ?? e}` };
+      }
+      cx.notify();
+    });
     cx.spawn(async (cx) => {
       this.state = await settled(this.state, async () => {
         await configReady();
@@ -149,6 +163,73 @@ export default class Usage extends View {
     const message = (text, color) =>
       div().px(14).py(4).text_size(11.5).text_color(color).child(text);
 
+    const heading = (text) =>
+      div()
+        .px(14)
+        .pt(6)
+        .pb(2)
+        .text_size(10.5)
+        .font_semibold()
+        .text_color(t.dim)
+        .child(text);
+
+    const limitList = this.limits.list ?? [];
+    const session = limitList[0]?.windows.find((w) => w.key === "five_hour");
+    const percent = (n) => `${Math.round(n)}%`;
+    const limits = !limitList.length
+      ? this.limits.error
+        ? message(this.limits.error, t.blocked)
+        : null
+      : v_flex()
+          .children(
+            limitList.flatMap((l) => [
+              heading(
+                limitList.length > 1
+                  ? `PLAN LIMITS (${l.home})`
+                  : "PLAN LIMITS",
+              ),
+              ...l.windows.map((w) =>
+                h_flex()
+                  .id(`usage-limit-${l.home}-${w.key}`)
+                  .when(Boolean(w.resets), (el) =>
+                    el.tooltip(`Resets ${w.resets.toLocaleString()}`),
+                  )
+                  .px(14)
+                  .h(20)
+                  .gap(8)
+                  .items_center()
+                  .text_size(11.5)
+                  .child(
+                    div()
+                      .flex_1()
+                      .min_w(0)
+                      .truncate()
+                      .text_color(t.muted)
+                      .child(w.label),
+                  )
+                  .child(
+                    div()
+                      .flex_none()
+                      .text_size(11)
+                      .text_color(t.dim)
+                      .child(w.resets ? resetsIn(w.resets) : ""),
+                  )
+                  .child(
+                    div()
+                      .w(52)
+                      .flex_none()
+                      .flex()
+                      .justify_end()
+                      .text_color(w.used >= 90 ? t.blocked : t.foreground)
+                      .child(percent(w.used)),
+                  ),
+              ),
+            ]),
+          )
+          .when(Boolean(this.limits.error), (el) =>
+            el.child(message(this.limits.error, t.blocked)),
+          );
+
     const problem = phase === "failed" ? message(error, t.blocked) : null;
     const body =
       this.state.groups === null
@@ -164,16 +245,7 @@ export default class Usage extends View {
               .child(line("usage-today", "Today", today, true))
               .child(line("usage-7", "7 days", total(since(dayAgo(6)))))
               .child(line("usage-30", "30 days", total(recent)))
-              .child(
-                div()
-                  .px(14)
-                  .pt(6)
-                  .pb(2)
-                  .text_size(10.5)
-                  .font_semibold()
-                  .text_color(t.dim)
-                  .child("30 DAYS BY MODEL"),
-              )
+              .child(heading("30 DAYS BY MODEL"))
               .children(
                 by(recent, (g) => JSON.stringify([g.agent, g.model, g.fast]))
                   .slice(0, TOP)
@@ -209,20 +281,30 @@ export default class Usage extends View {
               .justify_center()
               .text_size(9.5)
               .text_color(t.dim)
-              .tooltip(error ?? `Agents today: ${amount(today)}`)
+              .tooltip(
+                error ??
+                  `Agents today: ${amount(today)}${session ? `; session ${percent(session.used)} used` : ""}`,
+              )
               .child(
-                this.state.groups === null
-                  ? error
-                    ? "!"
-                    : "…"
-                  : amount(today),
+                session
+                  ? percent(session.used)
+                  : this.state.groups === null
+                    ? error
+                      ? "!"
+                      : "…"
+                    : amount(today),
               )
           : v_flex()
               .size_full()
               .min_h(0)
               .child(header)
               .child(
-                v_flex().flex_1().min_h(0).overflow_y_scrollbar().child(body),
+                v_flex()
+                  .flex_1()
+                  .min_h(0)
+                  .overflow_y_scrollbar()
+                  .when(Boolean(limits), (el) => el.child(limits))
+                  .child(body),
               ),
       );
   }

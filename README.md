@@ -40,6 +40,10 @@ A third mod, **projects** (Ctrl+Shift+F), is a plain project switcher, and
 Codex, opencode) cost: today, the last 7 and 30 days, and by model, from their session
 logs and [LiteLLM's prices](https://github.com/BerriAI/litellm). The Work
 sidebar shows each row's cost too, so you can see what each PR cost.
+On a Claude Pro or Max plan, which is billed by usage quotas rather than per
+token, it also shows how much of the 5-hour session and the week's limits is
+used and when each resets, as Claude Code's `/usage` does (from the account
+Claude Code is signed in with).
 
 > **What it runs.** The mods run `git`, `gh`, `jira` and `hc` as you, to
 > create branches and worktrees, mark PRs ready, merge, clean up and move
