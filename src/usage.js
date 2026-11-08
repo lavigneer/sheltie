@@ -96,10 +96,10 @@ foreach (inputs | fromjson? // null | select(.)) as $j
    . as $s
    | try (
      $j.payload as $p
-     | if $j.type == "session_meta" then $s + { cwd: ($p.cwd | strings) // $s.cwd, out: null }
+     | if $j.type == "session_meta" then $s + { cwd: (($p.cwd | strings) // $s.cwd), out: null }
        elif $j.type == "turn_context" then
-         $s + { cwd: ($p.cwd | strings) // $s.cwd,
-                model: ($p.model | strings) // $s.model, out: null }
+         $s + { cwd: (($p.cwd | strings) // $s.cwd),
+                model: (($p.model | strings) // $s.model), out: null }
        elif $j.type == "event_msg" and $p.type == "token_count"
             and $p.info.last_token_usage and $s.model
             and ($p.info.total_token_usage.total_tokens // null) != $s.total then
