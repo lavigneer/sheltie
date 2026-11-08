@@ -87,7 +87,10 @@ export async function planLimits(url = LIMITS_URL) {
 
 // When a window resets, briefly: "in 2h 5m", or a weekday and time.
 export function resetsIn(date, now = new Date()) {
-  const min = Math.max(0, Math.round((date - now) / 60_000));
+  const min = Math.max(
+    0,
+    Math.round((date.getTime() - now.getTime()) / 60_000),
+  );
   if (min < 60) return `in ${min}m`;
   if (min < 24 * 60) return `in ${Math.floor(min / 60)}h ${min % 60}m`;
   return date.toLocaleString(undefined, {
