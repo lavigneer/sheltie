@@ -7,11 +7,15 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --import ./tests/register.mjs --test 'tests/*.test.mjs'",
+    "typecheck": "tsc -p .",
     "check-built": "node scripts/build.mjs && git diff --exit-code -- mods",
     "e2e": "node --test --test-concurrency=1 'tests/e2e/*.test.mjs'",
     "e2e:shots": "node --test tests/e2e/shots.mjs"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }

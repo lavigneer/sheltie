@@ -11,6 +11,7 @@ export const fill = (template, values) =>
 
 // Runs one of the configured programs (C.programs: git, gh, jira, hc).
 // Calls to the APIs behind gh and jira go through `limits` below.
+/** @param {string} name @param {string[]} args @param {{ cwd?: string }} [opts] @returns {Promise<import("herdr").ExecResult>} */
 export const tool = (name, args, opts) =>
   limits[name] ? limited(limits[name], name, args, opts) : run(name, args, opts);
 
@@ -55,6 +56,7 @@ async function limited(l, name, args, opts) {
 }
 
 // Runs a program and returns its stdout, or throws with its first error line.
+/** @param {string} name @param {string[]} args @param {string} [what] @param {{ cwd?: string }} [opts] @returns {Promise<string>} */
 export async function must(name, args, what, opts) {
   const r = await tool(name, args, opts);
   if (r.code !== 0)
@@ -70,6 +72,7 @@ export const NOT_FOUND =
 
 // Runs `tasks` (functions returning promises) a few at a time; a failed task
 // gives null.
+/** @template T @param {(() => Promise<T>)[]} tasks @param {number} [size] @returns {Promise<(T | null)[]>} */
 export async function pool(tasks, size = 4) {
   const out = new Array(tasks.length);
   let next = 0;

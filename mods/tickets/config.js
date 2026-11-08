@@ -28,7 +28,7 @@ export const DEFAULTS = {
   github: {
     // Which issues to list: open ones assigned to `assignee` ("@me": you),
     // in `repos` (owner/repo) or, if empty, anywhere you can see.
-    repos: [],
+    repos: /** @type {string[]} */ ([]),
     assignee: "@me",
     // Extra GitHub search terms, e.g. "label:bug" (optional).
     search: "",
@@ -40,14 +40,14 @@ export const DEFAULTS = {
 
   // GitHub orgs/users searched for pull requests that mention a ticket, in
   // addition to the owners of your local repos and of the repos in repoRules.
-  githubOwners: [],
+  githubOwners: /** @type {string[]} */ ([]),
 
   // Where new work on a ticket goes. Each rule matches a ticket by any of
   // `component`, `label` or `project` (the Jira project key, or the issue's
   // owner/repo) and names a `repo`: "owner/repo" on GitHub (cloned into the
   // first root if needed) or a local path. Component and label rules win over
   // project rules.
-  repoRules: [],
+  repoRules: /** @type {{ component?: string, label?: string, project?: string, repo: string }[]} */ ([]),
 
   // A ticket's branch: {ref} is the tracker's part (WEB-142, issue-12).
   branch: "{ref}",
@@ -117,10 +117,13 @@ export const DEFAULTS = {
   },
 };
 
+/** The settings in use, or a repo's (repoSettings). @typedef {typeof DEFAULTS & { problem?: string | null }} Settings */
+
 export const SETTINGS_FILE = "sheltie.json";
 
 // The settings in use. Filled in by configReady(); tests may set them with
 // useConfig().
+/** @type {Settings} */
 export const C = JSON.parse(JSON.stringify(DEFAULTS));
 
 const isObject = (v) => v && typeof v === "object" && !Array.isArray(v);
@@ -151,8 +154,9 @@ async function load() {
 }
 
 // A settings file: { over (its JSON object, {} if missing or bad), problem }.
+/** @param {string} path @returns {Promise<{ over: Record<string, any>, problem: string | null }>} */
 export async function readSettings(path) {
-  const r = await exec("cat", [path]).catch((e) => ({ code: 1, stderr: `${e}` }));
+  const r = await exec("cat", [path]).catch((e) => ({ code: 1, stdout: "", stderr: `${e}` }));
   if (r.code !== 0)
     return {
       over: {},
@@ -192,9 +196,11 @@ export function repoSettings(over, path) {
 }
 
 // The settings for work in `repo` (from localRepos): its own, or the global ones.
+/** @param {import("./types.js").Repo | null | undefined} repo @returns {Settings} */
 export const settingsOf = (repo) => repo?.settings ?? C;
 
 // Replaces the settings in use (for tests, and after loading).
+/** @param {Settings} settings @param {string | null} [problem] */
 export function useConfig(settings, problem = null) {
   for (const k of Object.keys(C)) delete C[k];
   Object.assign(C, merge(DEFAULTS, settings), { problem });

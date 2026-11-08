@@ -22,6 +22,7 @@ const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 // conflicts with its base). `mergeable`: "MERGEABLE" | "CONFLICTING" |
 // "UNKNOWN" (GitHub works it out lazily, so it's UNKNOWN for a little while
 // after a push or a change to the base).
+/** @param {string} slug @param {string | number} ref @returns {Promise<import("./types.js").PR | null>} */
 export async function prDetails(slug, ref) {
   const r = await tool("gh", [
     "pr",

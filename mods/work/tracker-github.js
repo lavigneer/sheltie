@@ -5,6 +5,7 @@
 import { NOT_FOUND, fill, firstLine, must, pool, tool } from "./lib.js";
 
 // A tracker using settings `s` (the global ones, or a repo's: config.js).
+/** @param {import("./config.js").Settings} s @returns {import("./types.js").Tracker} */
 export function create(s) {
   const name = "github";
 
@@ -85,7 +86,7 @@ export function create(s) {
     if (step !== "done" || !s.github.closeOnFinish) return null;
     const k = parse(key);
     const t = await view(key);
-    if (!t || t.status !== "Open") return null;
+    if (!k || !t || t.status !== "Open") return null;
     await must(
       "gh",
       ["issue", "close", String(k.number), "--repo", k.slug, "--reason", "completed"],
@@ -131,6 +132,7 @@ export function create(s) {
     const found = await pool(
       keys.map((key) => async () => {
         const k = parse(key);
+        if (!k) return null;
         const json = await must(
           "gh",
           [
@@ -158,5 +160,5 @@ export function create(s) {
   const suggest = (ticket) =>
     ticket.repo ? [{ target: ticket.repo, why: "issue's repo" }] : [];
 
-  return { name, keyOf, labelOf, list, view, move, url, viewCommand, keysIn, linkedPRs, suggest };
+  return { name, labelOf, list, view, move, url, viewCommand, keysIn, linkedPRs, suggest };
 }
