@@ -61,55 +61,71 @@ find "$1/${dir}" -name "*.jsonl" -type f | while IFS= read -r f; do
   cat "$c"
 done`;
 
+// Logs are still being written and may hold anything: a line that can't be
+// read is skipped, a token count that isn't a positive number counts as 0
+// and a text field of another type as "".
+const NUM = `
+def tok: if type == "number" and . > 0 then . else 0 end;
+def str: if type == "string" then . else "" end;`;
+
 // Each reader's jq turns its source's lines (one log's, for JSONL) into records.
 const READERS = {
   "claude-code": {
     source: JSONL("projects"),
-    jq: `
-[inputs | fromjson?
- | select(.type == "assistant" and .message.id and .message.usage
-     and .message.model and .message.model != "<synthetic>")
- | .message as $m | $m.usage as $u
- | { id: $m.id, dir: (.cwd // ""), d: (.timestamp // "" | .[0:10]), m: $m.model,
-     fast: ($u.speed == "fast"),
-     i: ($u.input_tokens // 0), o: ($u.output_tokens // 0),
-     r: ($u.cache_read_input_tokens // 0),
-     w5: (if $u.cache_creation then $u.cache_creation.ephemeral_5m_input_tokens // 0
-          else $u.cache_creation_input_tokens // 0 end),
-     w1: ($u.cache_creation.ephemeral_1h_input_tokens // 0) }]
+    jq: `${NUM}
+[inputs | fromjson? | try (
+   select(.type == "assistant" and (.message.id | type) == "string"
+     and .message.usage and (.message.model | type) == "string"
+     and .message.model != "<synthetic>")
+   | .message as $m | $m.usage as $u
+   | { id: $m.id, dir: (.cwd | str), d: (.timestamp | str | .[0:10]),
+       m: $m.model, fast: ($u.speed == "fast"),
+       i: ($u.input_tokens | tok), o: ($u.output_tokens | tok),
+       r: ($u.cache_read_input_tokens | tok),
+       w5: (if $u.cache_creation then $u.cache_creation.ephemeral_5m_input_tokens | tok
+            else $u.cache_creation_input_tokens | tok end),
+       w1: ($u.cache_creation.ephemeral_1h_input_tokens | tok) }
+ ) catch empty]
 | unique_by(.id)[]`,
   },
   codex: {
     source: JSONL("sessions"),
-    jq: `
+    jq: `${NUM}
 foreach (inputs | fromjson? // null | select(.)) as $j
   ({};
-   . as $s | $j.payload as $p
-   | if $j.type == "session_meta" then $s + { cwd: ($p.cwd // $s.cwd), out: null }
-     elif $j.type == "turn_context" then
-       $s + { cwd: ($p.cwd // $s.cwd), model: ($p.model // $s.model), out: null }
-     elif $j.type == "event_msg" and $p.type == "token_count"
-          and $p.info.last_token_usage and $s.model
-          and ($p.info.total_token_usage.total_tokens // null) != $s.total then
-       $p.info.last_token_usage as $u
-       | $s + { total: ($p.info.total_token_usage.total_tokens // null),
-                out: { dir: ($s.cwd // ""), d: ($j.timestamp // "" | .[0:10]),
-                       m: $s.model, fast: false,
-                       i: (($u.input_tokens // 0) - ($u.cached_input_tokens // 0)),
-                       r: ($u.cached_input_tokens // 0), o: ($u.output_tokens // 0),
-                       w5: 0, w1: 0 } }
-     else $s + { out: null } end;
+   . as $s
+   | try (
+     $j.payload as $p
+     | if $j.type == "session_meta" then $s + { cwd: ($p.cwd | strings) // $s.cwd, out: null }
+       elif $j.type == "turn_context" then
+         $s + { cwd: ($p.cwd | strings) // $s.cwd,
+                model: ($p.model | strings) // $s.model, out: null }
+       elif $j.type == "event_msg" and $p.type == "token_count"
+            and $p.info.last_token_usage and $s.model
+            and ($p.info.total_token_usage.total_tokens // null) != $s.total then
+         $p.info.last_token_usage as $u
+         | ($u.cached_input_tokens | tok) as $cached
+         | $s + { total: ($p.info.total_token_usage.total_tokens // null),
+                  out: { dir: ($s.cwd // ""), d: ($j.timestamp | str | .[0:10]),
+                         m: $s.model, fast: false,
+                         i: ([($u.input_tokens | tok) - $cached, 0] | max),
+                         r: $cached, o: ($u.output_tokens | tok),
+                         w5: 0, w1: 0 } }
+       else $s + { out: null } end
+   ) catch ($s + { out: null });
    .out // empty)`,
   },
   opencode: {
     source: `[ -f "$1/opencode.db" ] || exit 0; command -v "$2" >/dev/null || { echo "opencode needs sqlite3 (settings: programs.sqlite3)" >&2; exit 127; }; "$2" -readonly "$1/opencode.db" "SELECT json_object('id', id, 'data', json(data)) FROM message WHERE json_extract(data, '$.role') = 'assistant'" | "$3" -R -n -c "$4"`,
-    jq: `
-inputs | fromjson? | .data as $m | select($m.modelID and $m.tokens)
-| $m.tokens as $u
-| { id, dir: ($m.path.cwd // ""), m: $m.modelID, fast: false,
-    d: ($m.time.created // 0 | ./1000 | strftime("%Y-%m-%d")),
-    i: ($u.input // 0), o: (($u.output // 0) + ($u.reasoning // 0)),
-    r: ($u.cache.read // 0), w5: ($u.cache.write // 0), w1: 0 }`,
+    jq: `${NUM}
+inputs | fromjson? | try (
+  .data as $m | select(($m.modelID | type) == "string" and $m.tokens)
+  | $m.tokens as $u
+  | { id: (.id | tostring), dir: ($m.path.cwd | str), m: $m.modelID, fast: false,
+      d: ($m.time.created | tok | ./1000 | strftime("%Y-%m-%d")),
+      i: ($u.input | tok), o: (($u.output | tok) + ($u.reasoning | tok)),
+      r: ($u.cache.read | tok), w5: ($u.cache.write | tok), w1: 0 }
+) catch empty`,
   },
 };
 
