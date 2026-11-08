@@ -253,6 +253,19 @@ export default class Usage extends View {
             ))
           : v_flex()
               .pb(6)
+              // Under the plan limits, set apart: these are what the tokens
+              // would cost at API prices, not what a plan is billed.
+              .when(Boolean(limits), (el) =>
+                el
+                  .child(
+                    div()
+                      .mx(14)
+                      .mt(6)
+                      .border_t_1()
+                      .border_color(t.border ?? t.dim),
+                  )
+                  .child(heading("AGENT COSTS (API PRICES)")),
+              )
               .child(line("usage-today", "Today", today, true))
               .child(line("usage-7", "7 days", total(since(dayAgo(6)))))
               .child(line("usage-30", "30 days", total(recent)))
