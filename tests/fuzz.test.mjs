@@ -53,14 +53,17 @@ const digits = "0123456789";
 // Branch template parts: words split by "/" or "-" (as real templates are).
 const word = (r) => r.str(lower, 1, 6);
 const template = (r) => {
-  const pre = Array.from({ length: r.int(0, 2) }, () => word(r) + r.pick(["/", "-"]));
+  const pre = Array.from(
+    { length: r.int(0, 2) },
+    () => word(r) + r.pick(["/", "-"]),
+  );
   const post = r.int(0, 1) ? `-${word(r)}` : "";
   return `${pre.join("")}{ref}${post}`;
 };
 const settings = (over) => merge(JSON.parse(JSON.stringify(DEFAULTS)), over);
 
 property("github: a ticket's branch gives back its key", (r) => {
-  const slug = `${r.str(lower + digits, 1, 8)}/${r.str(lower + digits + "-.", 1, 10)}`;
+  const slug = `${r.str(lower + digits, 1, 8)}/${r.str(`${lower + digits}-.`, 1, 10)}`;
   const s = settings({
     tracker: "github",
     branch: template(r),
@@ -69,14 +72,22 @@ property("github: a ticket's branch gives back its key", (r) => {
   const tracker = github.create(s);
   const repo = { slug, path: "/r", settings: s, tracker };
   const number = r.int(1, 99999);
-  const ticket = { key: `${slug}#${number}`, ref: s.github.ref.replace("{number}", number) };
+  const ticket = {
+    key: `${slug}#${number}`,
+    ref: s.github.ref.replace("{number}", number),
+  };
   const branch = branchFor(ticket, repo);
   assert.equal(keyOfBranch(branch, repo), ticket.key, branch);
 });
 
 property("jira: a ticket's branch gives back its key", (r) => {
   const s = settings({ tracker: "jira", branch: template(r) });
-  const repo = { slug: "o/r", path: "/r", settings: s, tracker: jira.create(s) };
+  const repo = {
+    slug: "o/r",
+    path: "/r",
+    settings: s,
+    tracker: jira.create(s),
+  };
   const key = `${r.pick(upper)}${r.str(upper + digits, 1, 5)}-${r.int(1, 99999)}`;
   const branch = branchFor({ key, ref: key }, repo);
   assert.equal(keyOfBranch(branch, repo), key, branch);
@@ -87,10 +98,14 @@ const nasty = (r) =>
   r.str([..."aZ09 -_./\\~^:?*[@{}#\t\n", "..", "é", "🐑", "\u0000"], 0, 30);
 
 property("adhocBranch: a valid git branch name or null", (r, i) => {
-  const s = settings({ branch: r.pick(["{ref}", "me/{ref}", "{ref}-wip", "a.b/{key}"]) });
+  const s = settings({
+    branch: r.pick(["{ref}", "me/{ref}", "{ref}-wip", "a.b/{key}"]),
+  });
   const branch = adhocBranch(nasty(r), { settings: s });
   if (branch === null || i % 10) return; // git is slow: check every tenth
-  execFileSync("git", ["check-ref-format", "--branch", branch], { stdio: "ignore" });
+  execFileSync("git", ["check-ref-format", "--branch", branch], {
+    stdio: "ignore",
+  });
 });
 
 property("worktreePath: always under <repo>/<worktreeDir>", (r) => {
