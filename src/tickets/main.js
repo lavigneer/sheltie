@@ -150,7 +150,12 @@ export default class Tickets extends View {
         if (!current()) return;
         base = { gen, tickets, repos, here };
         this.setData({ ...base, phase: "work", work: new Map() }, cx);
-        const work = await workFor(tickets, repos);
+        // Local branches first, so a ticket's screen needn't wait for PRs.
+        const work = await workFor(tickets, repos, {
+          onLocal: (work) =>
+            current() &&
+            this.setData({ ...base, phase: "work", work, local: true }, cx),
+        });
         if (!current()) return;
         this.setData({ ...base, phase: "ready", work }, cx);
       } catch (e) {
@@ -246,8 +251,9 @@ export default class Tickets extends View {
         (r) => r.text,
       );
     }
-    // A ticket's screens need its work: wait for it (see the header).
-    if (d.phase !== "ready") return [];
+    // A ticket's screens need its local work at least: wait for it (see the
+    // header). PRs, and work only a linked PR shows, fill in after.
+    if (d.phase !== "ready" && !d.local) return [];
     const t = this.screen.ticket;
     if (this.screen.name === "pick") {
       return keep(
@@ -523,9 +529,11 @@ export default class Tickets extends View {
     const onList = this.screen.name === "list";
     if (d.phase === "work")
       return [
-        onList
-          ? "Looking for branches and pull requests…"
-          : "Looking for this ticket's branches and pull requests…",
+        d.local
+          ? "Looking for pull requests…"
+          : onList
+            ? "Looking for branches and pull requests…"
+            : "Looking for this ticket's branches and pull requests…",
         false,
       ];
     if (!rows.length)
