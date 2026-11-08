@@ -9,6 +9,9 @@ Use whatever you have for talking to GitHub and Jira (an MCP server, a CLI
 such as `gh` or `jira`, a custom script, or the API); the steps say what to
 do, not which tool to do it with.
 
+A branch that names no ticket is ad-hoc work: leave out everything about the
+ticket (reading it, the commit and title prefix, the link in the PR body).
+
 1. First check that the PR can merge: look up
    its base branch and mergeable state. GitHub runs no CI on a PR that
    conflicts with its base, so waiting for checks would wait forever. The

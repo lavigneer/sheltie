@@ -65,6 +65,11 @@ export const DEFAULTS = {
     // that already has one: the agent names and creates it itself.
     extraBranchTask:
       "Start another piece of work for {key}: {summary}\n\nCreate a git worktree under {worktreeDir}/ in this repo on a new branch named {branch}-<short-description> (pick a short kebab-case description of the change), then work in it. Run `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`.",
+    // First message for ad-hoc work (not tied to a ticket), started from the
+    // tickets popup in a new worktree on {branch}; {description} is what you
+    // typed.
+    adhocTask:
+      "{description}\n\nThis is ad-hoc work, not tied to a ticket: you're in a new worktree on branch {branch}. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`.",
     // What each Work sidebar step sends to the agent.
     steps: {
       "draft-pr": "/draft-pr",
