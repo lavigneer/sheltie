@@ -161,7 +161,7 @@ export function agentIn(space) {
       .filter((t) => t.labels?.agent)
       .map((t) => t.address),
   );
-  return here.find((p) => labelled.has(p.terminal))?.terminal ?? null;
+  return here.find((p) => p.terminal && labelled.has(p.terminal))?.terminal ?? null;
 }
 
 // Whether the agent terminal in a space says its PR is done: it has the
@@ -177,7 +177,7 @@ async function tellAgent(w, id) {
   const text = C.agent.steps[id];
   const space = spaceFor(w.path);
   const address = agentIn(space);
-  if (address) {
+  if (address && space) {
     // The agent has more to do: Ready waits until it says pr=ready again.
     // (Best effort: an agent that can't be labelled can't be sent to either.)
     await tool("hc", ["label", address, "pr="]).catch(() => null);

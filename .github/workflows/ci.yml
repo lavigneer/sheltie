@@ -18,8 +18,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm ci
       - name: mods/ is built from src/
         run: npm run check-built
+      - name: Type check (JSDoc, tsc --checkJs)
+        run: npm run typecheck
       - name: ShellCheck
         run: shellcheck -x -e SC2016 -P SCRIPTDIR install.sh demo/herdr-demo demo/bin/* demo/state.sh
       - name: Tests (against the demo's fake Jira and GitHub)

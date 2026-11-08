@@ -8,15 +8,23 @@ import { tracker, trackerOf } from "./tracker.js";
 import { localRepos, repoState, sameSlug } from "./git.js";
 import { prDetails } from "./prs.js";
 
+/** @typedef {import("./types.js").Ticket} Ticket */
+/** @typedef {import("./types.js").Repo} Repo */
+/** @typedef {import("./types.js").PR} PR */
+/** @typedef {import("./types.js").PRRef} PRRef */
+/** @typedef {import("./types.js").WorkItem} WorkItem */
+
 // Your tickets from every tracker in use: the global one, then each one repos
 // pick for themselves. Each ticket carries its `tracker` and `homes`: the repos
 // whose own tracker listed it. A repo's tracker that fails leaves its tickets
 // out; the global one failing throws. `repos` may be a promise (of
 // localRepos()): the global tracker is asked without waiting for it.
+/** @param {Repo[] | Promise<Repo[]>} repos @returns {Promise<Ticket[]>} */
 export async function listTickets(repos) {
   const global = tracker();
   const globalList = global.list();
   globalList.catch(() => {}); // awaited below, unless the repo scan fails first
+  /** @type {Map<import("./types.js").Tracker, Repo[]>} */
   const sources = new Map([[global, []]]);
   for (const r of await repos)
     if (r.tracker && r.tracker !== global)
@@ -26,19 +34,22 @@ export async function listTickets(repos) {
     globalList,
     ...own.map(([t]) => t.list().catch(() => [])),
   ]);
+  /** @type {Map<string, Ticket & { homes: Repo[] }>} */
   const out = new Map();
-  [[global, [], first], ...own.map(([t, homes], i) => [t, homes, rest[i]])]
-    .forEach(([t, homes, tickets]) => {
-      for (const ticket of tickets) {
-        const seen = out.get(ticket.key);
-        if (seen) seen.homes.push(...homes);
-        else out.set(ticket.key, { ...ticket, tracker: t, homes: [...homes] });
-      }
-    });
+  /** @type {[import("./types.js").Tracker, Repo[], Ticket[]][]} */
+  const lists = [[global, [], first]];
+  own.forEach(([t, homes], i) => lists.push([t, homes, rest[i]]));
+  for (const [t, homes, tickets] of lists)
+    for (const ticket of tickets) {
+      const seen = out.get(ticket.key);
+      if (seen) seen.homes.push(...homes);
+      else out.set(ticket.key, { ...ticket, tracker: t, homes: [...homes] });
+    }
   return [...out.values()];
 }
 
 // A target ("owner/repo" or a path) -> local repo, or { slug } when not cloned.
+/** @param {string | null | undefined} target @param {Repo[]} repos @returns {Repo | null} */
 export function findRepo(target, repos) {
   if (!target) return null;
   if (target.startsWith("/") || target.startsWith("~"))
@@ -52,7 +63,7 @@ export function findRepo(target, repos) {
   return (
     repos.find((r) => sameSlug(r.slug, target)) ?? {
       path: null,
-      name: target.split("/").pop(),
+      name: basename(target),
       slug: target,
     }
   );
@@ -67,8 +78,18 @@ const prRef = (slug, ref) => `${slug}#${ref}`;
 // the PRs ({ slug, number }) its tracker links; `details` maps prRef(slug,
 // branch or number) to prDetails (missing = failed lookup, the item keeps pr
 // null). A linked PR not already attached becomes its own item.
+/**
+ * @param {string[]} keys
+ * @param {({ repo: Repo } & import("./git.js").RepoState | null)[]} states
+ * @param {Map<string, PRRef[]>} [linked]
+ * @param {Map<string, PR>} [details]
+ * @param {Repo[]} [repos]
+ * @returns {Map<string, WorkItem[]>}
+ */
 export function joinWork(keys, states, linked = new Map(), details = new Map(), repos = []) {
+  /** @type {Map<string, WorkItem[]>} */
   const work = new Map(keys.map((k) => [k, []]));
+  /** @param {string} key @param {WorkItem} item */
   const add = (key, item) => {
     const list = work.get(key);
     if (!list) return;
@@ -86,7 +107,9 @@ export function joinWork(keys, states, linked = new Map(), details = new Map(), 
       );
     else list.push(item);
   };
-  for (const s of states.filter(Boolean)) {
+  for (const s of states) {
+    if (!s) continue;
+    /** @param {string | null} branch */
     const mentioned = (branch) => trackerOf(s.repo).keysIn(branch, s.repo.slug);
     for (const w of s.worktrees)
       for (const key of mentioned(w.branch))
@@ -108,14 +131,12 @@ export function joinWork(keys, states, linked = new Map(), details = new Map(), 
       const pr = details.get(prRef(p.slug, p.number));
       if (
         pr &&
-        !work
-          .get(key)
-          .some(
-            (w) => sameSlug(w.repo.slug, pr.slug) && w.pr?.number === pr.number,
-          )
+        !items.some(
+          (w) => sameSlug(w.repo.slug, pr.slug) && w.pr?.number === pr.number,
+        )
       )
         add(key, {
-          repo: findRepo(pr.slug, repos),
+          repo: /** @type {Repo} */ (findRepo(pr.slug, repos)),
           branch: pr.branch,
           worktree: null,
           pr,
@@ -128,11 +149,12 @@ export function joinWork(keys, states, linked = new Map(), details = new Map(), 
 // Every piece of work for each ticket (from listTickets), by key: [{ repo,
 // branch, worktree, pr }], from local branches/worktrees whose name has the
 // key and PRs the ticket's tracker links to it. Fetches joinWork's inputs.
+/** @param {Ticket[]} tickets @param {Repo[]} repos @param {{ prs?: boolean }} [opts] @returns {Promise<Map<string, WorkItem[]>>} */
 export async function workFor(tickets, repos, { prs = true } = {}) {
   const keys = tickets.map((t) => t.key);
   const states = await pool(
     repos
-      .filter((r) => r.path)
+      .filter(/** @returns {r is Repo & { path: string }} */ (r) => r.path !== null)
       .map((repo) => async () => ({ repo, ...(await repoState(repo)) })),
   );
   const local = joinWork(keys, states);
@@ -169,8 +191,11 @@ export async function workFor(tickets, repos, { prs = true } = {}) {
 // (ticket.homes), repoRules matching its component or label,
 // what the tracker suggests (GitHub: the issue's repo), repoRules matching its
 // project (only when no component/label rule matched), the current repo.
+/** @param {Ticket} ticket @param {Repo[]} repos @param {string | null | undefined} here @param {string | null | undefined} remembered @returns {{ repo: Repo, why: string }[]} */
 export function suggestRepos(ticket, repos, here, remembered) {
+  /** @type {{ repo: Repo, why: string }[]} */
   const out = [];
+  /** @param {Repo | null} repo @param {string} why */
   const push = (repo, why) => {
     if (
       repo &&

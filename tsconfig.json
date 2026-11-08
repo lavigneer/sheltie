@@ -1,0 +1,19 @@
+{
+  // Type checks src/ from its JSDoc; nothing is emitted (scripts/build.mjs
+  // copies src/ into mods/ as it is).
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "strictNullChecks": true,
+    "skipLibCheck": true,
+    "lib": ["es2022"],
+    "types": [],
+    "paths": { "herdr": ["./types/herdr.d.ts"] }
+  },
+  "include": ["src/*.js", "types/*.d.ts"]
+}

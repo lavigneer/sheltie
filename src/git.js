@@ -16,8 +16,9 @@ export function slugOf(url) {
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
+/** @param {string | null | undefined} a @param {string | null | undefined} b */
 export const sameSlug = (a, b) =>
-  Boolean(a && b) && a.toLowerCase() === b.toLowerCase();
+  !!a && !!b && a.toLowerCase() === b.toLowerCase();
 
 // --- Repos ------------------------------------------------------------------
 
@@ -25,6 +26,7 @@ export const sameSlug = (a, b) =>
 // tracker, problem }]. `settings` (see config.js settingsOf) and `tracker` are
 // set when the repo's REPO_FILE sets any of REPO_SETTINGS; `problem` says
 // what's wrong with that file.
+/** @returns {Promise<(import("./types.js").Repo & { path: string })[]>} */
 export async function localRepos() {
   const paths = new Set();
   for (const root of C.roots) {
@@ -55,7 +57,7 @@ export async function localRepos() {
       };
     }),
   );
-  return repos.filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+  return repos.filter((r) => r !== null).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function ownSettings(repoPath) {
@@ -89,13 +91,15 @@ export async function repoRoot(dir) {
 // A repo's worktrees from `git worktree list --porcelain`: the main checkout's
 // branch (null when detached) and every other worktree ({ path, branch },
 // branch null when detached).
+/** @param {string} porcelain @param {string} repoPath */
 export function parseWorktrees(porcelain, repoPath) {
+  /** @type {{ path: string, branch: string | null }[]} */
   const all = [];
   for (const line of (porcelain || "").split("\n")) {
     if (line.startsWith("worktree "))
       all.push({ path: line.slice(9), branch: null });
     else if (line.startsWith("branch refs/heads/") && all.length)
-      all.at(-1).branch = line.slice(18);
+      all[all.length - 1].branch = line.slice(18);
   }
   return {
     mainBranch: all.find((w) => w.path === repoPath)?.branch ?? null,
@@ -121,11 +125,18 @@ export const hubExcept = (repoPath, linked) => [
 // Worktrees (not the main checkout, and on a branch) and branches of a repo,
 // plus the main checkout's branch (mainBranch; null when detached) and every
 // linked worktree's path (linked; detached ones too).
+/**
+ * @typedef {object} RepoState
+ * @property {{ path: string, branch: string }[]} worktrees
+ * @property {Map<string, { local?: boolean, remote?: boolean }>} branches
+ * @property {string | null} mainBranch
+ * @property {string[]} linked
+ */
+/** @param {import("./types.js").Repo & { path: string }} repo @returns {Promise<RepoState>} */
 export async function repoState(repo) {
   const { mainBranch, linked } = await listWorktrees(repo.path);
   const worktrees = linked
-    .filter((w) => w.branch)
-    .map((w) => ({ path: w.path, branch: w.branch }));
+    .flatMap((w) => (w.branch ? [{ path: w.path, branch: w.branch }] : []));
   const branches = new Map(); // name -> { local, remote }
   const refs = await git(
     repo.path,

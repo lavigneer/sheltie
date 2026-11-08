@@ -4,6 +4,7 @@
 import { NOT_FOUND, firstLine, must, pool, tool } from "./lib.js";
 
 // A tracker using settings `s` (the global ones, or a repo's: config.js).
+/** @param {import("./config.js").Settings} s @returns {import("./types.js").Tracker} */
 export function create(s) {
   const name = "jira";
 
