@@ -173,6 +173,17 @@ export const keyOfBranch = (branch, repo) =>
 export const branchFor = (ticket) =>
   fill(C.branch, { ref: ticket.ref, key: ticket.key });
 
+// An ad-hoc branch (not tied to a ticket): C.branch with a short kebab-case
+// slug of the description as its {ref}, or null when nothing's left of it.
+export function adhocBranch(description) {
+  const slug = description
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .slice(0, 40)
+    .replace(/^-+|-+$/g, "");
+  return slug ? fill(C.branch, { ref: slug, key: slug }) : null;
+}
+
 export const worktreePath = (repo, branch) =>
   `${repo.path}/${C.worktreeDir}/${branch.split("/").pop()}`;
 

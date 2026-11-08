@@ -9,6 +9,9 @@ Use whatever you have for talking to GitHub and Jira (an MCP server, a CLI
 such as `gh` or `jira`, a custom script, or the API); the steps say what to
 do, not which tool to do it with.
 
+A branch that names no ticket is ad-hoc work: leave out everything about the
+ticket (reading it, the commit and title prefix, the link in the PR body).
+
 1. Find this branch's PR and its repo.
 2. Fetch the unresolved review threads with their comments (path, line,
    whether outdated, and each comment's author and body). With `gh`, for
