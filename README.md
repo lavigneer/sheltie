@@ -54,11 +54,11 @@ Start Herdr once, then:
 git clone https://github.com/lavigneer/sheltie
 cd sheltie
 ./install.sh --claude-commands
-herdr-app do layout.switch --name work
+herdr-app do layout.switch --name sheltie
 ```
 
 This copies the mods into Herdr's app home (`$HERDR_APP_HOME`, else
-`~/.config/herdr-app`), binds the keys below, adds a `work` layout and a
+`~/.config/herdr-app`), binds the keys below, adds a `sheltie` layout and a
 starter `sheltie.json`. `--claude-commands` also installs the Claude Code
 commands into `~/.claude/commands`. Re-run after pulling to update.
 

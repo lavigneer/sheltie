@@ -235,7 +235,7 @@ for _ in $(seq 1 60); do
   sleep 0.5
 done
 "$repo_root/install.sh" --home "$app" >/dev/null
-herdr-app "do" layout.switch --name work >/dev/null 2>&1 || true
+herdr-app "do" layout.switch --name sheltie >/dev/null 2>&1 || true
 
 cat <<EOF
 herdr-demo: started ($(jq -r .settings.tracker "$state"); log: $HERDR_DEMO/app.log).
