@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">
+  <rect width="320" height="200" fill="#f2f1ee"/>
+  <!-- sidebar: Spaces, Work, Agents -->
+  <rect width="68" height="200" fill="#e9e8e4"/>
+  <rect x="68" width="1" height="200" fill="#d4d2cc"/>
+  <rect x="8" y="10" width="26" height="4" rx="2" fill="#8a877f"/>
+  <rect x="8" y="22" width="44" height="4" rx="2" fill="#b5b2aa"/>
+  <rect x="8" y="30" width="38" height="4" rx="2" fill="#b5b2aa"/>
+  <rect x="0" y="48" width="68" height="1" fill="#d4d2cc"/>
+  <rect x="8" y="56" width="22" height="4" rx="2" fill="#8a877f"/>
+  <rect x="5" y="66" width="58" height="18" rx="3" fill="#ffffff" stroke="#3b82f6"/>
+  <rect x="10" y="70" width="30" height="4" rx="2" fill="#5f5c55"/>
+  <rect x="10" y="77" width="20" height="3" rx="1.5" fill="#3b82f6"/>
+  <rect x="10" y="90" width="34" height="4" rx="2" fill="#5f5c55"/>
+  <rect x="10" y="97" width="24" height="3" rx="1.5" fill="#d97706"/>
+  <rect x="10" y="108" width="28" height="4" rx="2" fill="#5f5c55"/>
+  <rect x="10" y="115" width="22" height="3" rx="1.5" fill="#16a34a"/>
+  <rect x="0" y="130" width="68" height="1" fill="#d4d2cc"/>
+  <rect x="8" y="138" width="24" height="4" rx="2" fill="#8a877f"/>
+  <rect x="8" y="150" width="40" height="4" rx="2" fill="#b5b2aa"/>
+  <!-- tabs and a pane -->
+  <rect x="76" y="6" width="34" height="10" rx="5" fill="#e0ded9"/>
+  <rect x="76" y="22" width="236" height="164" rx="4" fill="#ffffff" stroke="#d4d2cc"/>
+  <rect x="84" y="32" width="120" height="4" rx="2" fill="#c9c6bf"/>
+  <rect x="84" y="42" width="160" height="4" rx="2" fill="#c9c6bf"/>
+  <rect x="84" y="52" width="96" height="4" rx="2" fill="#c9c6bf"/>
+  <rect x="76" y="192" width="236" height="1" fill="#d4d2cc"/>
+</svg>

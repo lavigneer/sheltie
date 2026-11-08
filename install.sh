@@ -15,9 +15,10 @@
 # What it does:
 #   mods/*                  copied to <home>/mods/ (replacing earlier versions)
 #   keys.json               ctrl-shift-j (tickets), ctrl-shift-f (projects) and
-#                           the Work sidebar's alt-shift keys added to
+#                           the Work sidebar's alt-shift keys (in the sheltie
+#                           layout only) added to
 #                           <home>/keys.json, unless you use those keys
-#   layouts/sheltie.json    copied to <home>/layouts/ (Herdr with the Work sidebar)
+#   layouts/sheltie.*       copied to <home>/layouts/ (Herdr with the Work sidebar)
 #   sheltie.json        a starter settings file if there is none
 # Needs bash and jq.
 
@@ -36,7 +37,7 @@ while [ $# -gt 0 ]; do
   --claude-commands) claude=1 ;;
   --force-commands) claude=1 force_commands=1 ;;
   -h | --help)
-    sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
   *)
@@ -81,7 +82,7 @@ echo "keys: $(jq -r 'to_entries | map(.value | to_entries[] | "\(.key) → \(.va
 
 # Layout.
 mkdir -p "$home/layouts"
-cp "$here/layouts/sheltie.json" "$home/layouts/sheltie.json"
+cp "$here/layouts/sheltie.json" "$here/layouts/sheltie.svg" "$home/layouts/"
 echo "layout: sheltie (switch with: herdr-app do layout.switch --name sheltie)"
 
 # Settings.
