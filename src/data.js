@@ -96,22 +96,46 @@ export function findRepo(target, repos) {
   );
 }
 
-// Worktrees (not the main checkout) and branches of a repo.
-export async function repoState(repo) {
-  const worktrees = [];
-  const wt = await git(repo.path, "worktree", "list", "--porcelain").catch(
+// A repo's worktrees from `git worktree list --porcelain`: the main checkout's
+// branch (null when detached) and every other worktree ({ path, branch },
+// branch null when detached).
+export function parseWorktrees(porcelain, repoPath) {
+  const all = [];
+  for (const line of (porcelain || "").split("\n")) {
+    if (line.startsWith("worktree "))
+      all.push({ path: line.slice(9), branch: null });
+    else if (line.startsWith("branch refs/heads/") && all.length)
+      all.at(-1).branch = line.slice(18);
+  }
+  return {
+    mainBranch: all.find((w) => w.path === repoPath)?.branch ?? null,
+    linked: all.filter((w) => w.path !== repoPath),
+  };
+}
+
+export async function listWorktrees(repoPath) {
+  const r = await git(repoPath, "worktree", "list", "--porcelain").catch(
     () => null,
   );
-  let path = null;
-  for (const line of wt?.stdout.split("\n") ?? []) {
-    if (line.startsWith("worktree ")) path = line.slice(9);
-    else if (
-      line.startsWith("branch refs/heads/") &&
-      path &&
-      path !== repo.path
-    )
-      worktrees.push({ path, branch: line.slice(18) });
-  }
+  return parseWorktrees(r?.code === 0 ? r.stdout : "", repoPath);
+}
+
+// What a repo's main checkout (its hub) leaves out when matching its space:
+// the worktree folder and every listed worktree (`linked` paths), which live
+// inside it (e.g. <repo>/.worktrees/x, <repo>/.claude/worktrees/y).
+export const hubExcept = (repoPath, linked) => [
+  `${repoPath}/${C.worktreeDir}`,
+  ...linked,
+];
+
+// Worktrees (not the main checkout, and on a branch) and branches of a repo,
+// plus the main checkout's branch (mainBranch; null when detached) and every
+// linked worktree's path (linked; detached ones too).
+export async function repoState(repo) {
+  const { mainBranch, linked } = await listWorktrees(repo.path);
+  const worktrees = linked
+    .filter((w) => w.branch)
+    .map((w) => ({ path: w.path, branch: w.branch }));
   const branches = new Map(); // name -> { local, remote }
   const refs = await git(
     repo.path,
@@ -131,7 +155,12 @@ export async function repoState(repo) {
     else continue;
     branches.set(name, { ...(branches.get(name) ?? {}), [kind]: true });
   }
-  return { worktrees, branches };
+  return {
+    worktrees,
+    branches,
+    mainBranch,
+    linked: linked.map((w) => w.path),
+  };
 }
 
 // The tracker's key for a branch in `repo`, or null.

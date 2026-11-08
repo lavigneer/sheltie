@@ -19,6 +19,12 @@ your tracker to a merged pull request without leaving Herdr:
    Every step also runs from the keyboard (see [Keys](#keys)). Click a row's
    PR label to open the PR in the browser, its ticket key or status to open
    the ticket (anywhere else on the row: its space).
+
+   Each repo's group starts with its **hub**: the main checkout (its branch
+   and a "hub" tag), with a space of its own for the repo's longer-running
+   agents, apart from the per-ticket worktrees. Click it to go to that space
+   or open one there with the agent. It has no ticket, PR or steps. A repo
+   shows while it has worktrees or its hub has a space.
 3. **Get told** when CI finishes, review comments or a review arrive, or the PR
    merges.
 
@@ -82,7 +88,7 @@ With Nix, the flake's `packages.default` has the same files under
 | Alt+Shift+P | `work.open-pr` | open the selected row's PR in the browser, like clicking its PR label |
 | Alt+Shift+T | `work.open-ticket` | open the selected row's ticket in the browser, like clicking its key or status |
 
-A row without a PR, or whose branch isn't a ticket, just says so (a
+A row without a PR, or whose branch isn't a ticket, or a hub, just says so (a
 notification) for that key. The browser opens with `xdg-open` (Linux) or
 `open` (macOS).
 
@@ -97,8 +103,9 @@ from the command line, e.g. `herdr-app do work.step`. Rebind them in
 
 Two more, for scripts (no key): `herdr-app do work.refresh` refreshes the
 sidebar now, like its ↻, and `herdr-app do work.report` writes what it shows
-(rows, their PRs and next steps, the selected row and step, and the PR and
-ticket URLs `work.open-pr` / `work.open-ticket` would open) to
+(rows, hubs marked `hub: true`, their PRs and next steps, the selected row
+and step, and the PR and ticket URLs `work.open-pr` / `work.open-ticket`
+would open) to
 `<Herdr app home>/work-report.json`.
 
 ## Settings
@@ -162,7 +169,8 @@ npm run e2e:shots  # screenshots of the mods at a few sizes, in e2e-results/shot
 `npm run e2e` launches Herdr on the demo, once per tracker, on its own Xvfb
 display (with its own app home and herdr-core session, so your Herdr is
 untouched), and drives it with the keyboard: the mods load without errors, a
-fresh ticket starts from the tickets popup, and its whole flow runs from the
+fresh ticket starts from the tickets popup, its repo's hub row (above it)
+opens a space of its own, and its whole flow runs from the
 Work sidebar's keys through to Finish, opening the row's PR and ticket on the
 way (with a stub `xdg-open` that records the URL; with CI failing once and Finish
 refusing uncommitted changes, on Jira). It checks outcomes, not pixels:
