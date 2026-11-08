@@ -53,6 +53,7 @@
           '';
           meta = {
             description = "Herdr desktop mods: ticket -> worktree -> agent -> PR -> merged";
+            license = nixpkgs.lib.licenses.mit;
             platforms = systems;
           };
         };

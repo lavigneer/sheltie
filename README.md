@@ -217,3 +217,7 @@ tests. `herdr-app check mods/<name>` (with Herdr running) loads a mod once.
 
 A new tracker is a `src/tracker-<name>.js` with the functions listed in
 `src/tracker.js`, added to its `trackers` map.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
