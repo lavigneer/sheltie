@@ -31,13 +31,6 @@ import { assertClean, removeWorktree } from "./git.js";
 import { basename, inside, spaceFor, tool } from "./lib.js";
 import { markReady, mergePr, prDetails } from "./prs.js";
 
-const AGENT_STEPS = [
-  "draft-pr",
-  "fix-ci",
-  "address-comments",
-  "resolve-conflicts",
-];
-
 // --- Stage ------------------------------------------------------------------
 
 // pr: prDetails() (`unresolved`: a count, or null when unknown).
@@ -138,6 +131,92 @@ export function prEvents(was, pr) {
   return events;
 }
 
+// The workflow's steps, in the order they're offered: one table that both
+// nextSteps (which to offer) and runStep (what each does) read, so a step is
+// added or changed in one place. Each has:
+//   id, kind      "agent" steps send C.agent.steps[id] to the space's agent
+//                 (offered only when that's set and the agent isn't working);
+//                 "direct" ones run `run`
+//   label         text, or a function of the PR
+//   when(pr, x)   whether it's offered now; x: { stage, open, conflicts,
+//                 green, working, agentDone, workflow }
+//   confirm(x)    whether it asks for a second click (direct steps)
+//   run(w, pr, others)  for direct steps: does it, returns a note
+// A PR that conflicts with its base offers only Resolve conflicts: GitHub
+// runs no CI on it, so nothing else can get it green.
+const confirmFinish = ({ workflow }) => workflow.confirmFinish !== false;
+const STEPS = [
+  {
+    id: "draft-pr",
+    kind: "agent",
+    label: "Draft PR",
+    when: (_pr, x) => x.stage === "no-pr",
+  },
+  {
+    id: "resolve-conflicts",
+    kind: "agent",
+    label: "Resolve conflicts",
+    when: (_pr, x) => x.open && x.conflicts,
+  },
+  {
+    id: "fix-ci",
+    kind: "agent",
+    label: "Fix CI",
+    when: (pr, x) => x.open && !x.conflicts && pr.checks === "failed",
+  },
+  {
+    id: "address-comments",
+    kind: "agent",
+    label: (pr) =>
+      pr.unresolved > 0
+        ? `Address ${pr.unresolved} comment${pr.unresolved === 1 ? "" : "s"}`
+        : "Address review",
+    when: (pr, x) =>
+      x.open &&
+      !x.conflicts &&
+      (pr.unresolved > 0 || pr.review === "CHANGES_REQUESTED"),
+  },
+  {
+    id: "ready",
+    kind: "direct",
+    label: "Ready",
+    when: (pr, x) =>
+      x.stage === "draft" &&
+      x.green &&
+      !pr.unresolved &&
+      (x.workflow.readyWhen !== "agent" || x.agentDone) &&
+      !x.working,
+    run: ready,
+  },
+  {
+    id: "merge",
+    kind: "direct",
+    label: "Merge",
+    when: (pr, x) => !x.working && canMerge(pr, x.workflow),
+    confirm: ({ workflow }) => workflow.confirmMerge !== false,
+    run: async (w, pr) => {
+      await mergePr(w.repo.slug, pr.number);
+      return "merged";
+    },
+  },
+  {
+    id: "finish",
+    kind: "direct",
+    label: "Finish",
+    when: (_pr, x) => x.stage === "merged",
+    confirm: confirmFinish,
+    run: (w, pr, others) => finish(w, pr, others, true),
+  },
+  {
+    id: "clean-up",
+    kind: "direct",
+    label: "Clean up",
+    when: (_pr, x) => x.stage === "closed",
+    confirm: confirmFinish,
+    run: (w, pr, others) => finish(w, pr, others, false),
+  },
+];
+
 // The next steps for a worktree: [{ id, label, kind: "agent" | "direct", confirm }].
 // `working`: its agent is busy, so nothing is sent to it and the PR isn't
 // marked Ready or merged while the agent may still be iterating on it. `agentDone`: its
@@ -147,48 +226,28 @@ export function nextSteps(
   pr,
   { working = false, agentDone = false, repo = null } = {},
 ) {
-  const { workflow } = settingsOf(repo);
   const stage = stageOf(pr);
-  const steps = [];
-  const agent = (id, label) => {
-    if (!working && C.agent.steps?.[id])
-      steps.push({ id, label, kind: "agent" });
+  const x = {
+    stage,
+    open: ["draft", "in-review", "approved"].includes(stage),
+    conflicts: pr?.mergeable === "CONFLICTING",
+    // Green: CI ran and passed (no checks: not started yet, or it never will
+    // because the PR conflicts) on a PR GitHub says can merge (not "UNKNOWN":
+    // that's only until GitHub has worked it out, soon after a push).
+    green: pr?.checks === "passed" && pr.mergeable === "MERGEABLE",
+    working,
+    agentDone,
+    workflow: settingsOf(repo).workflow,
   };
-  // Green: CI ran and passed (no checks: not started yet, or it never will
-  // because the PR conflicts) on a PR GitHub says can merge (not "UNKNOWN":
-  // that's only until GitHub has worked it out, soon after a push).
-  const green = pr?.checks === "passed" && pr.mergeable === "MERGEABLE";
-  const open = ["draft", "in-review", "approved"].includes(stage);
-  if (stage === "no-pr") agent("draft-pr", "Draft PR");
-  if (open && pr.mergeable === "CONFLICTING") {
-    agent("resolve-conflicts", "Resolve conflicts");
-    return steps;
+  const steps = [];
+  for (const s of STEPS) {
+    if (s.kind === "agent" && (working || !C.agent.steps?.[s.id])) continue;
+    if (!s.when(pr, x)) continue;
+    const label = typeof s.label === "function" ? s.label(pr) : s.label;
+    const step = { id: s.id, label, kind: s.kind };
+    if (s.confirm) step.confirm = s.confirm(x);
+    steps.push(step);
   }
-  if (open) {
-    if (pr.checks === "failed") agent("fix-ci", "Fix CI");
-    if (pr.unresolved > 0)
-      agent(
-        "address-comments",
-        `Address ${pr.unresolved} comment${pr.unresolved === 1 ? "" : "s"}`,
-      );
-    else if (pr.review === "CHANGES_REQUESTED")
-      agent("address-comments", "Address review");
-  }
-  const vouched = workflow.readyWhen !== "agent" || agentDone;
-  if (stage === "draft" && green && !pr.unresolved && vouched && !working)
-    steps.push({ id: "ready", label: "Ready", kind: "direct" });
-  if (!working && canMerge(pr, workflow))
-    steps.push({
-      id: "merge",
-      label: "Merge",
-      kind: "direct",
-      confirm: workflow.confirmMerge !== false,
-    });
-  const confirm = workflow.confirmFinish !== false;
-  if (stage === "merged")
-    steps.push({ id: "finish", label: "Finish", kind: "direct", confirm });
-  if (stage === "closed")
-    steps.push({ id: "clean-up", label: "Clean up", kind: "direct", confirm });
   return steps;
 }
 
@@ -262,56 +321,60 @@ async function tellAgent(w, id) {
 // `pr`. `others`: the other worktrees with their PRs ([{ w, pr }]), to tell
 // whether the ticket still has open work. Returns a short note, or throws.
 export async function runStep(id, w, pr, others = []) {
-  if (AGENT_STEPS.includes(id)) return tellAgent(w, id);
-  if (id === "ready") {
-    await markReady(w.repo.slug, pr.number);
-    const notes = ["ready for review"];
-    // Auto-merge only waits for what the repo requires; without required
-    // reviews it would merge at once, so then leave merging to the Merge step.
-    if (settingsOf(w.repo).workflow.autoMerge === "when-reviews-required") {
-      const now = await prDetails(w.repo.slug, pr.number);
-      if (
-        now?.review === "REVIEW_REQUIRED" ||
-        now?.review === "CHANGES_REQUESTED"
-      ) {
-        await mergePr(w.repo.slug, pr.number, { auto: true });
-        notes.push("auto-merge on approval");
-      }
+  const step = STEPS.find((s) => s.id === id);
+  if (!step) throw new Error(`unknown step ${id}`);
+  return step.run ? step.run(w, pr, others) : tellAgent(w, id);
+}
+
+// Ready: out of draft; with autoMerge "when-reviews-required", auto-merge
+// while reviews are still required; tracker step "review".
+async function ready(w, pr) {
+  await markReady(w.repo.slug, pr.number);
+  const notes = ["ready for review"];
+  // Auto-merge only waits for what the repo requires; without required
+  // reviews it would merge at once, so then leave merging to the Merge step.
+  if (settingsOf(w.repo).workflow.autoMerge === "when-reviews-required") {
+    const now = await prDetails(w.repo.slug, pr.number);
+    if (
+      now?.review === "REVIEW_REQUIRED" ||
+      now?.review === "CHANGES_REQUESTED"
+    ) {
+      await mergePr(w.repo.slug, pr.number, { auto: true });
+      notes.push("auto-merge on approval");
     }
-    if (w.handle) {
-      const moved = await w.handle.move("review");
+  }
+  if (w.handle) {
+    const moved = await w.handle.move("review");
+    if (moved) notes.push(moved);
+  }
+  return notes.join(" · ");
+}
+
+// Finish (`merged`) / Clean up: close its spaces, remove the worktree and
+// branch; after a merge, tracker step "done" unless other work on the ticket
+// is still open.
+async function finish(w, pr, others, merged) {
+  await assertClean(w.path, pr?.head ?? null);
+  // Its spaces end with it (the agent's work is in the PR by now).
+  for (const s of spaces())
+    if (!s.machine && s.folder && inside(s.folder, w.path))
+      run("space.close", { id: s.id, confirmed: true });
+  await removeWorktree(w.repo, w.path, w.branch, pr?.head ?? null);
+  const notes = ["worktree removed"];
+  if (merged && w.handle) {
+    const open = others.filter(
+      (o) =>
+        o.w.handle?.key === w.handle.key &&
+        !["merged", "closed"].includes(stageOf(o.pr)),
+    );
+    if (open.length)
+      notes.push(
+        `${w.handle.label} left open: ${open.map((o) => basename(o.w.path)).join(", ")} still in progress`,
+      );
+    else {
+      const moved = await w.handle.move("done");
       if (moved) notes.push(moved);
     }
-    return notes.join(" · ");
   }
-  if (id === "merge") {
-    await mergePr(w.repo.slug, pr.number);
-    return "merged";
-  }
-  if (id === "finish" || id === "clean-up") {
-    await assertClean(w.path, pr?.head ?? null);
-    // Its spaces end with it (the agent's work is in the PR by now).
-    for (const s of spaces())
-      if (!s.machine && s.folder && inside(s.folder, w.path))
-        run("space.close", { id: s.id, confirmed: true });
-    await removeWorktree(w.repo, w.path, w.branch, pr?.head ?? null);
-    const notes = ["worktree removed"];
-    if (id === "finish" && w.handle) {
-      const open = others.filter(
-        (o) =>
-          o.w.handle?.key === w.handle.key &&
-          !["merged", "closed"].includes(stageOf(o.pr)),
-      );
-      if (open.length)
-        notes.push(
-          `${w.handle.label} left open: ${open.map((o) => basename(o.w.path)).join(", ")} still in progress`,
-        );
-      else {
-        const moved = await w.handle.move("done");
-        if (moved) notes.push(moved);
-      }
-    }
-    return notes.join(" · ");
-  }
-  throw new Error(`unknown step ${id}`);
+  return notes.join(" · ");
 }
