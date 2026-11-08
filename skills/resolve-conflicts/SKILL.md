@@ -6,8 +6,12 @@ description: Merge the base branch into this branch's PR, resolve the conflicts,
 This branch's pull request conflicts with its base branch, so GitHub won't run
 its CI. Resolve that.
 
-1. Find the PR and its base: `gh pr view --json number,url,baseRefName,mergeable,mergeStateStatus`.
-   `mergeable` can be `UNKNOWN` for a little while (GitHub works it out
+Use whatever you have for talking to GitHub and Jira (an MCP server, a CLI
+such as `gh` or `jira`, a custom script, or the API); the steps say what to
+do, not which tool to do it with.
+
+1. Find the PR, its base branch and its mergeable state. The mergeable
+   state can be `UNKNOWN` for a little while (GitHub works it out
    lazily): ask again every few seconds, for up to a minute, until it's
    `MERGEABLE` or `CONFLICTING`. Don't read `UNKNOWN` as either. If it's
    `MERGEABLE`, there's nothing to resolve: skip to step 6.
@@ -27,8 +31,8 @@ its CI. Resolve that.
 5. Rebuild anything generated, run the tests, then commit the merge (its
    message starting with the ticket, e.g. `#12: merge main`) and push
    (`git push`).
-6. Wait for CI: `gh pr checks --watch --fail-fast`. If a check fails, read the
-   failing logs (`gh run view <run-id> --log-failed`), fix the cause, commit,
+6. Wait for CI: watch the PR's checks until they finish, stopping at the first
+   failure. If a check fails, read its failing logs, fix the cause, commit,
    push, and watch again. After three failed rounds, stop and summarise what's
    failing and why.
 7. Finish with what conflicted, how you resolved it, and the CI result.

@@ -5,11 +5,15 @@ description: Fix the failing CI checks on this branch's PR and push
 
 CI is failing on this branch's pull request. Fix it.
 
-1. First check that the PR can merge:
-   `gh pr view --json mergeable,mergeStateStatus,baseRefName`. GitHub runs no
-   CI on a PR that conflicts with its base, so `gh pr checks --watch` would
-   wait forever. `mergeable` can be `UNKNOWN` for a little while after a push:
-   ask again every few seconds, for up to a minute, until it's `MERGEABLE` or
+Use whatever you have for talking to GitHub and Jira (an MCP server, a CLI
+such as `gh` or `jira`, a custom script, or the API); the steps say what to
+do, not which tool to do it with.
+
+1. First check that the PR can merge: look up
+   its base branch and mergeable state. GitHub runs no CI on a PR that
+   conflicts with its base, so waiting for checks would wait forever. The
+   mergeable state can be `UNKNOWN` for a little while after a push: ask again
+   every few seconds, for up to a minute, until it's `MERGEABLE` or
    `CONFLICTING`, and don't read `UNKNOWN` as either. If it's `CONFLICTING`:
    1. merge the base in: `git fetch origin && git merge origin/<base>` (never
       rebase or force-push a branch that has a PR);
@@ -27,15 +31,15 @@ CI is failing on this branch's pull request. Fix it.
 
    A PR that conflicted had no CI to fix: once the merge is pushed, go to
    step 5.
-2. List the checks: `gh pr checks`. For each failing one, read its logs
-   (`gh run view <run-id> --log-failed`, or the check's link for external CI).
+2. List the PR's checks. For each failing one, read its failing logs (for
+   external CI, follow the check's link).
 3. Find the cause. If it's a flaky or infrastructure failure unrelated to this
-   change, rerun it (`gh run rerun <run-id> --failed`) instead of changing code,
+   change, rerun its failed jobs instead of changing code,
    and say so.
 4. Otherwise fix it, commit with a message starting with the ticket from the
    branch name (`WEB-142: …` or `#12: …`), and push.
-5. Check it can still merge (as in step 1), then watch again:
-   `gh pr checks --watch --fail-fast`. After three failed rounds,
+5. Check it can still merge (as in step 1), then watch the checks
+   again, stopping at the first failure. After three failed rounds,
    stop and summarise what's failing and why.
 
 Don't change the PR's draft or ready state, request reviews or merge.
