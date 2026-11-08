@@ -53,13 +53,13 @@ import {
   addWorktree,
   branchFor,
   cloneRepo,
+  listTickets,
   localRepos,
   prLabel,
   repoRoot,
   suggestRepos,
   workFor,
 } from "./data.js";
-import { tracker } from "./tracker.js";
 
 const REMEMBER = "tickets.repo"; // shared: ticket key -> repo slug or path
 
@@ -135,18 +135,12 @@ export default class Tickets extends View {
       let base = null;
       try {
         await configReady();
-        const [tickets, repos, here] = await Promise.all([
-          tracker().list(),
-          localRepos(),
-          repoRoot(cwd),
-        ]);
+        const [repos, here] = await Promise.all([localRepos(), repoRoot(cwd)]);
+        const tickets = await listTickets(repos);
         if (!current()) return;
         base = { gen, tickets, repos, here };
         this.setData({ ...base, phase: "work", work: new Map() }, cx);
-        const work = await workFor(
-          tickets.map((t) => t.key),
-          repos,
-        );
+        const work = await workFor(tickets, repos);
         if (!current()) return;
         this.setData({ ...base, phase: "ready", work }, cx);
       } catch (e) {
@@ -380,7 +374,7 @@ export default class Tickets extends View {
       summary: ticket.summary,
       branch: branchFor(ticket),
       worktreeDir: C.worktreeDir,
-      viewCommand: tracker().viewCommand(ticket.key),
+      viewCommand: ticket.tracker.viewCommand(ticket.key),
       ...extra,
     };
   }
@@ -402,7 +396,7 @@ export default class Tickets extends View {
       { phase: "running", message: `Starting ${ticket.label}…` },
       cx,
     );
-    await tracker()
+    await ticket.tracker
       .move(ticket.key, "start", ticket.status)
       .catch((e) =>
         notify({
@@ -429,10 +423,10 @@ export default class Tickets extends View {
     });
   }
 
-  openInBrowser(key, cx) {
+  openInBrowser(ticket, cx) {
     cx.spawn(async () => {
-      const url = await tracker()
-        .url(key)
+      const url = await ticket.tracker
+        .url(ticket.key)
         .catch(() => null);
       if (url) await openUrl(url);
     });
@@ -443,7 +437,7 @@ export default class Tickets extends View {
     if (this.running) return true; // nothing but the action until it finishes
     const ticket = this.screen.ticket ?? sel?.ticket;
     if (e.modifiers.control && e.key === "o" && ticket)
-      this.openInBrowser(ticket.key, cx);
+      this.openInBrowser(ticket, cx);
     else if (e.modifiers.control && e.key === "r") this.load(cx);
     else if (
       e.key === "backspace" &&
@@ -463,7 +457,8 @@ export default class Tickets extends View {
     if (a.phase === "failed") return [a.error, true];
     const d = this.data;
     if (d.phase === "failed") return [`${d.error} (Ctrl+R to retry)`, true];
-    if (C.problem && !this.screen.ticket) return [C.problem, true];
+    const problem = C.problem ?? d.repos?.find((r) => r.problem)?.problem;
+    if (problem && !this.screen.ticket) return [problem, true];
     if (d.phase === "tickets") return ["Loading tickets…", false];
     const onList = this.screen.name === "list";
     if (d.phase === "work")

@@ -136,24 +136,50 @@ export function configReady() {
 }
 
 async function load() {
-  const path = `${appHome()}/${SETTINGS_FILE}`;
-  let over = {};
-  let problem = null;
-  const r = await exec("cat", [path]).catch((e) => ({ code: 1, stderr: `${e}` }));
-  if (r.code === 0) {
-    try {
-      over = JSON.parse(r.stdout);
-      if (!isObject(over)) throw new Error("not a JSON object");
-    } catch (e) {
-      problem = `${path}: ${e.message ?? e}; using the defaults`;
-      over = {};
-    }
-  } else if (!/no such file/i.test(r.stderr ?? "")) {
-    problem = `couldn't read ${path}: ${(r.stderr ?? "").trim()}`;
-  }
+  const { over, problem } = await readSettings(`${appHome()}/${SETTINGS_FILE}`);
   const settings = merge(DEFAULTS, over);
   settings.programs = await resolvePrograms(settings.programs);
   useConfig(settings, problem);
+}
+
+// A settings file: { over (its JSON object, {} if missing or bad), problem }.
+export async function readSettings(path) {
+  const r = await exec("cat", [path]).catch((e) => ({ code: 1, stderr: `${e}` }));
+  if (r.code !== 0)
+    return {
+      over: {},
+      problem: /no such file/i.test(r.stderr ?? "")
+        ? null
+        : `couldn't read ${path}: ${(r.stderr ?? "").trim()}`,
+    };
+  try {
+    const over = JSON.parse(r.stdout);
+    if (!isObject(over)) throw new Error("not a JSON object");
+    return { over, problem: null };
+  } catch (e) {
+    return { over: {}, problem: `${path}: ${e.message ?? e}; using the defaults` };
+  }
+}
+
+// A repo's own settings: REPO_FILE in its main checkout, merged over the
+// global ones. Only REPO_SETTINGS (where its tickets come from) apply there.
+export const REPO_FILE = ".sheltie.json";
+export const REPO_SETTINGS = ["tracker", "jira", "github"];
+
+// The settings for a repo whose REPO_FILE holds `over`, or null when it sets
+// none of REPO_SETTINGS (the global ones apply). `problem` names keys that
+// don't apply in a repo.
+export function repoSettings(over, path) {
+  const picked = Object.fromEntries(
+    REPO_SETTINGS.filter((k) => k in over).map((k) => [k, over[k]]),
+  );
+  const ignored = Object.keys(over).filter((k) => !REPO_SETTINGS.includes(k));
+  return {
+    settings: Object.keys(picked).length ? merge(C, picked) : null,
+    problem: ignored.length
+      ? `${path}: ${ignored.join(", ")} can only be set in ${SETTINGS_FILE}`
+      : null,
+  };
 }
 
 // Replaces the settings in use (for tests, and after loading).

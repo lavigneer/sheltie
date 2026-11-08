@@ -92,7 +92,7 @@ line (`herdr-app do work.step`), as do `work.refresh` and `work.report`
 
 `<Herdr app home>/sheltie.json` is merged over the defaults; set only what you
 change. [`config.example.json`](config.example.json) lists every setting with
-its default, and [docs/settings.md](docs/settings.md) has the full table.
+its default, and [docs/settings.md](docs/settings.md) has the full table and how a repo picks its own tracker (`.sheltie.json`).
 The main ones:
 
 | Setting | Default | |

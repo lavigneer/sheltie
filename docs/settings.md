@@ -32,6 +32,29 @@ shows every setting with its default, and `src/config.js` documents each one.
 | `workflow.confirmMerge` | `true` | Merge needs a second click |
 | `workflow.confirmFinish` | `true` | Finish and Clean up need a second click |
 
+## A repo's own settings
+
+A repo can pick where its tickets come from with a `.sheltie.json` in its main
+checkout, merged over `sheltie.json` the same way. Only `tracker`, `jira` and
+`github` apply there (other settings are reported and ignored). E.g. in a repo
+that uses GitHub issues while everything else uses Jira:
+
+```json
+{ "tracker": "github", "github": { "repos": ["acme/storage"] } }
+```
+
+or one with its own Jira filter:
+
+```json
+{ "jira": { "jql": "project = STOR AND assignee = currentUser() AND resolution = Unresolved" } }
+```
+
+The tickets popup lists your tickets from `sheltie.json`'s tracker and from
+each repo's own one, and suggests that repo for the tickets its tracker lists.
+The repo's branches are matched to tickets, and its work moves tickets, with its
+own tracker. Repos with the same settings share one list. A repo's tracker that
+can't be reached leaves its tickets out instead of failing the list.
+
 For Jira Server/Data Center, set up jira-cli with
 `jira init --installation local --auth-type bearer` and a personal access
 token.

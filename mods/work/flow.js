@@ -35,7 +35,7 @@ import {
   removeWorktree,
 } from "./data.js";
 import { basename, inside, spaceFor, tool } from "./lib.js";
-import { tracker } from "./tracker.js";
+import { trackerOf } from "./tracker.js";
 
 const AGENT_STEPS = [
   "draft-pr",
@@ -172,7 +172,7 @@ async function tellAgent(w, id) {
     });
   else
     run("space.new", {
-      name: w.key ? tracker().labelOf(w.key) : basename(w.path),
+      name: w.key ? trackerOf(w.repo).labelOf(w.key) : basename(w.path),
       folder: w.path,
       argv: C.agent.argv,
       task: text,
@@ -203,7 +203,7 @@ export async function runStep(id, w, pr, others = []) {
       }
     }
     if (w.key) {
-      const moved = await tracker().move(w.key, "review");
+      const moved = await trackerOf(w.repo).move(w.key, "review");
       if (moved) notes.push(moved);
     }
     return notes.join(" · ");
@@ -227,10 +227,10 @@ export async function runStep(id, w, pr, others = []) {
       );
       if (open.length)
         notes.push(
-          `${tracker().labelOf(w.key)} left open: ${open.map((o) => basename(o.w.path)).join(", ")} still in progress`,
+          `${trackerOf(w.repo).labelOf(w.key)} left open: ${open.map((o) => basename(o.w.path)).join(", ")} still in progress`,
         );
       else {
-        const moved = await tracker().move(w.key, "done");
+        const moved = await trackerOf(w.repo).move(w.key, "done");
         if (moved) notes.push(moved);
       }
     }
