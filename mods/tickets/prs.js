@@ -36,10 +36,13 @@ const BY_BRANCH = `query($owner: String!, $name: String!, $branch: String!) {
 // (CI not started, or never will: GitHub runs no pull_request CI on a PR that
 // conflicts with its base). `mergeable`: "MERGEABLE" | "CONFLICTING" |
 // "UNKNOWN" (GitHub works it out lazily, so it's UNKNOWN for a little while
-// after a push or a change to the base). `unresolved`: the count of
-// unresolved review threads on an open PR, else null.
-/** @param {string} slug @param {string | number} ref @returns {Promise<import("./types.js").PR | null>} */
-export async function prDetails(slug, ref) {
+// after a push or a change to the base). `settled`: the last mergeable GitHub
+// had worked out, carried over from `previous` (this PR's last details) while
+// it's UNKNOWN, so a conflict is told once, not again after every push that
+// doesn't fix it. `unresolved`: the count of unresolved review threads on an
+// open PR, else null.
+/** @param {string} slug @param {string | number} ref @param {import("./types.js").PR | null} [previous] @returns {Promise<import("./types.js").PR | null>} */
+export async function prDetails(slug, ref, previous = null) {
   const [owner, name] = slug.split("/");
   const byNumber = /^\d+$/.test(String(ref));
   const r = await tool("gh", [
@@ -76,6 +79,9 @@ export async function prDetails(slug, ref) {
       : results.every((x) => OK.includes(x))
         ? "passed"
         : "pending";
+  const mergeable = MERGE_STATES.includes(pr.mergeable)
+    ? pr.mergeable
+    : "UNKNOWN";
   return {
     slug,
     number: pr.number,
@@ -90,7 +96,13 @@ export async function prDetails(slug, ref) {
     branch: pr.headRefName,
     head: pr.headRefOid,
     autoMerge: Boolean(pr.autoMergeRequest),
-    mergeable: MERGE_STATES.includes(pr.mergeable) ? pr.mergeable : "UNKNOWN",
+    mergeable,
+    settled:
+      mergeable === "UNKNOWN"
+        ? previous?.number === pr.number
+          ? (previous?.settled ?? null)
+          : null
+        : mergeable,
     unresolved:
       pr.state === "OPEN"
         ? (pr.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).length

@@ -52,6 +52,8 @@
  * @property {string} head
  * @property {boolean} autoMerge
  * @property {"MERGEABLE" | "CONFLICTING" | "UNKNOWN"} mergeable
+ * @property {"MERGEABLE" | "CONFLICTING" | null} settled the last mergeable
+ *   GitHub had worked out (carried over while it's UNKNOWN)
  * @property {number | null} unresolved unresolved review threads (open PRs)
  */
 
