@@ -1,5 +1,5 @@
-// The workflow's next steps, and Ready waiting for the agent with
-// workflow.readyWhen "agent".
+// The workflow's next steps (conflicts and PRs without checks too), the PR
+// label, and Ready waiting for the agent with workflow.readyWhen "agent".
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -7,9 +7,19 @@ import path from "node:path";
 import { afterEach, test } from "node:test";
 import { live } from "herdr";
 import { C, useConfig } from "../src/config.js";
+import { prLabel } from "../src/data.js";
 import { agentSaysDone, nextSteps, runStep } from "../src/flow.js";
 
-const draft = { state: "OPEN", draft: true, checks: "passed", unresolved: 0, review: "REVIEW_REQUIRED" };
+const draft = {
+  number: 7,
+  state: "OPEN",
+  draft: true,
+  checks: "passed",
+  mergeable: "MERGEABLE",
+  unresolved: 0,
+  review: "REVIEW_REQUIRED",
+};
+const approved = { ...draft, draft: false, review: "APPROVED" };
 const ids = (pr, opts) => nextSteps(pr, opts).map((s) => s.id);
 
 // A space at /w whose agent (Claude Code, reporting its status) is t7, with
@@ -42,7 +52,7 @@ test('readyWhen "agent": Ready only once the agent says the PR is done', () => {
   assert.deepEqual(ids({ ...draft, checks: "failed" }, { agentDone: true }), ["fix-ci"]);
   assert.deepEqual(ids({ ...draft, unresolved: 1 }, { agentDone: true }), ["address-comments"]);
   // Steps after Ready don't wait for it.
-  assert.deepEqual(ids({ ...draft, draft: false, review: "APPROVED" }), ["merge"]);
+  assert.deepEqual(ids(approved), ["merge"]);
 });
 
 test("agentSaysDone: the space's agent terminal has pr=ready", () => {
@@ -68,5 +78,67 @@ test("an agent step clears pr=ready before it's sent", async () => {
   assert.deepEqual(fs.readFileSync(log, "utf8").trim().split("\n"), [
     "label t7 pr=",
     "send t7 /fix-ci",
+  ]);
+});
+
+test("a conflicting PR: only Resolve conflicts, labelled conflicts (bad)", () => {
+  const conflicting = { ...draft, mergeable: "CONFLICTING", checks: null };
+  assert.deepEqual(ids(conflicting), ["resolve-conflicts"]);
+  assert.equal(nextSteps(conflicting)[0].label, "Resolve conflicts");
+  assert.equal(nextSteps(conflicting)[0].kind, "agent");
+  // Not Merge once approved, nor anything else it has to do first.
+  assert.deepEqual(ids({ ...approved, mergeable: "CONFLICTING" }), ["resolve-conflicts"]);
+  assert.deepEqual(
+    ids({ ...conflicting, checks: "failed", unresolved: 2 }),
+    ["resolve-conflicts"],
+  );
+  // Nor Ready when the agent says it's done.
+  useConfig({ workflow: { readyWhen: "agent" } });
+  assert.deepEqual(ids(conflicting, { agentDone: true }), ["resolve-conflicts"]);
+  // Its agent is busy: nothing.
+  assert.deepEqual(ids(conflicting, { working: true }), []);
+
+  assert.deepEqual(prLabel(conflicting), { text: "#7 draft conflicts", tone: "bad" });
+  assert.deepEqual(prLabel({ ...approved, mergeable: "CONFLICTING" }), {
+    text: "#7 approved ✓ conflicts",
+    tone: "bad",
+  });
+  // Merged or closed: no longer about conflicts.
+  assert.equal(prLabel({ ...conflicting, state: "MERGED" }).text, "#7 merged");
+});
+
+test("mergeable UNKNOWN: neither Ready nor Merge, nor Resolve conflicts", () => {
+  const unknown = { ...draft, mergeable: "UNKNOWN" };
+  assert.deepEqual(ids(unknown), []);
+  assert.deepEqual(ids({ ...approved, mergeable: "UNKNOWN" }), []);
+  assert.deepEqual(ids({ ...unknown, checks: "failed" }), ["fix-ci"]);
+  assert.deepEqual(prLabel(unknown), { text: "#7 draft ✓", tone: null });
+});
+
+test("an open PR with no checks is never offered Ready or Merge", () => {
+  assert.deepEqual(ids({ ...draft, checks: null }), []);
+  assert.deepEqual(ids({ ...approved, checks: null }), []);
+  assert.deepEqual(ids({ ...draft, checks: null, unresolved: 1 }), ["address-comments"]);
+  // Nor is it labelled good for being approved.
+  assert.deepEqual(prLabel({ ...approved, checks: null }), { text: "#7 approved", tone: null });
+  assert.deepEqual(prLabel(approved), { text: "#7 approved ✓", tone: "good" });
+  // With checks that passed, it's as before.
+  assert.deepEqual(ids(draft), ["ready"]);
+  assert.deepEqual(ids(approved), ["merge"]);
+  assert.deepEqual(ids({ ...approved, autoMerge: true }), []);
+});
+
+test("resolve-conflicts is an agent step, sent like the others", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "htf-flow-"));
+  const log = path.join(dir, "hc.log");
+  const hc = path.join(dir, "hc");
+  fs.writeFileSync(hc, `#!/bin/sh\necho "$*" >>'${log}'\n`, { mode: 0o755 });
+  useConfig({ programs: { ...C.programs, hc } });
+  agentAt({});
+  const note = await runStep("resolve-conflicts", { path: "/w", branch: "b", repo: {} }, draft);
+  assert.equal(note, "sent /resolve-conflicts");
+  assert.deepEqual(fs.readFileSync(log, "utf8").trim().split("\n"), [
+    "label t7 pr=",
+    "send t7 /resolve-conflicts",
   ]);
 });

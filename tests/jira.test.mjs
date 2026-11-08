@@ -130,3 +130,23 @@ test("ready, auto-merge on approval, finish refuses unpushed work", async () => 
   assert.match(await runStep("finish", w, pr), /worktree removed · WEB-103 → Resolved/);
   assert.ok(!fs.existsSync(wt));
 });
+
+test("a conflicting PR: mergeable CONFLICTING, no checks, no auto-merge", async () => {
+  const { nextSteps } = await import("../src/flow.js");
+  let pr = await D.prDetails("acme/docs", 56);
+  assert.equal(pr.mergeable, "MERGEABLE");
+  assert.equal(pr.checks, "passed");
+  demoCmd("conflict", "acme/docs#56");
+  pr = await D.prDetails("acme/docs", 56);
+  assert.equal(pr.mergeable, "CONFLICTING");
+  assert.equal(pr.checks, null, "GitHub runs no CI on it");
+  assert.deepEqual(D.prLabel(pr), { text: "#56 conflicts", tone: "bad" });
+  assert.deepEqual(nextSteps({ ...pr, unresolved: 0 }).map((s) => s.id), ["resolve-conflicts"]);
+  // Approved with auto-merge on: still doesn't merge.
+  const s = state();
+  Object.assign(s.prs.find((p) => p.repo === "acme/docs" && p.number === 56), {
+    review: "APPROVED", autoMerge: true, checks: "SUCCESS",
+  });
+  writeState(s);
+  assert.equal((await D.prDetails("acme/docs", 56)).state, "OPEN");
+});

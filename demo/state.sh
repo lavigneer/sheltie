@@ -2,7 +2,8 @@
 # Shared by the demo's fake jira, gh and agent (demo/bin) and herdr-demo: the
 # demo's "Jira/GitHub" live in $HERDR_DEMO/state.json (a copy of a data-*.json
 # fixture made by `herdr-demo`, then changed as you work). CI runs take
-# $DEMO_CI_SECONDS and pass unless `herdr-demo fail-ci` said otherwise; PRs
+# $DEMO_CI_SECONDS and pass unless `herdr-demo fail-ci` said otherwise (none
+# runs on a PR `herdr-demo conflict` made conflict with its base); PRs
 # with auto-merge on merge once approved and green; GitHub then deletes their
 # branch and closes the issues they close. Needs bash, jq and git.
 
@@ -52,6 +53,7 @@ state_tick() {
        then .checks = .checksResult else . end)
       | (if (.state // "OPEN") == "OPEN" and .autoMerge and (.draft | not)
             and .review == "APPROVED" and .checks == "SUCCESS"
+            and .mergeable != "CONFLICTING"
          then .state = "MERGED" | .justMerged = true else . end))'
   delete_merged_branches
 }

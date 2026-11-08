@@ -1,20 +1,23 @@
 // The ticket workflow after the worktree exists, for the Work sidebar:
 //
-//   no PR ─► draft (CI …/✗/✓, comments) ─► ready ─► approved ─► merged ─► finished
+//   no PR ─► draft (CI …/✗/✓, comments, conflicts) ─► ready ─► approved ─► merged ─► finished
 //
 // A worktree's stage is derived from its pull request every time (nothing is
 // stored), and each stage offers its next steps:
-//   Draft PR / Fix CI / Address comments   sent to the space's agent
-//                                          (C.agent.steps: /draft-pr, /fix-ci,
-//                                          /address-comments by default)
-//   Ready     once CI is green and nothing is unresolved; with
+//   Draft PR / Fix CI / Address comments / Resolve conflicts
+//             sent to the space's agent (C.agent.steps: /draft-pr, /fix-ci,
+//             /address-comments, /resolve-conflicts by default). A PR that
+//             conflicts with its base offers only Resolve conflicts: GitHub
+//             runs no CI on it, so nothing else can get it green.
+//   Ready     once CI has passed (a PR with no checks yet isn't green), it
+//             doesn't conflict and nothing is unresolved; with
 //             C.workflow.readyWhen "agent", also only once the agent has
 //             labelled its terminal pr=ready (`hc label "$HC_TERMINAL_ID"
 //             pr=ready`), a label cleared whenever an agent step is sent.
 //             gh pr ready; with C.workflow.autoMerge "when-reviews-required",
 //             auto-merge while reviews are still required, so it merges on
 //             approval and never at once; tracker step "review"
-//   Merge     when approved and green but auto-merge is off
+//   Merge     when approved, green and mergeable but auto-merge is off
 //   Finish    after the merge: close its space, remove the worktree and local
 //             branch (refused if anything isn't in the PR), tracker step "done"
 //             unless other work on the ticket is still open
@@ -31,7 +34,12 @@ import {
 import { basename, inside, spaceFor, tool } from "./lib.js";
 import { tracker } from "./tracker.js";
 
-const AGENT_STEPS = ["draft-pr", "fix-ci", "address-comments"];
+const AGENT_STEPS = [
+  "draft-pr",
+  "fix-ci",
+  "address-comments",
+  "resolve-conflicts",
+];
 
 // --- Stage ------------------------------------------------------------------
 
@@ -55,9 +63,17 @@ export function nextSteps(pr, { working = false, agentDone = false } = {}) {
     if (!working && C.agent.steps?.[id])
       steps.push({ id, label, kind: "agent" });
   };
-  const green = pr && pr.checks !== "failed" && pr.checks !== "pending";
+  // Green: CI ran and passed (no checks: not started yet, or it never will
+  // because the PR conflicts) on a PR GitHub says can merge (not "UNKNOWN":
+  // that's only until GitHub has worked it out, soon after a push).
+  const green = pr?.checks === "passed" && pr.mergeable === "MERGEABLE";
+  const open = ["draft", "in-review", "approved"].includes(stage);
   if (stage === "no-pr") agent("draft-pr", "Draft PR");
-  if (["draft", "in-review", "approved"].includes(stage)) {
+  if (open && pr.mergeable === "CONFLICTING") {
+    agent("resolve-conflicts", "Resolve conflicts");
+    return steps;
+  }
+  if (open) {
     if (pr.checks === "failed") agent("fix-ci", "Fix CI");
     if (pr.unresolved > 0)
       agent(
