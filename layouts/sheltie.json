@@ -1,4 +1,8 @@
 {
+  "cloned_from": {
+    "name": "main",
+    "version": "0.1.10"
+  },
   "id": "root",
   "type": "row",
   "titlebar": "none",
