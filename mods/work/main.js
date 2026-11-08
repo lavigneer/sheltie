@@ -31,8 +31,8 @@
 //
 // State:
 //   git refresh, details   each runs one at a time; a request during a run
-//                          queues one more (serial()), merging "force"
-//   tickets, prs           caches of { state: "found" | "none" | "failed",
+//                          queues one more (serial(), watch.js), merging "force"
+//   tickets, prs           caches (Cache, watch.js) of { state: "found" | "none" | "failed",
 //                          value, at }; "failed" (tracker/GitHub unreachable) is
 //                          retried after a minute and never shown as "none"
 //   steps                  per worktree: the last step run from here
@@ -72,6 +72,7 @@ import {
 import { agentIn, agentSaysDone, nextSteps, runStep } from "./flow.js";
 import { trackerOf } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
+import { Cache, serial } from "./watch.js";
 
 const GIT_MS = 30_000;
 const PR_MS = 120_000;
@@ -89,53 +90,6 @@ const WATCH_TRIES = 3;
 const RAIL = 160;
 const LINKS_W = 18; // a row's ↗ button
 
-// Runs `body(cx, force)` one at a time. Asked again while running, it runs once
-// more afterwards (forced if any of the requests was), rather than dropping it.
-function serial(body) {
-  let running = false;
-  let queued = null; // null | { force }
-  const start = (cx, force = false) => {
-    if (running) {
-      queued = { force: force || Boolean(queued?.force) };
-      return;
-    }
-    running = true;
-    cx.spawn(async (cx) => {
-      try {
-        await body(cx, force);
-      } finally {
-        running = false;
-        const next = queued;
-        queued = null;
-        if (next) start(cx, next.force);
-      }
-    });
-  };
-  return start;
-}
-
-// A cache entry is due when missing, forced, failed a while ago, or old.
-const due = (entry, force, maxAge, now) =>
-  !entry ||
-  force ||
-  now - entry.at > (entry.state === "failed" ? RETRY_MS : maxAge);
-
-// Looks something up into `cache[id]`: found / none (null) / failed. A failure
-// keeps the last good value so a blip doesn't blank the row.
-async function lookup(cache, id, f) {
-  try {
-    const value = await f();
-    cache.set(id, { state: value ? "found" : "none", value, at: Date.now() });
-  } catch {
-    const last = cache.get(id);
-    cache.set(id, {
-      state: "failed",
-      value: last?.value ?? null,
-      at: Date.now(),
-    });
-  }
-}
-
 // A row's space: a hub's leaves out its worktrees' folders (see spaceFor).
 const spaceOf = (w) => spaceFor(w.path, w.except);
 
@@ -151,8 +105,8 @@ export default class Work extends View {
     // [{ repo, hub: { path, branch, hub: true, except }, worktrees: [{ path, branch, key }] }]
     this.groups = null;
     this.mainCheckouts = new Set();
-    this.tickets = new Map(); // key -> entry (see lookup)
-    this.prs = new Map(); // worktree path -> entry
+    this.tickets = new Cache({ retryMs: RETRY_MS }); // by ticket key
+    this.prs = new Cache({ retryMs: RETRY_MS }); // by worktree path
     this.folded = new Set();
     this.watched = new Map(); // space folder -> tries
     this.steps = new Map(); // worktree path -> { phase, text }
@@ -387,14 +341,13 @@ export default class Work extends View {
 
   async lookups(cx, force) {
     if (!this.groups) return;
-    const now = Date.now();
     const all = this.groups.flatMap((g) =>
       g.worktrees.map((w) => ({ ...w, repo: g.repo })),
     );
     // Each key once, with the repo whose tracker it's from.
     const keys = [
       ...new Map(all.filter((w) => w.key).map((w) => [w.key, w.repo])),
-    ].filter(([k]) => due(this.tickets.get(k), force, TICKET_MS, now));
+    ].filter(([k]) => this.tickets.due(k, TICKET_MS, { force }));
     const prs = all.filter((w) => {
       const entry = this.prs.get(w.path);
       const pr = entry?.value;
@@ -406,20 +359,21 @@ export default class Work extends View {
           pr.review === "APPROVED" ||
           pr.mergeable !== "MERGEABLE");
       return (
-        w.repo.slug && due(entry, force, active ? ACTIVE_PR_MS : PR_MS, now)
+        w.repo.slug &&
+        this.prs.due(w.path, active ? ACTIVE_PR_MS : PR_MS, { force })
       );
     });
     await Promise.all([
       pool(
         keys.map(([key, repo]) => async () => {
-          await lookup(this.tickets, key, () => trackerOf(repo).view(key));
+          await this.tickets.refresh(key, () => trackerOf(repo).view(key));
           cx.notify();
         }),
       ),
       pool(
         prs.map((w) => async () => {
           const before = this.prs.get(w.path)?.value;
-          await lookup(this.prs, w.path, async () => {
+          const entry = await this.prs.refresh(w.path, async () => {
             const pr = await prDetails(w.repo.slug, w.branch);
             // The last mergeable GitHub had worked out (it's "UNKNOWN" for a
             // while after a push), so a conflict is told once, not again
@@ -436,7 +390,6 @@ export default class Work extends View {
               ).catch(() => before?.unresolved ?? null);
             return pr;
           });
-          const entry = this.prs.get(w.path);
           if (entry.state === "found" && before)
             this.tell(w, before, entry.value);
           cx.notify();
