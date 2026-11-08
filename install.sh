@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Installs sheltie into a Herdr app home. Safe to run again (to
-# update): it only replaces its own mods and the generated Work layout.
+# update): it only replaces its own mods and layout.
 #
 #   ./install.sh [--home DIR] [--claude-commands] [--force-commands]
 #
 #   --home DIR          the Herdr app home (default: $HERDR_APP_HOME, else
 #                       ~/.config/herdr-app). Start Herdr once first: this adds
-#                       to the keys.json and layouts it writes.
+#                       to the keys.json it writes.
 #   --claude-commands   also copy the Claude Code commands (/draft-pr,
 #                       /address-comments, /fix-ci, /resolve-conflicts) into
 #                       ~/.claude/commands,
@@ -17,8 +17,7 @@
 #   keys.json               ctrl-shift-j (tickets), ctrl-shift-f (projects) and
 #                           the Work sidebar's alt-shift keys added to
 #                           <home>/keys.json, unless you use those keys
-#   layouts/work.json       Herdr's main layout with the Work sidebar block under
-#                           Spaces, regenerated from <home>/layouts/main.json
+#   layouts/sheltie.json    copied to <home>/layouts/ (Herdr with the Work sidebar)
 #   sheltie.json        a starter settings file if there is none
 # Needs bash and jq.
 
@@ -37,7 +36,7 @@ while [ $# -gt 0 ]; do
   --claude-commands) claude=1 ;;
   --force-commands) claude=1 force_commands=1 ;;
   -h | --help)
-    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
   *)
@@ -52,8 +51,8 @@ command -v jq >/dev/null || {
   echo "install.sh: needs jq" >&2
   exit 1
 }
-if [ ! -f "$home/keys.json" ] || [ ! -f "$home/layouts/main.json" ]; then
-  echo "install.sh: $home has no keys.json or layouts/main.json yet: start Herdr once, then run this again." >&2
+if [ ! -f "$home/keys.json" ]; then
+  echo "install.sh: $home has no keys.json yet: start Herdr once, then run this again." >&2
   exit 1
 fi
 
@@ -80,23 +79,10 @@ jq --slurpfile ours "$here/keys.json" '
 mv "$tmp" "$home/keys.json"
 echo "keys: $(jq -r 'to_entries | map(.value | to_entries[] | "\(.key) → \(.value)") | join(", ")' "$here/keys.json")"
 
-# The Work layout: the main layout with the work block after "spaces".
-jq '
-  def addwork:
-    if (.id? == "sidebar-lists") then
-      .children |= [.[] | ., (if .id? == "spaces" then
-        {id: "work-outline", type: "block", content: {mod: "work"}, size: {weight: 1}, min: 90}
-        else empty end)]
-    elif (type == "object" and has("children")) then .children |= map(addwork)
-    else . end;
-  addwork' "$home/layouts/main.json" >"$home/layouts/work.json.tmp"
-if cmp -s "$home/layouts/main.json" "$home/layouts/work.json.tmp"; then
-  rm "$home/layouts/work.json.tmp"
-  echo "layout: Herdr's main layout has no sidebar Spaces list to add the Work block to; add {\"type\": \"block\", \"content\": {\"mod\": \"work\"}} to a layout yourself." >&2
-else
-  mv "$home/layouts/work.json.tmp" "$home/layouts/work.json"
-  echo "layout: work (switch with: herdr-app do layout.switch --name work)"
-fi
+# Layout.
+mkdir -p "$home/layouts"
+cp "$here/layouts/sheltie.json" "$home/layouts/sheltie.json"
+echo "layout: sheltie (switch with: herdr-app do layout.switch --name sheltie)"
 
 # Settings.
 if [ -f "$home/sheltie.json" ]; then

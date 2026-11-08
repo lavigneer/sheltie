@@ -152,7 +152,7 @@ export class Herdr {
     )
       .trim()
       .split("\n")[0];
-    await waitFor("the Work layout", async () => (await this.status()).layout === "work");
+    await waitFor("the sheltie layout", async () => (await this.status()).layout === "sheltie");
     // Keys only reach the window after a click (focusing it isn't enough
     // without a window manager). The middle of an empty window is safe.
     await this.sh("xdotool", ["windowfocus", "--sync", this.window]);
