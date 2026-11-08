@@ -155,9 +155,9 @@ export default class Work extends View {
     this.folded = new Set();
     this.watched = new Map(); // space folder -> tries
     this.steps = new Map(); // worktree path -> { phase, text }
-    this.confirming = null; // `${path}:${step id}`
-    this.confirmByKey = false; // the confirmation was asked for by a key
-    this.confirmAsked = 0; // counts confirmation requests, for their timers
+    // The step waiting for its second click: null | { id: `${path}:${step id}`,
+    // byKey: whether a key press asked for it }.
+    this.confirm = null;
     this.hovered = null; // the path of the row under the pointer
     this.linksOpen = null; // the path of the row whose ↗ menu is open
     this.picked = null; // { path, step, active }: see selection()
@@ -307,8 +307,8 @@ export default class Work extends View {
       rows: rows.map((r, i) => {
         const pr = this.prs.get(r.w.path)?.value ?? null;
         const last = this.steps.get(r.w.path) ?? null;
-        const confirming = this.confirming?.startsWith(`${r.w.path}:`)
-          ? this.confirming.slice(r.w.path.length + 1)
+        const confirming = this.confirm?.id.startsWith(`${r.w.path}:`)
+          ? this.confirm.id.slice(r.w.path.length + 1)
           : null;
         return {
           path: r.w.path,
@@ -541,20 +541,17 @@ export default class Work extends View {
     const path = w.path;
     if (this.steps.get(path)?.phase === "running") return;
     const id = `${path}:${step.id}`;
-    if (step.confirm && this.confirming !== id) {
-      this.confirming = id;
-      this.confirmByKey = byKey;
+    if (step.confirm && this.confirm?.id !== id) {
       // Only this request's timer ends it: an earlier one for the same step
       // (asked, run, then asked again) mustn't clear the new one.
-      const asked = ++this.confirmAsked;
+      const mine = (this.confirm = { id, byKey });
       cx.timer.after(CONFIRM_MS, (cx) => {
-        if (this.confirming === id && this.confirmAsked === asked)
-          this.confirming = null;
+        if (this.confirm === mine) this.confirm = null;
         cx.notify();
       });
       return cx.notify();
     }
-    this.confirming = null;
+    this.confirm = null;
     this.steps.set(path, { phase: "running", text: `${step.label}…` });
     cx.notify();
     const pr = this.prs.get(path)?.value ?? null;
@@ -715,9 +712,9 @@ export default class Work extends View {
     // A step button keeps its label's width while it fits, and on its own
     // line (the steps wrap) narrower than that shrinks to an ellipsis.
     const button = (w, s, chosen) => {
-      const confirming = this.confirming === `${w.path}:${s.id}`;
+      const confirming = this.confirm?.id === `${w.path}:${s.id}`;
       const label = confirming
-        ? `${s.label}? ${this.confirmByKey ? "Press" : "Click"} again`
+        ? `${s.label}? ${this.confirm.byKey ? "Press" : "Click"} again`
         : s.label;
       return div()
         .id(`work-step-${w.path}-${s.id}`)
