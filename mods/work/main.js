@@ -16,6 +16,8 @@
 // through the shown rows, work.step-next / work.step-prev pick one of its
 // next steps (the first by default), work.step runs that step (Finish and
 // Clean up: press twice) and work.open opens the row's space, like a click.
+// work.refresh refreshes everything now, like ↻. work.report writes what the
+// sidebar shows to <app home>/work-report.json, for scripts and tests.
 //
 // State:
 //   git refresh, details   each runs one at a time; a request during a run
@@ -36,7 +38,16 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { nextCommand, notify, run, spaces, theme } from "herdr";
+import {
+  appHome,
+  nextCommand,
+  notify,
+  readTextFile,
+  run,
+  spaces,
+  theme,
+  writeTextFile,
+} from "herdr";
 import { C, configReady } from "./config.js";
 import { basename, cycle, pool, spaceFor } from "./lib.js";
 import {
@@ -195,7 +206,58 @@ export default class Work extends View {
       if (row?.steps[step]) this.step(cx, row.w, row.steps[step], true);
     } else if (c === "open") {
       if (row) this.open(row.w);
-    } else console.error(`work: unknown command ${c}`);
+    } else if (c === "refresh") this.refresh(cx, true);
+    else if (c === "report") this.report(rows, at, step);
+    else console.error(`work: unknown command ${c}`);
+  }
+
+  // What the sidebar shows, as JSON in <app home>/work-report.json: the shown
+  // rows with their PR, next steps and last step, and which row and step the
+  // keys would act on.
+  report(rows, at, step) {
+    const out = {
+      at: Date.now(),
+      loaded: this.groups !== null,
+      rows: rows.map((r, i) => {
+        const pr = this.prs.get(r.w.path)?.value ?? null;
+        const last = this.steps.get(r.w.path) ?? null;
+        const confirming = this.confirming?.startsWith(`${r.w.path}:`)
+          ? this.confirming.slice(r.w.path.length + 1)
+          : null;
+        return {
+          path: r.w.path,
+          branch: r.w.branch,
+          key: r.w.key ?? null,
+          repo: r.w.repo.slug ?? r.w.repo.name,
+          space: r.space?.id ?? null,
+          selected: i === at,
+          step: i === at ? step : null,
+          steps: r.steps.map((s) => ({ id: s.id, label: s.label })),
+          confirming,
+          ticket: (r.w.key && this.tickets.get(r.w.key)?.value) || null,
+          pr: pr && {
+            number: pr.number,
+            state: pr.state,
+            draft: pr.draft,
+            review: pr.review,
+            checks: pr.checks,
+            autoMerge: pr.autoMerge,
+            unresolved: pr.unresolved ?? null,
+          },
+          last: last && {
+            phase: last.phase,
+            text: last.text,
+            at: last.at ?? null,
+          },
+        };
+      }),
+    };
+    const file = `${appHome()}/work-report.json`;
+    readTextFile(file)
+      .then((old) =>
+        writeTextFile(file, `${JSON.stringify(out, null, 2)}\n`, old),
+      )
+      .catch((e) => console.error(`work.report: ${e?.message ?? e}`));
   }
 
   // Git only: worktrees and branches. Ticket and PR details follow separately,
@@ -388,7 +450,7 @@ export default class Work extends View {
           });
       } catch (e) {
         const text = `${e?.message ?? e}`.split("\n")[0];
-        this.steps.set(path, { phase: "failed", text });
+        this.steps.set(path, { phase: "failed", text, at: Date.now() });
         notify({
           title: `${who}: ${step.label} failed`,
           body: text,

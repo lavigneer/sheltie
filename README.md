@@ -84,6 +84,11 @@ goes back to following when you focus another space. The commands also work
 from the command line, e.g. `herdr-app do work.step`. Rebind them in
 `<Herdr app home>/keys.json`.
 
+Two more, for scripts (no key): `herdr-app do work.refresh` refreshes the
+sidebar now, like its ↻, and `herdr-app do work.report` writes what it shows
+(rows, their PRs and next steps, the selected row and step) to
+`<Herdr app home>/work-report.json`.
+
 ## Settings
 
 `<Herdr app home>/ticket-flow.json`, merged over the defaults: set only what
@@ -138,7 +143,19 @@ demo/herdr-demo --stop             # --reset to start over
 ```sh
 npm run build   # src/ -> mods/ (commit the result)
 npm test        # node --test against throwaway demos
+npm run e2e     # the real Herdr with the mods, on throwaway demos
 ```
+
+`npm run e2e` launches Herdr on the demo, once per tracker, on its own Xvfb
+display (with its own app home and herdr-core session, so your Herdr is
+untouched), and drives it with the keyboard: the mods load without errors, a
+fresh ticket starts from the tickets popup, and its whole flow runs from the
+Work sidebar's keys through to Finish (with CI failing once and Finish
+refusing uncommitted changes, on Jira). It checks outcomes, not pixels:
+`herdr-app status`, `work.report`, git, `hc read` and the demo's state. It
+needs herdr-app, hc, Xvfb, xdotool, jq and git (Linux), takes under a minute,
+and cleans up after itself; a failed step leaves a screenshot, the app log and
+the state in `e2e-results/`. CI doesn't run it (no Herdr there).
 
 `src/` holds the shared modules (`config.js`, `lib.js`, `data.js`, `flow.js`,
 `tracker*.js`) and each mod's own `main.js` and `mod.json`. Herdr only resolves

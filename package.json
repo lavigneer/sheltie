@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --import ./tests/register.mjs --test 'tests/*.test.mjs'",
-    "check-built": "node scripts/build.mjs && git diff --exit-code -- mods"
+    "check-built": "node scripts/build.mjs && git diff --exit-code -- mods",
+    "e2e": "node --test --test-concurrency=1 'tests/e2e/*.test.mjs'"
   },
   "engines": {
     "node": ">=22"
