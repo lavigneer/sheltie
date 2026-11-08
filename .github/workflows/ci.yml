@@ -9,6 +9,12 @@ on:
     - cron: "17 6 * * 1"
   workflow_dispatch:
 
+# A new push to a PR cancels that PR's runs still going; runs on main and the
+# scheduled run are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     if: github.event_name != 'schedule'
@@ -55,11 +61,12 @@ jobs:
           git config --global init.defaultBranch main
           nix develop .#e2e -c npm run e2e
       # The mods at a few window sizes, sidebar widths, zooms, light and dark,
-      # to look at (the weekly run: with the newest Herdr).
+      # to look at (the weekly run: with the newest Herdr). Not on PRs.
       - name: Screenshots at a few sizes
+        if: github.event_name != 'pull_request'
         run: nix develop .#e2e -c npm run e2e:shots
       - name: Keep the screenshots
-        if: success() || failure()
+        if: github.event_name != 'pull_request' && (success() || failure())
         uses: actions/upload-artifact@v4
         with:
           name: e2e-shots
