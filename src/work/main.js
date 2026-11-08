@@ -46,8 +46,8 @@
 // Git refreshes every 30 s and at once for a new space; PRs every 2 min (20 s
 // while CI runs or a merge is pending), tickets every 10 min.
 
-import { View, div, svg } from "gpui-kit";
-import { Popover, v_flex, h_flex } from "gpui-base";
+import { h_flex, Popover, v_flex } from "gpui-base";
+import { div, svg, View } from "gpui-kit";
 import {
   appHome,
   nextCommand,
@@ -59,10 +59,10 @@ import {
   writeTextFile,
 } from "herdr";
 import { C, configReady } from "./config.js";
-import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
-import { hubExcept, keyOfBranch, localRepos, repoState } from "./git.js";
-import { prDetails, unresolvedThreads } from "./prs.js";
 import { agentIn, agentSaysDone, nextSteps, prLabel, runStep } from "./flow.js";
+import { hubExcept, keyOfBranch, localRepos, repoState } from "./git.js";
+import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
+import { prDetails, unresolvedThreads } from "./prs.js";
 import { trackerOf } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
 import { Cache, serial } from "./watch.js";
@@ -237,7 +237,7 @@ export default class Work extends View {
       const urls = await Promise.all(
         rows.map((r) => this.ticketUrl(r.w).catch(() => null)),
       );
-      out.rows.forEach((row, i) => (row.ticketUrl = urls[i]));
+      for (const [i, row] of out.rows.entries()) row.ticketUrl = urls[i];
       const file = `${appHome()}/work-report.json`;
       await readTextFile(file)
         .then((old) =>
@@ -495,7 +495,8 @@ export default class Work extends View {
     if (step.confirm && this.confirm?.id !== id) {
       // Only this request's timer ends it: an earlier one for the same step
       // (asked, run, then asked again) mustn't clear the new one.
-      const mine = (this.confirm = { id, byKey });
+      const mine = { id, byKey };
+      this.confirm = mine;
       cx.timer.after(CONFIRM_MS, (cx) => {
         if (this.confirm === mine) this.confirm = null;
         cx.notify();

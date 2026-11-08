@@ -1,7 +1,7 @@
 // Pull requests on GitHub (gh): their state, review threads, marking ready and
 // merging.
 
-import { NOT_FOUND, firstLine, must, tool } from "./lib.js";
+import { firstLine, must, NOT_FOUND, tool } from "./lib.js";
 
 const OK = ["SUCCESS", "NEUTRAL", "SKIPPED", "COMPLETED"];
 const BAD = [

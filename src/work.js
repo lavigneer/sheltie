@@ -3,10 +3,10 @@
 // use (tracker.js).
 
 import { C, REPO_FILE } from "./config.js";
+import { repoState, sameSlug } from "./git.js";
 import { basename, pool } from "./lib.js";
-import { tracker, trackerOf } from "./tracker.js";
-import { localRepos, repoState, sameSlug } from "./git.js";
 import { prDetails } from "./prs.js";
+import { tracker, trackerOf } from "./tracker.js";
 
 /** @typedef {import("./types.js").Ticket} Ticket */
 /** @typedef {import("./types.js").Repo} Repo */
@@ -38,7 +38,7 @@ export async function listTickets(repos) {
   const out = new Map();
   /** @type {[import("./types.js").Tracker, Repo[], Ticket[]][]} */
   const lists = [[global, [], first]];
-  own.forEach(([t, homes], i) => lists.push([t, homes, rest[i]]));
+  for (const [i, [t, homes]] of own.entries()) lists.push([t, homes, rest[i]]);
   for (const [t, homes, tickets] of lists)
     for (const ticket of tickets) {
       const seen = out.get(ticket.key);
@@ -199,7 +199,8 @@ export async function workFor(tickets, repos, { prs = true } = {}) {
     ),
   );
   const details = new Map();
-  [...lookups.keys()].forEach((k, i) => found[i] && details.set(k, found[i]));
+  for (const [i, k] of [...lookups.keys()].entries())
+    if (found[i]) details.set(k, found[i]);
   return joinWork(keys, states, linked, details, repos);
 }
 

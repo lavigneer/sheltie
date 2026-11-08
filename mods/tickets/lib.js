@@ -105,7 +105,7 @@ export async function openUrl(url) {
 }
 
 export const basename = (p) => p.replace(/\/+$/, "").split("/").pop();
-export const inside = (dir, root) => dir === root || dir.startsWith(root + "/");
+export const inside = (dir, root) => dir === root || dir.startsWith(`${root}/`);
 
 // Subsequence match ("dtf" matches "dotfiles"); a lower score is a better match,
 // null is no match.

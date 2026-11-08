@@ -242,6 +242,7 @@ async function resolvePrograms(programs) {
     'for p in "$@"; do printf "%s=%s\\n" "$p" "$(command -v "$p")"; done';
   const r = await exec("/bin/sh", [
     "-c",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion, not a template.
     '"${SHELL:-/bin/sh}" -lc "$0" sh "$@"',
     script,
     ...names,

@@ -32,28 +32,20 @@
 // A ticket's own screens wait for `ready`: until then its existing work is
 // unknown, and starting could clash with a worktree that's already there.
 
-import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input } from "gpui-base";
+import { h_flex, Input, InputState, v_flex } from "gpui-base";
+import { div, svg, View } from "gpui-kit";
 import {
-  focused,
-  run,
-  theme,
-  props,
   closeOverlay,
+  focused,
   notify,
-  shared,
+  props,
+  run,
   setShared,
+  shared,
+  theme,
 } from "herdr";
 import { C, configReady } from "./config.js";
-import {
-  basename,
-  fill,
-  firstLine,
-  moveKey,
-  openUrl,
-  score,
-  spaceFor,
-} from "./lib.js";
+import { prLabel } from "./flow.js";
 import {
   addWorktree,
   adhocBranch,
@@ -64,7 +56,15 @@ import {
   repoRoot,
   worktreePath,
 } from "./git.js";
-import { prLabel } from "./flow.js";
+import {
+  basename,
+  fill,
+  firstLine,
+  moveKey,
+  openUrl,
+  score,
+  spaceFor,
+} from "./lib.js";
 import { listTickets, suggestRepos, workFor } from "./work.js";
 
 const REMEMBER = "tickets.repo"; // shared: ticket key -> repo slug or path
@@ -290,7 +290,7 @@ export default class Tickets extends View {
       ticket,
       this.data.repos,
       this.data.here,
-      (shared(REMEMBER) ?? {})[ticket.key],
+      shared(REMEMBER)?.[ticket.key],
     );
   }
 

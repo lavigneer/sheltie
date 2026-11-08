@@ -2,7 +2,7 @@
 // its branch part comes from C.github.ref ("issue-{number}" by default) and
 // new work goes to the issue's own repo unless repoRules say otherwise.
 
-import { NOT_FOUND, fill, firstLine, must, pool, tool } from "./lib.js";
+import { fill, firstLine, must, NOT_FOUND, pool, tool } from "./lib.js";
 
 // A tracker using settings `s` (the global ones, or a repo's: config.js).
 /** @param {import("./config.js").Settings} s @returns {import("./types.js").Tracker} */
@@ -113,14 +113,14 @@ export function create(s) {
     return k ? `gh issue view ${k.number} --repo ${k.slug} --comments` : key;
   };
 
-  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
   // Issues a branch name or PR text in repo `slug` mentions: the branch part
   // (s.github.ref), "#12" and "owner/repo#12".
   function keysIn(text, slug = null) {
     const t = text || "";
     const out = new Set();
-    const [before, after] = s.github.ref.split("{number}").map(escape);
+    const [before, after] = s.github.ref.split("{number}").map(escapeRe);
     const ref = new RegExp(
       `(?:^|[^A-Za-z0-9])${before}(\\d+)${after ?? ""}(?![0-9])`,
       "gi",

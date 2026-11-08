@@ -1,7 +1,7 @@
 // Jira (Cloud or Server/Data Center) through jira-cli. Keys look like WEB-142
 // and are their own branch part. Settings: C.jira.
 
-import { NOT_FOUND, firstLine, must, pool, tool } from "./lib.js";
+import { firstLine, must, NOT_FOUND, pool, tool } from "./lib.js";
 
 // A tracker using settings `s` (the global ones, or a repo's: config.js).
 /** @param {import("./config.js").Settings} s @returns {import("./types.js").Tracker} */

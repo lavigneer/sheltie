@@ -252,6 +252,7 @@ export class Herdr {
     const log = fs.readFileSync(path.join(this.demo, "app.log"), "utf8");
     const fresh = log.slice(this.logOffset);
     this.logOffset = log.length;
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: strips ANSI colour codes.
     for (const line of fresh.replace(/\x1b\[[0-9;]*m/g, "").split("\n"))
       if (/ERROR gpui_shell::script/.test(line)) problems.push(line);
     if (problems.length)

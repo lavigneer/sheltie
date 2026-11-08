@@ -4,11 +4,9 @@
     "includes": ["src/**", "scripts/**", "tests/**"]
   },
   "formatter": {
-    "indentStyle": "space",
-    "indentWidth": 2,
-    "lineWidth": 80
+    "indentStyle": "space"
   },
   "linter": {
-    "rules": { "recommended": true }
+    "rules": { "preset": "recommended" }
   }
 }

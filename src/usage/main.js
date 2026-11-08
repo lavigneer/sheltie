@@ -4,13 +4,13 @@
 // refreshes every 2 minutes. Narrower than RAIL, it shows today's cost only.
 // The Work sidebar shows each row's cost from the same data.
 
-import { View, div } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { h_flex, v_flex } from "gpui-base";
+import { div, View } from "gpui-kit";
 import { theme } from "herdr";
 import { C, configReady } from "./config.js";
 import {
-  LOADING,
   dollars,
+  LOADING,
   settled,
   tokenCount,
   total,
@@ -63,7 +63,7 @@ export default class Usage extends View {
     });
   }
 
-  render(cx) {
+  render(_cx) {
     const t = theme();
     const rail = this.width !== null && this.width < RAIL;
     const { phase, error } = this.state;
