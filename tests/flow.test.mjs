@@ -49,6 +49,10 @@ test('readyWhen "green" (the default): Ready once green, whatever the agent says
   assert.deepEqual(ids({ ...draft, unresolved: 2 }), ["address-comments"]);
 });
 
+test("no Ready while the agent is working: it may still be iterating", () => {
+  assert.deepEqual(ids(draft, { working: true }), []);
+});
+
 test('readyWhen "agent": Ready only once the agent says the PR is done', () => {
   useConfig({ workflow: { readyWhen: "agent" } });
   assert.deepEqual(ids(draft), []);

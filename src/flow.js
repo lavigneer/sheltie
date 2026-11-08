@@ -139,7 +139,8 @@ export function prEvents(was, pr) {
 }
 
 // The next steps for a worktree: [{ id, label, kind: "agent" | "direct", confirm }].
-// `working`: its agent is busy, so nothing is sent to it. `agentDone`: its
+// `working`: its agent is busy, so nothing is sent to it and the PR isn't
+// marked Ready while the agent may still be iterating on it. `agentDone`: its
 // agent says the PR is done (see agentSaysDone), which Ready waits for with
 // readyWhen "agent". `repo`: whose workflow settings apply (settingsOf).
 export function nextSteps(
@@ -174,7 +175,7 @@ export function nextSteps(
       agent("address-comments", "Address review");
   }
   const vouched = workflow.readyWhen !== "agent" || agentDone;
-  if (stage === "draft" && green && !pr.unresolved && vouched)
+  if (stage === "draft" && green && !pr.unresolved && vouched && !working)
     steps.push({ id: "ready", label: "Ready", kind: "direct" });
   if (canMerge(pr, workflow))
     steps.push({
