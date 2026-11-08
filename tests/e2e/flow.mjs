@@ -11,7 +11,7 @@ import { Herdr, missingTools, waitFor } from "./herdr.mjs";
 
 // t: { tracker, filter (typed in the popup), ref (for herdr-demo), repo,
 //      worktree (relative to ws/), branch, task (RegExp the agent's screen
-//      shows), ticketDone(state) }
+//      shows), ticketUrl (where its ticket opens), ticketDone(state) }
 export function flow(t, { failures = false } = {}) {
   const missing = missingTools();
   if (missing.length) {
@@ -83,6 +83,17 @@ export function flow(t, { failures = false } = {}) {
     await h.assertNoErrors("after starting the ticket");
   });
 
+  scenario("open the row's ticket, and no PR yet, by keyboard", async () => {
+    const r = await h.waitRow("its ticket's URL", worktree(), (r) => r.selected && r.ticketUrl);
+    assert.equal(r.ticketUrl, t.ticketUrl);
+    assert.equal(r.pr, null, "no PR yet");
+    await h.key("alt+shift+p"); // no PR: nothing opens, nothing errors
+    await h.key("alt+shift+t");
+    await waitFor("the ticket to open", () => h.opened().includes(t.ticketUrl));
+    assert.deepEqual(h.opened(), [t.ticketUrl], "only the ticket opened");
+    await h.assertNoErrors("after opening the ticket");
+  });
+
   scenario("the whole flow, from the sidebar's keys", async () => {
     const space = await h.spaceAt(worktree());
     const terminal = space.tabs[0].terminals[0].terminal;
@@ -113,6 +124,14 @@ export function flow(t, { failures = false } = {}) {
         r.steps.some((s) => s.id === "ready"),
     );
     await h.assertNoErrors("after Draft PR");
+
+    // Its PR, in the browser.
+    const prUrl = `https://github.com/${h.pr(t.branch).repo}/pull/${h.pr(t.branch).number}`;
+    const withPr = await h.waitRow("the PR's URL", worktree(), (r) => r.selected && r.prUrl);
+    assert.equal(withPr.prUrl, prUrl);
+    await h.key("alt+shift+p");
+    await waitFor("the PR to open", () => h.opened().at(-1) === prUrl);
+    await h.assertNoErrors("after opening the PR");
 
     // Review comments -> Address comments.
     await h.demoCmd("comment", t.ref);

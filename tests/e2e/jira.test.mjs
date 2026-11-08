@@ -13,6 +13,7 @@ flow(
     repo: "storage",
     worktree: "storage/.claude/worktrees/WEB-105",
     branch: "me/WEB-105",
+    ticketUrl: "https://jira.example.invalid/browse/WEB-105",
     task: /Task: Work on WEB-105: Storage: stream large files/,
     started: (s) => assert.equal(ticket(s).status, "In Progress"),
     inReview: (s) => assert.equal(ticket(s).status, "In Review"),

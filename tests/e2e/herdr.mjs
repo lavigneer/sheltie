@@ -98,6 +98,16 @@ export class Herdr {
     this.demo = path.join(this.tmp, this.session);
     this.home = path.join(this.demo, "app");
     this.logOffset = 0;
+    // A stub xdg-open first on the app's PATH: it records the URLs the mods
+    // open (see opened()) instead of opening a browser.
+    this.bin = path.join(this.tmp, "bin");
+    this.openedLog = path.join(this.tmp, "opened.log");
+    fs.mkdirSync(this.bin);
+    fs.writeFileSync(
+      path.join(this.bin, "xdg-open"),
+      `#!/bin/sh\nprintf '%s\\n' "$1" >>'${this.openedLog}'\n`,
+      { mode: 0o755 },
+    );
   }
 
   // The environment every command gets: this demo's display, app home and
@@ -110,6 +120,7 @@ export class Herdr {
     );
     return {
       ...env,
+      PATH: `${this.bin}${path.delimiter}${env.PATH ?? ""}`,
       DISPLAY: this.display,
       HERDR_DEMO: this.demo,
       HERDR_APP_HOME: this.home,
@@ -260,6 +271,13 @@ export class Herdr {
   // The demo's open or merged PR for a branch.
   pr(branch) {
     return this.state().prs.findLast((p) => p.branch === branch) ?? null;
+  }
+
+  // The URLs opened in the "browser" so far (by the stub xdg-open), oldest first.
+  opened() {
+    return fs.existsSync(this.openedLog)
+      ? fs.readFileSync(this.openedLog, "utf8").split("\n").filter(Boolean)
+      : [];
   }
 
   async screen(terminal) {

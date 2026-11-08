@@ -3,8 +3,9 @@
 // Every worktree of your local repos (open in a space or not), grouped by repo.
 // A row shows the ticket its branch names (key, summary, status), its pull
 // request (review and checks) and the agent status of its space. Click a row to
-// go to its space, or to open one there with the agent. "+" opens the tickets
-// popup to start new work; ↻ refreshes everything now.
+// go to its space, or to open one there with the agent; click its PR label to
+// open the PR in the browser, its ticket key or status to open the ticket.
+// "+" opens the tickets popup to start new work; ↻ refreshes everything now.
 //
 // Under each row, buttons for its next step in the ticket workflow (Draft PR,
 // Fix CI, Address comments, Ready, Merge, Finish; see flow.js). Finish and
@@ -16,6 +17,8 @@
 // through the shown rows, work.step-next / work.step-prev pick one of its
 // next steps (the first by default), work.step runs that step (Finish and
 // Clean up: press twice) and work.open opens the row's space, like a click.
+// work.open-pr / work.open-ticket open the row's PR / ticket in the browser,
+// like clicking its PR label / its ticket key or status.
 // work.refresh refreshes everything now, like ↻. work.report writes what the
 // sidebar shows to <app home>/work-report.json, for scripts and tests.
 //
@@ -49,7 +52,7 @@ import {
   writeTextFile,
 } from "herdr";
 import { C, configReady } from "./config.js";
-import { basename, cycle, pool, spaceFor } from "./lib.js";
+import { basename, cycle, openUrl, pool, spaceFor } from "./lib.js";
 import {
   keyOfBranch,
   localRepos,
@@ -206,15 +209,29 @@ export default class Work extends View {
       if (row?.steps[step]) this.step(cx, row.w, row.steps[step], true);
     } else if (c === "open") {
       if (row) this.open(row.w);
+    } else if (c === "open-pr") {
+      if (row) this.openPR(row.w);
+    } else if (c === "open-ticket") {
+      if (row) this.openTicket(cx, row.w);
     } else if (c === "refresh") this.refresh(cx, true);
-    else if (c === "report") this.report(rows, at, step);
+    else if (c === "report") this.report(cx, rows, at, step);
     else console.error(`work: unknown command ${c}`);
   }
 
   // What the sidebar shows, as JSON in <app home>/work-report.json: the shown
   // rows with their space's agent (where agent steps go), PR, next steps and
-  // last step, and which row and step the keys would act on.
-  report(rows, at, step) {
+  // last step, and which row and step the keys would act on, and what
+  // work.open-pr / work.open-ticket would open (prUrl / ticketUrl).
+  report(cx, rows, at, step) {
+    cx.spawn(async () => {
+      const urls = await Promise.all(
+        rows.map((r) => this.ticketUrl(r.w).catch(() => null)),
+      );
+      this.writeReport(rows, at, step, urls);
+    });
+  }
+
+  writeReport(rows, at, step, ticketUrls) {
     const out = {
       at: Date.now(),
       loaded: this.groups !== null,
@@ -236,6 +253,8 @@ export default class Work extends View {
           steps: r.steps.map((s) => ({ id: s.id, label: s.label })),
           confirming,
           ticket: (r.w.key && this.tickets.get(r.w.key)?.value) || null,
+          ticketUrl: ticketUrls[i],
+          prUrl: pr?.url ?? null,
           pr: pr && {
             number: pr.number,
             state: pr.state,
@@ -379,7 +398,7 @@ export default class Work extends View {
 
   // A notification when something you'd wait for changes on a PR.
   tell(w, was, pr) {
-    const who = w.key ? tracker().labelOf(w.key) : basename(w.path);
+    const who = this.who(w);
     const space = spaceFor(w.path);
     const action = space
       ? { name: "space.select", args: { id: space.id } }
@@ -439,7 +458,7 @@ export default class Work extends View {
       .filter((o) => o.path !== path)
       .map((o) => ({ w: o, pr: this.prs.get(o.path)?.value ?? null }));
     cx.spawn(async (cx) => {
-      const who = w.key ? tracker().labelOf(w.key) : basename(path);
+      const who = this.who(w);
       try {
         const note = await runStep(step.id, w, pr, others);
         this.steps.set(path, { phase: "done", text: note, at: Date.now() });
@@ -472,6 +491,41 @@ export default class Work extends View {
         folder: w.path,
         argv: C.agent.argv,
       });
+  }
+
+  // Whether `w`'s branch names a ticket: only one the tracker says it doesn't
+  // know (e.g. "UTF-8" in "fix-utf-8") isn't. Not looked up yet, or
+  // unreachable: still a ticket.
+  isTicket(w) {
+    return Boolean(w.key) && this.tickets.get(w.key)?.state !== "none";
+  }
+
+  // Where `w`'s ticket is in the browser; null when its branch isn't a ticket.
+  async ticketUrl(w) {
+    return this.isTicket(w) ? await tracker().url(w.key) : null;
+  }
+
+  // Opens `w`'s PR in the browser; without one, says so.
+  openPR(w) {
+    const url = this.prs.get(w.path)?.value?.url;
+    if (url) return openUrl(url);
+    notify({ title: `${this.who(w)}: no pull request`, level: "info" });
+  }
+
+  // Opens `w`'s ticket in the browser; for a branch that isn't one, says so.
+  openTicket(cx, w) {
+    cx.spawn(async () => {
+      const url = await this.ticketUrl(w).catch(() => null);
+      if (url) return openUrl(url);
+      notify({
+        title: `${this.who(w)}: ${this.isTicket(w) ? `no link for ${tracker().labelOf(w.key)}` : "not a ticket"}`,
+        level: "info",
+      });
+    });
+  }
+
+  who(w) {
+    return w.key ? tracker().labelOf(w.key) : basename(w.path);
   }
 
   render(cx) {
@@ -587,10 +641,17 @@ export default class Work extends View {
           : null;
       const prColor =
         pr?.tone === "bad" ? t.blocked : pr?.tone === "good" ? t.done : t.muted;
-      // Only a key the tracker says it doesn't know (e.g. "UTF-8" in "fix-utf-8")
-      // isn't a ticket: then show the branch. Not looked up yet, or unreachable:
-      // still the key.
-      const isTicket = Boolean(w.key) && entry?.state !== "none";
+      // A branch that isn't a ticket (see isTicket) shows the branch.
+      const isTicket = this.isTicket(w);
+      // A label that opens something in the browser instead of the space.
+      const link = (el, id, open) =>
+        el
+          .id(`work-${id}-${w.path}`)
+          .hover((s) => s.text_color(t.foreground))
+          .on_click((_e, cx) => {
+            cx.stop_propagation();
+            open(cx);
+          });
       const title = isTicket ? tracker().labelOf(w.key) : w.branch;
       const sub = ticket
         ? ticket.summary
@@ -621,21 +682,33 @@ export default class Work extends View {
               div()
                 .flex_1()
                 .min_w(64)
-                .truncate()
-                .text_size(12.5)
-                .text_color(t.foreground)
-                .when(Boolean(space?.active), (d) => d.font_semibold())
-                .child(title),
+                .flex()
+                .child(
+                  div()
+                    .flex_shrink(1)
+                    .min_w(0)
+                    .truncate()
+                    .text_size(12.5)
+                    .text_color(t.foreground)
+                    .when(Boolean(space?.active), (d) => d.font_semibold())
+                    .when(isTicket, (d) =>
+                      link(d, "ticket", (cx) => this.openTicket(cx, w)),
+                    )
+                    .child(title),
+                ),
             )
             .when(Boolean(pr), (el) =>
               el.child(
-                div()
-                  .flex_shrink(1)
-                  .min_w(0)
-                  .truncate()
-                  .text_size(10.5)
-                  .text_color(prColor)
-                  .child(pr.text),
+                link(
+                  div()
+                    .flex_shrink(1)
+                    .min_w(0)
+                    .truncate()
+                    .text_size(10.5)
+                    .text_color(prColor),
+                  "pr",
+                  () => this.openPR(w),
+                ).child(pr.text),
               ),
             ),
         )
@@ -654,11 +727,11 @@ export default class Work extends View {
               )
               .when(Boolean(ticket?.status), (e) =>
                 e.child(
-                  div()
-                    .flex_none()
-                    .text_size(10.5)
-                    .text_color(t.dim)
-                    .child(ticket.status),
+                  link(
+                    div().flex_none().text_size(10.5).text_color(t.dim),
+                    "status",
+                    (cx) => this.openTicket(cx, w),
+                  ).child(ticket.status),
                 ),
               ),
           ),
