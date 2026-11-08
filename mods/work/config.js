@@ -84,7 +84,7 @@ export const SETTINGS_FILE = "ticket-flow.json";
 
 // The settings in use. Filled in by configReady(); tests may set them with
 // useConfig().
-export const C = JSON.parse(JSON.stringify(DEFAULTS));
+export const C = structuredClone(DEFAULTS);
 
 const isObject = (v) => v && typeof v === "object" && !Array.isArray(v);
 
