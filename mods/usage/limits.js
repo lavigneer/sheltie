@@ -4,7 +4,8 @@
 //
 // Read from Claude Code itself: `claude -p /usage` (run with CLAUDE_CONFIG_DIR
 // set to the agent's home) prints what its /usage shows, without calling a
-// model. Its lines "<label>: <n>% used · resets <when>" are the windows; an
+// model. Without claude installed, or with no claude-code agent in
+// usage.agents, nothing is run or shown. Its lines "<label>: <n>% used · resets <when>" are the windows; an
 // account billed per token (API key) prints none, and shows no limits.
 
 import { exec, home } from "herdr";
@@ -47,6 +48,8 @@ export async function planLimits() {
         ],
         { cwd: home() },
       );
+      // No claude on the PATH: not a Claude Code user, nothing to show.
+      if (r.code === 127) return null;
       if (r.code !== 0)
         throw new Error(
           `Plan limits (${a.home}): ${(r.stderr || r.stdout).trim() || `claude exited ${r.code}`}`,
@@ -54,5 +57,5 @@ export async function planLimits() {
       return { home: a.home, windows: windows(r.stdout) };
     }),
   );
-  return out.filter((l) => l.windows.length);
+  return out.filter((l) => l?.windows.length);
 }

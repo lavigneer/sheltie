@@ -196,8 +196,8 @@ export default class Usage extends View {
             limitList.flatMap((l) => [
               heading(
                 limitList.length > 1
-                  ? `PLAN LIMITS (${l.home})`
-                  : "PLAN LIMITS",
+                  ? `CLAUDE CODE LIMITS (${l.home})`
+                  : "CLAUDE CODE LIMITS",
               ),
               ...l.windows.map((w) =>
                 h_flex()
@@ -294,7 +294,7 @@ export default class Usage extends View {
               .text_color(t.dim)
               .tooltip(
                 error ??
-                  `Agents today: ${amount(today)}${session ? `; session ${percent(session.used)} used` : ""}`,
+                  `Agents today: ${amount(today)}${session ? `; Claude Code session ${percent(session.used)} used` : ""}`,
               )
               .child(
                 session

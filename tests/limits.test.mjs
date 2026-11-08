@@ -68,6 +68,15 @@ test("planLimits: a failed run throws", async () => {
   await assert.rejects(planLimits(), /Plan limits/);
 });
 
+test("planLimits: without claude installed, none and no error", async () => {
+  useConfig({
+    ...DEFAULTS,
+    programs: { ...DEFAULTS.programs, claude: path.join(tmp, "no-claude") },
+    usage: { ...DEFAULTS.usage, agents: [{ type: "claude-code", home: sub }] },
+  });
+  assert.deepEqual(await planLimits(), []);
+});
+
 test("windows: text without limits gives none", () => {
   for (const t of [null, "", "43%  Start fresh", "x: 5% used"].slice(0, 3))
     assert.deepEqual(windows(t), []);
