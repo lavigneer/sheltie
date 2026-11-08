@@ -10,8 +10,10 @@ here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 #   /draft-pr          commit, push, open a draft PR (CI starts)
 #   /fix-ci            commit a fix, push (CI starts again, and passes)
 #   /address-comments  commit, push, resolve the review threads (CI starts)
-# Anything else is just echoed. It labels its terminal agent=herdr-demo so the
-# sidebar can find it (a real Claude Code reports its status instead).
+# After each of those it labels its terminal pr=ready: the PR is done (for
+# workflow.readyWhen "agent"). Anything else is just echoed. It labels its
+# terminal agent=herdr-demo so the sidebar can find it (a real Claude Code
+# reports its status instead).
 
 hc label "${HC_TERMINAL_ID:-}" agent=herdr-demo >/dev/null 2>&1 || true
 
@@ -30,6 +32,9 @@ work() {
   git -c user.name=herdr-demo -c user.email=demo@example.invalid commit --quiet -m "$prefix$1"
   git push --quiet -u origin HEAD 2>/dev/null
 }
+
+# Says the PR is done, for the Work sidebar's Ready (workflow.readyWhen "agent").
+pr_done() { hc label "${HC_TERMINAL_ID:-}" pr=ready >/dev/null 2>&1 || true; }
 
 pr_filter='.repo == $repo and .branch == $branch and (.state // "OPEN") == "OPEN"'
 has_pr() { state_jq -e --arg repo "$slug" --arg branch "$branch" "any(.prs[]; $pr_filter)" >/dev/null; }
@@ -58,17 +63,20 @@ handle() {
       echo "Opened a draft PR: $(state_jq -r --arg repo "$slug" --arg branch "$branch" "[.prs[] | select($pr_filter)][0] | \"https://github.com/\(.repo)/pull/\(.number)\"")"
     fi
     ci_start ".repo == \"$slug\" and .branch == \"$branch\""
+    pr_done
     echo "CI is running; it takes ${DEMO_CI_SECONDS}s here."
     ;;
   /fix-ci*)
     work "fix CI"
     ci_start ".repo == \"$slug\" and .branch == \"$branch\""
+    pr_done
     echo "Pushed a fix; CI is running again."
     ;;
   /address-comments*)
     work "address review comments"
     state_set --arg repo "$slug" --arg branch "$branch" "(.prs[] | select($pr_filter)).unresolved = 0"
     ci_start ".repo == \"$slug\" and .branch == \"$branch\""
+    pr_done
     echo "Addressed the comments, replied and pushed; CI is running."
     ;;
   "") ;;

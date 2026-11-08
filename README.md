@@ -12,7 +12,11 @@ your tracker to a merged pull request without leaving Herdr:
    - **Draft PR**, **Fix CI**, **Address comments**: sent to the agent in that
      worktree's space (as `/draft-pr`, `/fix-ci`, `/address-comments`)
    - **Ready**: marks the PR ready for review and, when the repo requires
-     reviews, turns on auto-merge, so it merges on approval
+     reviews, turns on auto-merge, so it merges on approval. Offered once CI
+     is green and nothing is unresolved; with `workflow.readyWhen: "agent"`,
+     also only once the agent says the PR is done, by running
+     `hc label "$HC_TERMINAL_ID" pr=ready` (the Claude commands end with that;
+     sending the agent another step clears it)
    - **Merge**: when it's approved and green without auto-merge
    - **Finish** (after the merge): closes the space, removes the worktree and
      local branch, and resolves the ticket
@@ -125,6 +129,7 @@ every setting with its default; `src/config.js` documents each one.
 | `agent.task`, `agent.extraBranchTask` | see example | first messages; `{key}`, `{summary}`, `{branch}`, `{viewCommand}` |
 | `agent.steps` | the Claude commands | what each sidebar step sends |
 | `workflow.autoMerge` | `"when-reviews-required"` | or `"never"` |
+| `workflow.readyWhen` | `"green"` | when Ready is offered: CI green and nothing unresolved; `"agent"`: also once the agent says the PR is done (`hc label "$HC_TERMINAL_ID" pr=ready`) |
 | `workflow.confirmFinish` | `true` | Finish and Clean up need a second click |
 
 Repo suggestions for a ticket, best first: the repo you last used for it,

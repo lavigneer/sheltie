@@ -61,7 +61,7 @@ import {
   repoState,
   unresolvedThreads,
 } from "./data.js";
-import { agentIn, nextSteps, runStep } from "./flow.js";
+import { agentIn, agentSaysDone, nextSteps, runStep } from "./flow.js";
 import { tracker } from "./tracker.js";
 
 const GIT_MS = 30_000;
@@ -168,6 +168,7 @@ export default class Work extends View {
             ? []
             : nextSteps(this.prs.get(w.path)?.value ?? null, {
                 working: space?.status === "working",
+                agentDone: agentSaysDone(space),
               });
         return { w, space, steps };
       });
@@ -219,7 +220,8 @@ export default class Work extends View {
   }
 
   // What the sidebar shows, as JSON in <app home>/work-report.json: the shown
-  // rows with their space's agent (where agent steps go), PR, next steps and
+  // rows with their space's agent (where agent steps go) and whether it says
+  // the PR is done (agentDone: its pr=ready label), PR, next steps and
   // last step, and which row and step the keys would act on, and what
   // work.open-pr / work.open-ticket would open (prUrl / ticketUrl).
   report(cx, rows, at, step) {
@@ -248,6 +250,7 @@ export default class Work extends View {
           repo: r.w.repo.slug ?? r.w.repo.name,
           space: r.space?.id ?? null,
           agent: agentIn(r.space),
+          agentDone: agentSaysDone(r.space),
           selected: i === at,
           step: i === at ? step : null,
           steps: r.steps.map((s) => ({ id: s.id, label: s.label })),
@@ -625,6 +628,7 @@ export default class Work extends View {
       ].filter(Boolean);
       const steps = nextSteps(prValue, {
         working: space?.status === "working",
+        agentDone: agentSaysDone(space),
       });
       const step = this.steps.get(w.path);
       // A success note fades after a minute; a failure stays until the next step.
