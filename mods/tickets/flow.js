@@ -41,7 +41,7 @@ const AGENT_STEPS = [
 
 // --- Stage ------------------------------------------------------------------
 
-// pr: prDetails() plus `unresolved` (a count, or null when unknown).
+// pr: prDetails() (`unresolved`: a count, or null when unknown).
 export function stageOf(pr) {
   if (!pr) return "no-pr";
   if (pr.state === "MERGED") return "merged";

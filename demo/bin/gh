@@ -4,7 +4,7 @@ here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 # shellcheck source=demo/state.sh
 . "$here/state.sh"
 
-# Fake gh for herdr-demo: PR search and details, ready, merge (with auto-merge),
+# Fake gh for herdr-demo: PR search, details (GraphQL), ready, merge (with auto-merge),
 # review threads, the repo's merge method and repo clone, from the demo's state
 # (state.sh); clones come from the demo's local remotes. Also GitHub issues
 # (search, view with linked PRs, close) for the GitHub tracker.
@@ -33,25 +33,6 @@ find_pr() {
 case "${1:-} ${2:-}" in
 "search prs")
   state_jq '.prs | map({number, title, body, state: ((.state // "OPEN") | ascii_downcase), url: "https://github.com/\(.repo)/pull/\(.number)", repository: {nameWithOwner: .repo}})'
-  ;;
-"pr view")
-  slug="$(repo_arg "$@")"
-  pr="$(find_pr "$slug" "${3:-}")" || {
-    echo "no pull requests found for branch \"${3:-}\"" >&2
-    exit 1
-  }
-  head="$(pr_head "${slug##*/}" "$(jq -r .branch <<<"$pr")" "$(jq -r .number <<<"$pr")")"
-  jq --arg head "$head" '
-    {number, title, url: "https://github.com/\(.repo)/pull/\(.number)",
-     state: (.state // "OPEN"), isDraft: .draft, reviewDecision: .review,
-     headRefName: .branch, headRefOid: $head,
-     autoMergeRequest: (if .autoMerge then {enabledAt: "now"} else null end),
-     mergeable: (.mergeable // "MERGEABLE"),
-     mergeStateStatus: (if .mergeable == "CONFLICTING" then "DIRTY" else "CLEAN" end),
-     statusCheckRollup: (if .checks == null then []
-                         elif .checks == "IN_PROGRESS" then [{status: .checks}]
-                         else [{conclusion: .checks}] end)}
-  ' <<<"$pr"
   ;;
 "pr ready")
   slug="$(repo_arg "$@")"
@@ -123,16 +104,43 @@ case "${1:-} ${2:-}" in
   echo "SQUASH"
   ;;
 "api graphql")
-  # Only the unresolved-review-threads query: answer with the count (--jq applied).
-  owner="" name="" number=""
+  # Only prDetails' query, by PR number or branch: the GraphQL response.
+  owner="" name="" ref=""
   for a in "$@"; do
     case "$a" in
     owner=*) owner="${a#owner=}" ;;
     name=*) name="${a#name=}" ;;
-    number=*) number="${a#number=}" ;;
+    number=* | branch=*) ref="${a#*=}" ;;
     esac
   done
-  state_jq --arg repo "$owner/$name" --arg n "$number" '[.prs[] | select(.repo == $repo and (.number | tostring) == $n)][0].unresolved // 0'
+  slug="$owner/$name"
+  pr="$(find_pr "$slug" "$ref")" || pr=null
+  if [ "$pr" = null ]; then
+    case " $* " in
+    *" number="*)
+      echo "GraphQL: Could not resolve to a PullRequest with the number of $ref. (repository.pullRequest)" >&2
+      exit 1
+      ;;
+    esac
+    head=""
+  else
+    head="$(pr_head "$name" "$(jq -r .branch <<<"$pr")" "$(jq -r .number <<<"$pr")")"
+  fi
+  jq --arg head "$head" --arg by "$(case " $* " in *" number="*) echo number ;; *) echo branch ;; esac)" '
+    (if . == null then null else
+    {number, title, url: "https://github.com/\(.repo)/pull/\(.number)",
+     state: (.state // "OPEN"), isDraft: .draft, reviewDecision: .review,
+     headRefName: .branch, headRefOid: $head,
+     autoMergeRequest: (if .autoMerge then {enabledAt: "now"} else null end),
+     mergeable: (.mergeable // "MERGEABLE"),
+     commits: {nodes: [{commit: {statusCheckRollup:
+       (if .checks == null then null
+        elif .checks == "IN_PROGRESS" then {contexts: {nodes: [{status: .checks, conclusion: null}]}}
+        else {contexts: {nodes: [{conclusion: .checks}]}} end)}}]},
+     reviewThreads: {nodes: ([range(.unresolved // 0)] | map({isResolved: false}))}} end) as $pr
+    | {data: {repository: (if $by == "number" then {pullRequest: $pr}
+                           else {pullRequests: {nodes: [$pr // empty]}} end)}}
+  ' <<<"$pr"
   ;;
 "repo clone")
   slug="${3:?}"

@@ -1,4 +1,4 @@
-// Pull requests on GitHub (gh): their state, review threads, marking ready and
+// Pull requests on GitHub (gh): their state and review threads, marking ready and
 // merging.
 
 import { firstLine, must, NOT_FOUND, tool } from "./lib.js";
@@ -15,31 +15,56 @@ const BAD = [
 
 const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 
-// Details for a PR (number or branch) in `slug`, or null when there is none.
-// Throws when GitHub can't be asked, so callers can tell "no PR" from "failed".
+// The fields prDetails reads, for a pullRequest in GitHub's GraphQL API.
+const PR_FIELDS = `number url title state isDraft reviewDecision headRefName
+  headRefOid mergeable autoMergeRequest { enabledAt }
+  commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
+    nodes { ... on CheckRun { status conclusion } ... on StatusContext { state } } } } } } }
+  reviewThreads(first: 100) { nodes { isResolved } }`;
+const BY_NUMBER = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { pullRequest(number: $number) { ${PR_FIELDS} } } }`;
+// Like `gh pr view <branch>`: the open PR from that branch, else the latest.
+const BY_BRANCH = `query($owner: String!, $name: String!, $branch: String!) {
+  repository(owner: $owner, name: $name) { pullRequests(headRefName: $branch,
+    first: 20, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${PR_FIELDS} } } } }`;
+
+// Details for a PR (number or branch) in `slug`, or null when there is none,
+// from one GraphQL call. Throws when GitHub can't be asked, so callers can
+// tell "no PR" from "failed".
 // `checks`: "passed" | "failed" | "pending", or null when the PR has none
 // (CI not started, or never will: GitHub runs no pull_request CI on a PR that
 // conflicts with its base). `mergeable`: "MERGEABLE" | "CONFLICTING" |
 // "UNKNOWN" (GitHub works it out lazily, so it's UNKNOWN for a little while
-// after a push or a change to the base).
+// after a push or a change to the base). `unresolved`: the count of
+// unresolved review threads on an open PR, else null.
 /** @param {string} slug @param {string | number} ref @returns {Promise<import("./types.js").PR | null>} */
 export async function prDetails(slug, ref) {
+  const [owner, name] = slug.split("/");
+  const byNumber = /^\d+$/.test(String(ref));
   const r = await tool("gh", [
-    "pr",
-    "view",
-    String(ref),
-    "--repo",
-    slug,
-    "--json",
-    "number,url,title,state,isDraft,reviewDecision,statusCheckRollup,headRefName,headRefOid,autoMergeRequest,mergeable",
+    "api",
+    "graphql",
+    "-F",
+    `owner=${owner}`,
+    "-F",
+    `name=${name}`,
+    ...(byNumber ? ["-F", `number=${ref}`] : ["-f", `branch=${ref}`]),
+    "-f",
+    `query=${byNumber ? BY_NUMBER : BY_BRANCH}`,
   ]);
   if (r.code !== 0) {
-    const why = firstLine(r.stderr);
+    const why = firstLine(r.stderr) || firstLine(r.stdout);
     if (NOT_FOUND.test(why)) return null;
-    throw new Error(why || `gh pr view ${ref} --repo ${slug} failed`);
+    throw new Error(why || `gh api graphql (PR ${ref} in ${slug}) failed`);
   }
-  const pr = JSON.parse(r.stdout);
-  const results = (pr.statusCheckRollup ?? []).map(
+  const repo = JSON.parse(r.stdout).data?.repository;
+  const found = byNumber ? [repo?.pullRequest] : repo?.pullRequests?.nodes;
+  const pr =
+    found?.find((p) => p?.state === "OPEN") ?? found?.find(Boolean) ?? null;
+  if (!pr) return null;
+  const contexts =
+    pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes ?? [];
+  const results = contexts.map(
     (c) => c.conclusion || c.state || c.status || "",
   );
   // A result we don't recognise counts as still running, never as passed.
@@ -63,31 +88,11 @@ export async function prDetails(slug, ref) {
     head: pr.headRefOid,
     autoMerge: Boolean(pr.autoMergeRequest),
     mergeable: MERGE_STATES.includes(pr.mergeable) ? pr.mergeable : "UNKNOWN",
+    unresolved:
+      pr.state === "OPEN"
+        ? (pr.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).length
+        : null,
   };
-}
-
-// Unresolved review threads on an open PR (a number).
-export async function unresolvedThreads(slug, number) {
-  const [owner, name] = slug.split("/");
-  const out = await must(
-    "gh",
-    [
-      "api",
-      "graphql",
-      "-F",
-      `owner=${owner}`,
-      "-F",
-      `name=${name}`,
-      "-F",
-      `number=${number}`,
-      "-f",
-      "query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved } } } } }",
-      "--jq",
-      "[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length",
-    ],
-    "gh api graphql",
-  );
-  return Number(out.trim());
 }
 
 export const markReady = (slug, number) =>
