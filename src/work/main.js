@@ -77,6 +77,7 @@ const TICKET_MS = 600_000;
 const USAGE_MS = 120_000; // agent costs (see usage.js)
 const RETRY_MS = 60_000; // after a failed tracker/GitHub lookup
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
+const START_MS = 30_000; // how long a new space's agent may take to start working
 const WATCH_TRIES = 3;
 // Between finds of the local repos (and reads of their settings); the git
 // scans in between reuse the last list. ↻ and new space folders find now.
@@ -105,6 +106,10 @@ export default class Work extends View {
     this.prs = new Cache({ retryMs: RETRY_MS }); // by worktree path
     this.folded = new Set();
     this.watched = new Map(); // space folder -> tries
+    // Folders of spaces that appeared while we run, and when: their agent is
+    // starting until it first works (or START_MS passes), so it isn't offered
+    // Draft PR before it has begun the ticket.
+    this.starting = new Map();
     this.repos = null; // the last localRepos(), and when: { list, at }
     this.steps = new Map(); // worktree path -> { phase, text }
     // The step waiting for its second click: null | { id: `${path}:${step id}`,
@@ -176,8 +181,14 @@ export default class Work extends View {
     const entry = this.prs.get(w.path);
     if (w.hub || !entry || (entry.state === "failed" && !entry.value))
       return [];
+    // A step just ran (Merge, Ready…): its PR is stale until looked up again,
+    // and would offer that step once more.
+    if (this.steps.get(w.path)?.staleAt) return [];
+    const born = this.starting.get(w.path);
+    if (space?.status === "working" || Date.now() - born >= START_MS)
+      this.starting.delete(w.path);
     return nextSteps(entry.value, {
-      working: space?.status === "working",
+      working: space?.status === "working" || this.starting.has(w.path),
       agentDone: agentSaysDone(space),
       repo: w.repo,
     });
@@ -388,6 +399,7 @@ export default class Work extends View {
       pool(
         prs.map((w) => async () => {
           const before = this.prs.get(w.path)?.value;
+          const asked = Date.now();
           const entry = await this.prs.refresh(w.path, async () => {
             const pr = await prDetails(w.repo.slug, w.branch);
             // The last mergeable GitHub had worked out (it's "UNKNOWN" for a
@@ -402,6 +414,8 @@ export default class Work extends View {
           });
           if (entry.state === "found" && before)
             this.tell(w, before, entry.value);
+          const last = this.steps.get(w.path);
+          if (last?.staleAt <= asked) delete last.staleAt;
           cx.notify();
         }),
       ),
@@ -420,7 +434,12 @@ export default class Work extends View {
       .map((s) => s.folder.replace(/\/+$/, ""))
       .filter((f) => !known.has(f) && !this.watched.has(f));
     if (!fresh.length) return;
-    for (const f of fresh) this.watched.set(f, 0);
+    for (const f of fresh) {
+      this.watched.set(f, 0);
+      this.starting.set(f, Date.now());
+    }
+    // Shows its steps once it's no longer starting, even if nothing changes.
+    cx.timer.after(START_MS, (cx) => cx.notify());
     cx.timer.after(0, (cx) => this.refresh(cx));
   }
 
@@ -528,7 +547,8 @@ export default class Work extends View {
       const who = this.who(w);
       try {
         const note = await runStep(step.id, w, pr, others);
-        this.steps.set(path, { phase: "done", text: note, at: Date.now() });
+        const at = Date.now();
+        this.steps.set(path, { phase: "done", text: note, at, staleAt: at });
         if (step.kind === "direct")
           notify({
             title: `${who}: ${step.label}`,
