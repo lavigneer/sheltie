@@ -293,3 +293,30 @@ test("a repo's .sheltie.json that isn't JSON: the global tracker, and a problem"
     fs.rmSync(`${storage.path}/.sheltie.json`);
   }
 });
+
+test("prDetails: settled carries the last worked-out mergeable over UNKNOWN", async () => {
+  const set = (mergeable) => {
+    const s = state();
+    s.prs.find((p) => p.repo === "acme/docs" && p.number === 56).mergeable =
+      mergeable;
+    writeState(s);
+  };
+  set("CONFLICTING");
+  const conflicting = await D.prDetails("acme/docs", 56);
+  assert.equal(conflicting.settled, "CONFLICTING");
+  set("UNKNOWN");
+  const pushed = await D.prDetails("acme/docs", 56, conflicting);
+  assert.equal(pushed.mergeable, "UNKNOWN");
+  assert.equal(pushed.settled, "CONFLICTING");
+  assert.equal((await D.prDetails("acme/docs", 56)).settled, null);
+  assert.equal(
+    (await D.prDetails("acme/docs", 56, { ...conflicting, number: 1 })).settled,
+    null,
+    "another PR's mergeable isn't carried over",
+  );
+  set("MERGEABLE");
+  assert.equal(
+    (await D.prDetails("acme/docs", 56, pushed)).settled,
+    "MERGEABLE",
+  );
+});

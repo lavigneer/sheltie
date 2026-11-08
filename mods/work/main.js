@@ -413,18 +413,9 @@ export default class Work extends View {
         prs.map((w) => async () => {
           const before = this.prs.get(w.path)?.value;
           const asked = Date.now();
-          const entry = await this.prs.refresh(w.path, async () => {
-            const pr = await prDetails(w.repo.slug, w.branch);
-            // The last mergeable GitHub had worked out (it's "UNKNOWN" for a
-            // while after a push), so a conflict is told once, not again
-            // after every push that doesn't fix it.
-            if (pr)
-              pr.settled =
-                pr.mergeable === "UNKNOWN"
-                  ? (before?.settled ?? null)
-                  : pr.mergeable;
-            return pr;
-          });
+          const entry = await this.prs.refresh(w.path, () =>
+            prDetails(w.repo.slug, w.branch, before),
+          );
           if (entry.state === "found" && before)
             this.tell(w, before, entry.value);
           const last = this.steps.get(w.path);
