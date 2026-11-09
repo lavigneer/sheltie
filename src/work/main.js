@@ -1,7 +1,7 @@
 // Work: a repo -> worktree outline for the Herdr sidebar.
 //
 // Every worktree of your local repos (open in a space or not), grouped by repo.
-// Each group starts with the repo's hub: its main checkout, with a space of its
+// Each group's header is also the repo's hub: its main checkout, with a space of its
 // own for the repo's longer-running agents (no ticket, PR or steps). A repo
 // shows while it has worktrees or its hub has a space.
 // A row shows the ticket its branch names (key, summary, status), its pull
@@ -93,6 +93,21 @@ const REPOS_MS = 300_000;
 // Narrower than this, the sidebar draws a rail (as Herdr's own sidebar mods
 // do): a status per row, its details on hover.
 const RAIL = 160;
+// Narrower than SHORT, a row's PR is a short word ("#7 CI failed"), its
+// ticket status gives way and its step buttons take short labels; narrower
+// than GLYPH, the PR is its glyph alone.
+const SHORT = 340;
+const GLYPH = 220;
+const fit = (width) =>
+  width === null
+    ? "full"
+    : width < RAIL
+      ? "rail"
+      : width < GLYPH
+        ? "glyph"
+        : width < SHORT
+          ? "short"
+          : "full";
 
 // A repo's rail monogram: its name's first letter or digit, upper-cased.
 const monogram = (name) =>
@@ -608,7 +623,9 @@ export default class Work extends View {
   render(cx) {
     this.watchSpaces(cx);
     const t = theme();
-    const rail = this.width !== null && this.width < RAIL;
+    const span = fit(this.width);
+    const rail = span === "rail";
+    const narrow = span === "short" || span === "glyph";
     const icon = (name, label, tip, onClick) =>
       div()
         .id(`work-${name}`)
@@ -667,7 +684,9 @@ export default class Work extends View {
     // Each state has its own glyph, not only its own colour; a failed last
     // step marks the row's dot too, until the next step.
     const GLYPHS = { blocked: "!", done: "✓" };
-    const status = (w, space, failed) => {
+    // Without a space, a row with a PR shows the PR's glyph, so rows tell
+    // apart at a glance (on the rail too).
+    const status = (w, space, failed, pr, prColor) => {
       if (failed)
         return div().w(12).flex_none().text_color(t.blocked).child("✕");
       if (!space)
@@ -675,9 +694,13 @@ export default class Work extends View {
           .id(`work-nospace-${w.path}`)
           .w(12)
           .flex_none()
-          .text_color(t.dim)
-          .tooltip("No space open — Enter to open")
-          .child("○");
+          .text_color(pr ? prColor : t.dim)
+          .tooltip(
+            pr
+              ? `${pr.text} · no space open — Enter to open`
+              : "No space open — Enter to open",
+          )
+          .child(pr ? pr.glyph : "○");
       if (space.status === "working")
         return svg("mods/workspace-chrome/spinner.svg")
           .size(11)
@@ -691,16 +714,17 @@ export default class Work extends View {
         .child(GLYPHS[space.status] ?? "●");
     };
 
-    // A step button keeps its label's width while it fits, and narrower
-    // than that shrinks to an ellipsis.
+    // A step button's label is never cut: narrow, it takes its short label,
+    // and the buttons wrap when even those don't fit on one line.
     const button = (w, s, chosen) => {
       const confirming = this.confirm?.id === `${w.path}:${s.id}`;
+      const name = narrow ? s.short : s.label;
       const label = confirming
-        ? `${s.label}? ${this.confirm.byKey ? "Press" : "Click"} again`
-        : s.label;
+        ? `${name}? ${this.confirm.byKey ? "Press" : "Click"} again`
+        : name;
       return div()
         .id(`work-step-${w.path}-${s.id}`)
-        .min_w(0)
+        .flex_none()
         .h(18)
         .px(6)
         .flex()
@@ -718,7 +742,7 @@ export default class Work extends View {
           cx.stop_propagation();
           this.step(cx, w, s);
         })
-        .child(div().min_w(0).truncate().child(label));
+        .child(label);
     };
 
     // A row's ↗: a menu of what it opens in the browser (see look()'s links).
@@ -865,7 +889,8 @@ export default class Work extends View {
     // The rail (narrower than RAIL px): a row is its status, and a hover says
     // the rest. Clicks and keys work as in the full rows.
     const dot = (w) => {
-      const { space, isSelected, pr, cost, steps, last, title, sub } = look(w);
+      const { space, isSelected, pr, prColor, cost, steps, last, title, sub } =
+        look(w);
       // A ticket's number tells rows apart without a hover: "#141" or
       // "PROJ-123" shows 141 or 123.
       const num =
@@ -901,9 +926,21 @@ export default class Work extends View {
         .child(
           v_flex()
             .items_center()
-            .child(status(w, space, last?.phase === "failed"))
-            .when(Boolean(num), (el) =>
-              el.child(div().text_size(9).text_color(t.dim).child(num)),
+            .child(status(w, space, last?.phase === "failed", pr, prColor))
+            // With a space, the dot is the agent's: the PR's glyph goes by
+            // the number.
+            .when(Boolean(num) || Boolean(space && pr), (el) =>
+              el.child(
+                h_flex()
+                  .gap(2)
+                  .text_size(9)
+                  .when(Boolean(num), (e) =>
+                    e.child(div().text_color(t.dim).child(num)),
+                  )
+                  .when(Boolean(space && pr), (e) =>
+                    e.child(div().text_color(prColor).child(pr.glyph)),
+                  ),
+              ),
             ),
         );
     };
@@ -946,7 +983,7 @@ export default class Work extends View {
             h_flex()
               .gap(6)
               .items_center()
-              .child(status(w, space, last?.phase === "failed"))
+              .child(status(w, space, last?.phase === "failed", pr, prColor))
               .child(
                 div()
                   .flex_shrink(1)
@@ -964,13 +1001,26 @@ export default class Work extends View {
                   ),
               )
               // The rest of the line after the title (sized to its text): the
-              // PR, at the right; it also pushes the hub tag and ↗ there.
+              // PR, at the right; it also pushes ↗ there.
               .child(
                 h_flex()
                   .flex_1()
                   .min_w(0)
                   .justify_end()
-                  .when(Boolean(pr), (el) =>
+                  // Narrow, the PR shrinks to a word, then a glyph, rather
+                  // than being cut.
+                  .when(Boolean(pr) && narrow, (el) =>
+                    el.child(
+                      div()
+                        .id(`work-pr-${w.path}`)
+                        .flex_none()
+                        .text_size(11)
+                        .text_color(prColor)
+                        .tooltip(pr.text)
+                        .child(span === "glyph" ? pr.glyph : pr.short),
+                    ),
+                  )
+                  .when(Boolean(pr) && !narrow, (el) =>
                     el.child(
                       // The tail (the tone: checks, conflicts) stays whole;
                       // the rest of the PR truncates before it.
@@ -986,19 +1036,6 @@ export default class Work extends View {
                     ),
                   ),
               )
-              .when(Boolean(w.hub), (el) =>
-                el.child(
-                  div()
-                    .flex_none()
-                    .px(5)
-                    .rounded(4)
-                    .border_1()
-                    .border_color(t.border ?? t.dim)
-                    .text_size(11)
-                    .text_color(t.dim)
-                    .child("hub"),
-                ),
-              )
               .when(links.length > 0, (el) =>
                 el.child(
                   isSelected ||
@@ -1009,11 +1046,11 @@ export default class Work extends View {
                 ),
               ),
           )
-          // Always there on a worktree row, even while empty: a ticket's
-          // status and the cost come from lookups that finish later, and the
-          // line appearing then would push every row below it down. A hub has
-          // no ticket, so its row is one line unless agents there cost.
-          .when(!w.hub || Boolean(cost), (el) =>
+          // Always there on a ticket's row, even while empty: its summary,
+          // status and cost come from lookups that finish later, and the line
+          // appearing then would push every row below it down. Any other
+          // branch (its title already) is one line unless agents there cost.
+          .when(Boolean(sub) || Boolean(w.handle) || Boolean(cost), (el) =>
             el.child(
               h_flex()
                 .pl(18)
@@ -1027,7 +1064,8 @@ export default class Work extends View {
                     .text_color(t.dim)
                     .child(sub),
                 )
-                .when(Boolean(ticket?.status), (e) =>
+                // The ticket status gives way first: narrow, it's left out.
+                .when(Boolean(ticket?.status) && !narrow, (e) =>
                   e.child(
                     // Capped, so the summary keeps most of the line.
                     div()
@@ -1057,9 +1095,8 @@ export default class Work extends View {
           )
           .when(steps.length > 0 || Boolean(note), (el) =>
             el.child(
-              // One line: narrow, the step buttons shrink to ellipses
-              // rather than wrapping one per line.
               h_flex()
+                .flex_wrap()
                 .pl(18)
                 .pt(2)
                 .gap_x(4)
@@ -1088,74 +1125,124 @@ export default class Work extends View {
       );
     };
 
+    // A repo's header. In full, it is also its hub's row (the hub has no
+    // ticket, PR or steps, so a row of its own would repeat in every group):
+    // the chevron folds the group, the rest opens the hub like a row.
     const group = (g) => {
       const open = !this.folded.has(g.repo.path);
       const n = g.worktrees.length;
       const count = `hub and ${n} worktree${n === 1 ? "" : "s"}`;
-      return v_flex()
-        .child(
-          h_flex()
-            .id(`work-repo-${g.repo.path}`)
-            .mx(rail ? 4 : 6)
-            .px(6)
-            .h(24)
-            .gap(5)
-            .items_center()
-            .when(rail, (el) =>
-              el.justify_center().tooltip(`${g.repo.name} (${count})`),
-            )
-            .rounded(6)
-            .cursor_pointer()
-            .hover((s) => s.bg(t.hover))
-            .on_click((_e, cx) => {
-              open
-                ? this.folded.add(g.repo.path)
-                : this.folded.delete(g.repo.path);
-              cx.notify();
-            })
-            .child(
-              svg(
-                `mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`,
-              )
-                .size(11)
-                .flex_none()
-                .text_color(t.dim),
-            )
-            // On the rail, a monogram tells repos apart without a hover.
-            .when(rail, (el) =>
-              el.child(
+      const [hub, ...worktrees] = rowsOf(g);
+      const fold = (cx) => {
+        open ? this.folded.add(g.repo.path) : this.folded.delete(g.repo.path);
+        cx.notify();
+      };
+      const chevron = svg(
+        `mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`,
+      )
+        .size(11)
+        .flex_none()
+        .text_color(t.dim);
+      if (rail)
+        return v_flex()
+          .child(
+            h_flex()
+              .id(`work-repo-${g.repo.path}`)
+              .mx(4)
+              .px(6)
+              .h(24)
+              .gap(5)
+              .items_center()
+              .justify_center()
+              .tooltip(`${g.repo.name} (${count})`)
+              .rounded(6)
+              .cursor_pointer()
+              .hover((s) => s.bg(t.hover))
+              .on_click((_e, cx) => fold(cx))
+              .child(chevron)
+              // A monogram tells repos apart without a hover.
+              .child(
                 div()
                   .text_size(11)
                   .font_semibold()
                   .text_color(t.muted)
                   .child(monogram(g.repo.name)),
               ),
+          )
+          .when(open, (el) => el.children([hub, ...worktrees].map(dot)));
+      const { space, isSelected, cost, last, title } = look(hub);
+      return v_flex()
+        .child(
+          h_flex()
+            .id(`work-repo-${g.repo.path}`)
+            .mx(6)
+            .px(6)
+            .h(24)
+            .gap(5)
+            .items_center()
+            .rounded(6)
+            .border_l_2()
+            .border_color(isSelected ? t.accent : "#00000000")
+            .cursor_pointer()
+            .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
+            .hover((s) => s.bg(t.hover))
+            .tooltip(`${g.repo.name} hub: ${title}`)
+            .on_click(() => this.open(hub))
+            .child(
+              div()
+                .id(`work-fold-${g.repo.path}`)
+                .flex_none()
+                .rounded(4)
+                .hover((s) => s.bg(t.hover))
+                .on_click((_e, cx) => {
+                  cx.stop_propagation();
+                  fold(cx);
+                })
+                .child(chevron),
             )
-            .when(!rail, (el) =>
-              el
-                .child(
-                  div()
-                    .flex_1()
-                    .min_w(0)
-                    .truncate()
-                    .text_size(12.5)
-                    .font_semibold()
-                    .text_color(t.muted)
-                    .child(g.repo.name),
-                )
-                .child(
-                  div()
-                    .id(`work-count-${g.repo.path}`)
-                    .flex_none()
-                    .text_size(11)
-                    // Neutral, like the repo name: the count carries no state.
-                    .text_color(t.muted)
-                    .tooltip(count)
-                    .child(String(g.worktrees.length + 1)),
-                ),
+            .child(status(hub, space, last?.phase === "failed"))
+            .child(
+              div()
+                .flex_shrink(1)
+                .min_w(0)
+                .truncate()
+                .text_size(12.5)
+                .font_semibold()
+                .text_color(t.muted)
+                .child(g.repo.name),
+            )
+            .child(
+              div()
+                .flex_1()
+                .min_w(0)
+                .truncate()
+                .text_size(11)
+                .text_color(t.dim)
+                .child(title),
+            )
+            .when(Boolean(cost), (el) =>
+              el.child(
+                div()
+                  .id(`work-cost-${hub.path}`)
+                  .flex_none()
+                  .text_size(11)
+                  .text_color(t.dim)
+                  .tooltip("What agents working here have cost (at API prices)")
+                  .child(cost),
+              ),
+            )
+            .child(
+              div()
+                .id(`work-count-${g.repo.path}`)
+                .flex_none()
+                .text_size(11)
+                // Neutral, like the repo name: the count carries no state.
+                .text_color(t.muted)
+                .tooltip(count)
+                .child(String(n + 1)),
             ),
         )
-        .when(open, (el) => el.children(rowsOf(g).map(rail ? dot : row)));
+        .when(open, (el) => el.children(worktrees.map(row)));
     };
 
     // Messages: in full on the rail too, on hover.
@@ -1189,9 +1276,9 @@ export default class Work extends View {
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        const was = this.width !== null && this.width < RAIL;
+        const was = fit(this.width);
         this.width = size.width;
-        if (size.width < RAIL !== was) cx.notify();
+        if (fit(size.width) !== was) cx.notify();
       })
       .child(header)
       .when(Boolean(problem), (el) => el.child(problem))
