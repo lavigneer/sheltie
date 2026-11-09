@@ -37,7 +37,7 @@ export async function listTickets(repos) {
   ]);
   /** @type {Map<string, Ticket & { homes: Repo[] }>} */
   const out = new Map();
-  /** @type {[import("./types.js").Tracker, Repo[], Ticket[]][]} */
+  /** @type {[import("./types.js").Tracker, Repo[], import("./types.js").TrackerTicket[]][]} */
   const lists = [[global, [], first]];
   for (const [i, [t, homes]] of own.entries()) lists.push([t, homes, rest[i]]);
   for (const [t, homes, tickets] of lists)
@@ -47,6 +47,17 @@ export async function listTickets(repos) {
       else out.set(ticket.key, { ...ticket, tracker: t, homes: [...homes] });
     }
   return [...out.values()];
+}
+
+// Ticket `key` looked up in the tracker for `repo` (its own, else the global
+// one), carrying that tracker and, when it's the repo's own, the repo as its
+// home. Null when there's no such ticket or the tracker can't be reached.
+/** @param {string} key @param {Repo | null | undefined} repo @returns {Promise<Ticket | null>} */
+export async function viewTicket(key, repo) {
+  const t = trackerOf(repo);
+  const viewed = await t.view(key).catch(() => null);
+  const homes = repo?.tracker && repo.tracker === t ? [repo] : [];
+  return viewed && { ...viewed, tracker: t, homes };
 }
 
 // A target ("owner/repo" or a path) -> local repo, or { slug } when not cloned.
@@ -380,10 +391,10 @@ export async function workFor(
   await store.scan(repos);
   if (!prs) return store.snapshot(keys);
   onLocal?.(store.snapshot(keys));
-  await store.refresh(
-    new Map(tickets.map((t) => [t.key, t.tracker ?? tracker()])),
-    { force: true, onLinked },
-  );
+  await store.refresh(new Map(tickets.map((t) => [t.key, t.tracker])), {
+    force: true,
+    onLinked,
+  });
   return store.snapshot(keys);
 }
 
@@ -423,7 +434,7 @@ export function suggestRepos(ticket, repos, here, remembered) {
       findRepo(r.repo, repos),
       r.component ? `component ${r.component}` : `label ${r.label}`,
     );
-  for (const s of (ticket.tracker ?? tracker()).suggest(ticket))
+  for (const s of ticket.tracker.suggest(ticket))
     push(findRepo(s.target, repos), s.why);
   if (!specific.length)
     for (const r of C.repoRules)

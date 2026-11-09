@@ -5,9 +5,8 @@
 /** @typedef {import("./config.js").Settings} Settings */
 
 /**
- * A ticket from a tracker's list() or view(). listTickets adds `tracker` (the
- * one that listed it) and `homes` (the repos whose own tracker listed it).
- * @typedef {object} Ticket
+ * A ticket as a tracker's list() or view() gives it.
+ * @typedef {object} TrackerTicket
  * @property {string} key
  * @property {string} label short form for display
  * @property {string} ref its part of a branch name
@@ -17,8 +16,13 @@
  * @property {string[]} labels
  * @property {string} project
  * @property {string | null} repo GitHub: the issue's "owner/repo"
- * @property {Tracker} [tracker]
- * @property {Repo[]} [homes]
+ */
+
+/**
+ * A ticket carrying its own tracker: listTickets and viewTicket add `tracker`
+ * (the one that listed or found it) and `homes` (the repos whose own tracker
+ * listed it).
+ * @typedef {TrackerTicket & { tracker: Tracker, homes?: Repo[] }} Ticket
  */
 
 /**
@@ -75,8 +79,8 @@
  * A ticket tracker (tracker.js; made by tracker-jira.js and tracker-github.js).
  * @typedef {object} Tracker
  * @property {string} name
- * @property {() => Promise<Ticket[]>} list your tickets
- * @property {(key: string) => Promise<Ticket | null>} view null when there's
+ * @property {() => Promise<TrackerTicket[]>} list your tickets
+ * @property {(key: string) => Promise<TrackerTicket | null>} view null when there's
  *   no such ticket; throws when the tracker can't be reached
  * @property {(key: string, step: Step, status?: string | null) => Promise<string | null>} move
  *   returns a note, or null when there's nothing to do
@@ -87,7 +91,7 @@
  * @property {(text: string | null, slug?: string | null) => string[]} keysIn
  *   keys a branch name or PR text (in repo slug) mentions
  * @property {(keys: string[], repos: Repo[]) => Promise<Map<string, PRRef[]>>} linkedPRs
- * @property {(ticket: Ticket) => { target: string, why: string }[]} suggest
+ * @property {(ticket: TrackerTicket) => { target: string, why: string }[]} suggest
  *   repos the tracker itself suggests
  */
 

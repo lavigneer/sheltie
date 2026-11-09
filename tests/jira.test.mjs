@@ -97,7 +97,7 @@ test("workFor: worktrees, branches and PRs per ticket, fork PRs included", async
 
 test("suggestRepos: component rules win over project rules", async () => {
   const repos = await D.localRepos();
-  const t105 = await T.view("WEB-105");
+  const t105 = await D.viewTicket("WEB-105", null);
   const s = D.suggestRepos(t105, repos, null, null);
   assert.deepEqual(
     s.map((x) => [x.repo.slug, x.why]),
@@ -230,6 +230,13 @@ test("a repo's own .sheltie.json: its tracker lists its tickets and names its br
       state: "OPEN",
       labels: [],
     },
+    {
+      repo: "acme/storage",
+      number: 78,
+      title: "Not listed",
+      state: "CLOSED",
+      labels: [],
+    },
   ];
   writeState(s);
   const storage = (await D.localRepos()).find((r) => r.name === "storage");
@@ -261,6 +268,12 @@ test("a repo's own .sheltie.json: its tracker lists its tickets and names its br
       D.suggestRepos(issue, repos, null, null)[0].why,
       ".sheltie.json",
     );
+    // A ticket looked up by name (not listed) is in the repo's own tracker.
+    assert.ok(!tickets.some((t) => t.key === "acme/storage#78"));
+    const viewed = await D.viewTicket("acme/storage#78", own);
+    assert.equal(viewed.tracker, own.tracker);
+    assert.deepEqual(viewed.homes, [own]);
+    assert.equal(await D.viewTicket("acme/storage#78", null), null);
 
     assert.equal(D.ticketOfBranch("issue-77", own)?.key, "acme/storage#77");
     assert.equal(D.branchFor(issue, own), "x/issue-77");
