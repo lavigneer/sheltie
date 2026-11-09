@@ -1,8 +1,8 @@
-// The Work sidebar's navigation state: which row and step the keys act on,
-// which groups are folded, and the step waiting for its second press. Pure:
-// callers pass the shown rows ([{ path, steps, active }], steps: the row's
-// next steps, active: whether its space is focused), the focused space's id
-// and the time, so this runs without Herdr.
+// The Work sidebar's navigation state, and every change to it: which groups
+// are folded, the row and step the keys moved to, and the step waiting for its
+// second press. Pure: callers pass the focused space's id, the shown rows and
+// the time, so this runs without Herdr. workView (work-rows.js) turns it into
+// the selected row and step.
 
 import { cycle } from "./lib.js";
 
@@ -11,40 +11,29 @@ export const CONFIRM_MS = 4_000;
 export class Nav {
   constructor() {
     this.folded = new Set(); // repo paths
-    this.picked = null; // { path, step, active }: the row the keys moved to
+    this.pick = null; // { path, step, active }: see picked()
     this.pending = null; // { id, byKey, until }: see press()
   }
 
-  // The selected row and step: the one the keys moved to while the same space
-  // stays focused, else the focused space's row, else the first.
-  // { at, step } (at: -1 without rows; step clamped to the row's steps).
-  select(rows, active) {
-    if (this.picked && this.picked.active !== active) this.picked = null;
-    let at = this.picked
-      ? rows.findIndex((r) => r.path === this.picked.path)
-      : -1;
-    let step = at >= 0 ? this.picked.step : 0;
-    if (at < 0) {
-      at = rows.findIndex((r) => r.active);
-      if (at < 0 && rows.length) at = 0;
-      step = 0;
-    }
-    const n = rows[at]?.steps.length ?? 0;
-    return { at, step: n ? Math.min(step, n - 1) : 0 };
+  // The row and step the keys moved to ({ path, step }), while the space
+  // focused then (`active`, its id) stays focused; else null, for good.
+  picked(active) {
+    if (this.pick && this.pick.active !== active) this.pick = null;
+    return this.pick;
   }
 
-  // Moves the selection: "next" / "prev" through the rows, "step-next" /
-  // "step-prev" through the selected row's steps.
-  move(rows, active, c) {
-    const { at, step } = this.select(rows, active);
-    const pick = (i, s) => {
-      if (rows[i]) this.picked = { path: rows[i].path, step: s, active };
+  // Moves the selection from row `at`, step `step` of `rows` ([{ path,
+  // steps }], steps: the row's next steps): "next" / "prev" through the
+  // rows, "step-next" / "step-prev" through the selected row's steps.
+  move(rows, at, step, active, c) {
+    const to = (i, s) => {
+      if (rows[i]) this.pick = { path: rows[i].path, step: s, active };
     };
     if (c === "next" || c === "prev") {
-      if (rows.length) pick(cycle(rows.length, at, c === "next" ? 1 : -1), 0);
+      if (rows.length) to(cycle(rows.length, at, c === "next" ? 1 : -1), 0);
     } else {
       const n = rows[at]?.steps.length ?? 0;
-      if (n) pick(at, cycle(n, step, c === "step-next" ? 1 : -1));
+      if (n) to(at, cycle(n, step, c === "step-next" ? 1 : -1));
     }
   }
 
@@ -58,8 +47,8 @@ export class Nav {
   fold(repo, paths) {
     if (this.folded.delete(repo)) return;
     this.folded.add(repo);
-    if (this.picked && paths.includes(this.picked.path))
-      this.picked = { ...this.picked, path: repo, step: 0 };
+    if (this.pick && paths.includes(this.pick.path))
+      this.pick = { ...this.pick, path: repo, step: 0 };
   }
 
   // A press of step `id` (unique across rows); one that `asks` runs on its
