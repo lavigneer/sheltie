@@ -15,10 +15,15 @@ here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 # with its base, if it has any (`herdr-demo conflict`), before CI starts.
 # After each of those it labels its terminal pr=ready: the PR is done (for
 # workflow.readyWhen "agent"). Anything else is just echoed. It labels its
-# terminal agent=herdr-demo so the sidebar can find it (a real Claude Code
-# reports its status instead).
+# terminal agent=herdr-demo so the sidebar can find it, and reports its
+# status (OSC 7501) like a real Claude Code: working while it handles its task
+# or a command, idle when it waits. (Without that, the sidebar can't tell it
+# has started, and holds Draft PR back for START_MS.)
 
 hc label "${HC_TERMINAL_ID:-}" agent=herdr-demo >/dev/null 2>&1 || true
+
+status() { printf '\033]7501;state=%s\033\\' "$1"; }
+status working
 
 branch="$(git branch --show-current 2>/dev/null || echo '?')"
 # The ticket: a Jira key in the branch name, else a GitHub issue number.
@@ -51,6 +56,7 @@ resolve_conflicts() {
 }
 
 handle() {
+  status working
   case "$1" in
   /draft-pr*)
     work "the change"
@@ -105,16 +111,21 @@ handle() {
   "") ;;
   *) echo "(fake agent) $1" ;;
   esac
+  status idle
 }
 
 echo "herdr-demo: fake agent in $PWD"
 echo "Branch: $branch"
 if [ $# -gt 0 ]; then
   echo "Task: ${*: -1}"
+  # Works on it a moment, long enough for the sidebar to see it working
+  # (it watches for that, not for a blink).
+  sleep 1
   # Started with a command (the sidebar does that when no agent is running).
   case "${*: -1}" in /*) handle "${*: -1}" ;; esac
 fi
 echo "Waiting for commands (the Work sidebar's buttons send them)…"
+status idle
 while IFS= read -r line; do
   handle "$line"
 done
