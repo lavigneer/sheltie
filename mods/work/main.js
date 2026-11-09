@@ -1,7 +1,7 @@
 // Work: a repo -> worktree outline for the Herdr sidebar.
 //
 // Every worktree of your local repos (open in a space or not), grouped by repo.
-// Each group starts with the repo's hub: its main checkout, with a space of its
+// Each group's header is also the repo's hub: its main checkout, with a space of its
 // own for the repo's longer-running agents (no ticket, PR or steps). A repo
 // shows while it has worktrees or its hub has a space.
 // A row shows the ticket its branch names (key, summary, status), its pull
@@ -1001,7 +1001,7 @@ export default class Work extends View {
                   ),
               )
               // The rest of the line after the title (sized to its text): the
-              // PR, at the right; it also pushes the hub tag and ↗ there.
+              // PR, at the right; it also pushes ↗ there.
               .child(
                 h_flex()
                   .flex_1()
@@ -1036,19 +1036,6 @@ export default class Work extends View {
                     ),
                   ),
               )
-              .when(Boolean(w.hub), (el) =>
-                el.child(
-                  div()
-                    .flex_none()
-                    .px(5)
-                    .rounded(4)
-                    .border_1()
-                    .border_color(t.border ?? t.dim)
-                    .text_size(11)
-                    .text_color(t.dim)
-                    .child("hub"),
-                ),
-              )
               .when(links.length > 0, (el) =>
                 el.child(
                   isSelected ||
@@ -1059,11 +1046,11 @@ export default class Work extends View {
                 ),
               ),
           )
-          // Always there on a worktree row, even while empty: a ticket's
-          // status and the cost come from lookups that finish later, and the
-          // line appearing then would push every row below it down. A hub has
-          // no ticket, so its row is one line unless agents there cost.
-          .when(!w.hub || Boolean(cost), (el) =>
+          // Always there on a ticket's row, even while empty: its summary,
+          // status and cost come from lookups that finish later, and the line
+          // appearing then would push every row below it down. Any other
+          // branch (its title already) is one line unless agents there cost.
+          .when(Boolean(sub) || Boolean(w.handle) || Boolean(cost), (el) =>
             el.child(
               h_flex()
                 .pl(18)
@@ -1138,73 +1125,123 @@ export default class Work extends View {
       );
     };
 
+    // A repo's header. In full, it is also its hub's row (the hub has no
+    // ticket, PR or steps, so a row of its own would repeat in every group):
+    // the chevron folds the group, the rest opens the hub like a row.
     const group = (g) => {
       const open = !this.folded.has(g.repo.path);
       const n = g.worktrees.length;
       const count = `hub and ${n} worktree${n === 1 ? "" : "s"}`;
-      return v_flex()
-        .child(
-          h_flex()
-            .id(`work-repo-${g.repo.path}`)
-            .mx(rail ? 4 : 6)
-            .px(6)
-            .h(24)
-            .gap(5)
-            .items_center()
-            .when(rail, (el) =>
-              el.justify_center().tooltip(`${g.repo.name} (${count})`),
-            )
-            .rounded(6)
-            .cursor_pointer()
-            .hover((s) => s.bg(t.hover))
-            .on_click((_e, cx) => {
-              open
-                ? this.folded.add(g.repo.path)
-                : this.folded.delete(g.repo.path);
-              cx.notify();
-            })
-            .child(
-              svg(
-                `mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`,
-              )
-                .size(11)
-                .flex_none()
-                .text_color(t.dim),
-            )
-            // On the rail, a monogram tells repos apart without a hover.
-            .when(rail, (el) =>
-              el.child(
+      const [hub, ...worktrees] = rowsOf(g);
+      const fold = (cx) => {
+        open ? this.folded.add(g.repo.path) : this.folded.delete(g.repo.path);
+        cx.notify();
+      };
+      const chevron = svg(
+        `mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`,
+      )
+        .size(11)
+        .flex_none()
+        .text_color(t.dim);
+      if (rail)
+        return v_flex()
+          .child(
+            h_flex()
+              .id(`work-repo-${g.repo.path}`)
+              .mx(4)
+              .px(6)
+              .h(24)
+              .gap(5)
+              .items_center()
+              .justify_center()
+              .tooltip(`${g.repo.name} (${count})`)
+              .rounded(6)
+              .cursor_pointer()
+              .hover((s) => s.bg(t.hover))
+              .on_click((_e, cx) => fold(cx))
+              .child(chevron)
+              // A monogram tells repos apart without a hover.
+              .child(
                 div()
                   .text_size(11)
                   .font_semibold()
                   .text_color(t.muted)
                   .child(monogram(g.repo.name)),
               ),
+          )
+          .when(open, (el) => el.children([hub, ...worktrees].map(dot)));
+      const { space, isSelected, cost, last, title } = look(hub);
+      return v_flex()
+        .child(
+          h_flex()
+            .id(`work-repo-${g.repo.path}`)
+            .mx(6)
+            .px(6)
+            .h(24)
+            .gap(5)
+            .items_center()
+            .rounded(6)
+            .border_l_2()
+            .border_color(isSelected ? t.accent : "#00000000")
+            .cursor_pointer()
+            .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
+            .hover((s) => s.bg(t.hover))
+            .tooltip(`${g.repo.name} hub: ${title}`)
+            .on_click(() => this.open(hub))
+            .child(
+              div()
+                .id(`work-fold-${g.repo.path}`)
+                .flex_none()
+                .rounded(4)
+                .hover((s) => s.bg(t.hover))
+                .on_click((_e, cx) => {
+                  cx.stop_propagation();
+                  fold(cx);
+                })
+                .child(chevron),
             )
-            .when(!rail, (el) =>
-              el
-                .child(
-                  div()
-                    .flex_1()
-                    .min_w(0)
-                    .truncate()
-                    .text_size(12.5)
-                    .font_semibold()
-                    .text_color(t.muted)
-                    .child(g.repo.name),
-                )
-                .child(
-                  div()
-                    .id(`work-count-${g.repo.path}`)
-                    .flex_none()
-                    .text_size(11)
-                    .text_color(t.dim)
-                    .tooltip(count)
-                    .child(String(g.worktrees.length + 1)),
-                ),
+            .child(status(hub, space, last?.phase === "failed"))
+            .child(
+              div()
+                .flex_shrink(1)
+                .min_w(0)
+                .truncate()
+                .text_size(12.5)
+                .font_semibold()
+                .text_color(t.muted)
+                .child(g.repo.name),
+            )
+            .child(
+              div()
+                .flex_1()
+                .min_w(0)
+                .truncate()
+                .text_size(11)
+                .text_color(t.dim)
+                .child(title),
+            )
+            .when(Boolean(cost), (el) =>
+              el.child(
+                div()
+                  .id(`work-cost-${hub.path}`)
+                  .flex_none()
+                  .text_size(11)
+                  .text_color(t.dim)
+                  .tooltip("What agents working here have cost (at API prices)")
+                  .child(cost),
+              ),
+            )
+            .child(
+              div()
+                .id(`work-count-${g.repo.path}`)
+                .flex_none()
+                .text_size(11)
+                .text_color(t.dim)
+                .tooltip(count)
+                .child(String(n + 1)),
             ),
         )
-        .when(open, (el) => el.children(rowsOf(g).map(rail ? dot : row)));
+        .when(open, (el) => el.children(worktrees.map(row)));
     };
 
     // Messages: in full on the rail too, on hover.

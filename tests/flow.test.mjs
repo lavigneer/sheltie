@@ -457,3 +457,17 @@ test("Address comments' short label keeps the count", () => {
   assert.equal(s.label, "Address 12 comments");
   assert.equal(s.short, "12 comments");
 });
+
+test("an open PR's label names its review state, and ready-to-merge is good", () => {
+  const open = { ...draft, draft: false };
+  assert.deepEqual(prLabel(open), {
+    text: "#7 in review ✓",
+    head: "#7 in review",
+    tail: "✓",
+    tone: null,
+    short: "#7 in review",
+    glyph: "◑",
+  });
+  assert.equal(prLabel({ ...open, review: null }).tone, "good");
+  assert.equal(prLabel({ ...open, review: "APPROVED" }).tone, "good");
+});
