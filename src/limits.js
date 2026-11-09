@@ -59,3 +59,13 @@ export async function planLimits() {
   );
   return out.filter((l) => l?.windows.length);
 }
+
+const MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
+
+// A window's reset as a label: "resets 9:39pm" today, else "resets Nov 14,
+// 5:59pm". resets is windows()'s text ("Nov 8, 4:39pm"); null gives "".
+export function resetsLabel(resets, now = new Date()) {
+  if (!resets) return "";
+  const today = `${MONTHS[now.getMonth()]} ${now.getDate()}, `;
+  return `resets ${resets.startsWith(today) ? resets.slice(today.length) : resets}`;
+}
