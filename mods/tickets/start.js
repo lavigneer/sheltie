@@ -18,8 +18,8 @@ import { fill, firstLine, spaceFor } from "./lib.js";
 import { tracker } from "./tracker.js";
 import {
   findRepo,
-  openWork,
   listTickets,
+  openWork,
   suggestRepos,
   workFor,
 } from "./work.js";

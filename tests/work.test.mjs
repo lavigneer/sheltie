@@ -211,7 +211,12 @@ test("openWork besides this item: the ticket stays open while other work remains
   const here = { repo, branch: "issue-1", worktree: "/wt/1", pr: own };
   const other = { slug: "me/api", path: "/src/api", name: "api", tracker };
   const elsewhere = { slug: "me/app", path: null, name: "app", tracker };
-  const otherRepo = { repo: other, branch: "issue-1", worktree: null, pr: null };
+  const otherRepo = {
+    repo: other,
+    branch: "issue-1",
+    worktree: null,
+    pr: null,
+  };
   const otherMachine = {
     repo: elsewhere,
     branch: "issue-1-b",
