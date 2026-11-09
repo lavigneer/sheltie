@@ -577,6 +577,10 @@ export default class Tickets extends View {
         .text_size(11)
         .text_color(color)
         .child(text);
+    // A PR's state and checks matter more than the title's tail: it keeps
+    // its full width and the title gives way instead.
+    const prTag = (pr) =>
+      div().flex_none().text_size(11).text_color(tone(pr)).child(pr.text);
     const dot = (on) =>
       div()
         .w(12)
@@ -625,7 +629,7 @@ export default class Tickets extends View {
                 where.length > 2 ? `${where.length} repos` : where.join(", "),
               )
             : null,
-          pr ? small(pr.text, tone(pr)) : null,
+          pr ? prTag(pr) : null,
           small(r.ticket.status),
         ]);
       }
@@ -645,7 +649,7 @@ export default class Tickets extends View {
             .truncate()
             .text_color(t.muted)
             .child(r.item.branch ?? r.item.pr?.title ?? ""),
-          pr ? small(pr.text, tone(pr)) : null,
+          pr ? prTag(pr) : null,
           small(r.tag),
         ]);
       }
@@ -669,115 +673,104 @@ export default class Tickets extends View {
           : `${this.screen.ticket.label}  ${this.screen.ticket.summary}`;
     // Esc mid-action closes the popup and stops after the current step (a
     // clone or fetch that has started finishes); doing it again carries on.
-    const hint = this.running
-      ? "Working… · Esc stops after this step"
-      : this.screen.name === "list"
-        ? "Tab mark · Ctrl+O browser · Ctrl+R reload · Esc"
-        : "⌫ back · Esc";
-    const onList = this.screen.name === "list";
     const status = this.status(rows);
+    // Status (loading, errors, marks) takes the hint's place in the header,
+    // so it costs no extra row and the list never jumps.
+    const hint = this.running
+      ? `${status?.[0] ?? "Working…"} · Esc stops after this step`
+      : status
+        ? status[0]
+        : this.screen.name === "list"
+          ? "Tab mark · Ctrl+O browser · Ctrl+R reload · Esc"
+          : "⌫ back · Esc";
+    const onList = this.screen.name === "list";
 
-    return (
-      v_flex()
-        .id("tickets")
-        .track_focus(this.handle)
-        .w_full()
-        .min_h(0)
-        .p(18)
-        .gap(10)
-        .bg(t.popover)
-        .text_size(13)
-        .on_key_down((e, cx) => {
-          if (this.onKey(e, rows, sel, cx)) cx.stop_propagation();
-        })
-        .child(
-          h_flex()
-            .gap(10)
-            .items_center()
-            .when(!onList, (el) =>
-              el.child(
-                div()
-                  .id("tk-back")
-                  .px(6)
-                  .rounded(5)
-                  .flex_none()
-                  .text_size(15)
-                  .text_color(t.dim)
-                  .cursor_pointer()
-                  .hover((s) => s.bg(t.hover).text_color(t.foreground))
-                  .on_click((_e, cx) => {
-                    if (!this.running) this.back(cx);
-                  })
-                  .tooltip("Back (⌫)")
-                  .child("‹"),
-              ),
-            )
-            .child(
+    return v_flex()
+      .id("tickets")
+      .track_focus(this.handle)
+      .w_full()
+      .min_h(0)
+      .p(18)
+      .gap(10)
+      .bg(t.popover)
+      .text_size(13)
+      .on_key_down((e, cx) => {
+        if (this.onKey(e, rows, sel, cx)) cx.stop_propagation();
+      })
+      .child(
+        h_flex()
+          .gap(10)
+          .items_center()
+          .when(!onList, (el) =>
+            el.child(
               div()
-                .flex_1()
-                .min_w(120)
-                .truncate()
+                .id("tk-back")
+                .px(6)
+                .rounded(5)
+                .flex_none()
                 .text_size(15)
-                .font_semibold()
-                .text_color(t.foreground)
-                .child(title),
-            )
-            .child(
-              div()
-                .flex_shrink(1)
-                .min_w(0)
-                .truncate()
-                .text_size(11)
                 .text_color(t.dim)
-                .child(hint),
+                .cursor_pointer()
+                .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                .on_click((_e, cx) => {
+                  if (!this.running) this.back(cx);
+                })
+                .tooltip("Back (⌫)")
+                .child("‹"),
             ),
-        )
-        .child(
-          h_flex()
-            .h(36)
-            .flex_none()
-            .px(10)
-            .gap(8)
-            .items_center()
-            .rounded(9)
-            .border_1()
-            .border_color(t.accent)
-            .bg(t.background)
-            .child(
-              svg("mods/workspace-chrome/search.svg")
-                .size(15)
-                .text_color(t.dim),
-            )
-            .child(
-              Input.new(this.input)
-                .flex_1()
-                .h_full()
-                .text_size(12.8)
-                .text_color(t.foreground),
-            ),
-        )
-        // The status line always keeps its space, so the list below doesn't
-        // jump when a loading message comes or goes.
-        .child(
-          div()
-            .flex_none()
-            .px(10)
-            .py(4)
-            .truncate()
-            .text_color(status?.[1] ? t.blocked : t.dim)
-            .child(status?.[0] ?? "\u00a0"),
-        )
-        .when(rows.length > 0, (el) =>
-          el.child(
-            v_flex()
-              .h(Math.min(420, 6 + rows.length * 32))
-              .min_h(0)
+          )
+          .child(
+            div()
+              .flex_1()
+              .min_w(120)
+              .truncate()
+              .text_size(15)
+              .font_semibold()
+              .text_color(t.foreground)
+              .child(title),
+          )
+          .child(
+            div()
               .flex_shrink(1)
-              .pb(6)
-              .overflow_y_scrollbar()
-              .children(rows.map(row)),
+              .min_w(0)
+              .truncate()
+              .text_size(11)
+              .text_color(status?.[1] ? t.blocked : t.dim)
+              .child(hint),
           ),
-        )
-    );
+      )
+      .child(
+        h_flex()
+          .h(36)
+          .flex_none()
+          .px(10)
+          .gap(8)
+          .items_center()
+          .rounded(9)
+          .border_1()
+          .border_color(t.accent)
+          .bg(t.background)
+          .child(
+            svg("mods/workspace-chrome/search.svg").size(15).text_color(t.dim),
+          )
+          .child(
+            Input.new(this.input)
+              .flex_1()
+              .h_full()
+              .text_size(12.8)
+              .text_color(t.foreground),
+          ),
+      )
+      .when(rows.length > 0, (el) =>
+        el.child(
+          v_flex()
+            .h(Math.min(420, 6 + rows.length * 32))
+            .min_h(0)
+            .flex_shrink(1)
+            .pb(6)
+            .overflow_y_scrollbar()
+            .children(rows.map(row)),
+        ),
+      );
   }
 }
