@@ -507,14 +507,15 @@ export default class Work extends View {
     this.steps.set(path, { phase: "running", text: `${step.label}…` });
     cx.notify();
     const pr = this.prOf(w);
-    const others = this.groups
-      .flatMap((g) => g.worktrees.map((o) => ({ ...o, repo: g.repo })))
-      .filter((o) => o.path !== path)
-      .map((o) => ({ w: o, pr: this.prOf(o) }));
+    // The ticket's work everywhere: worktrees and branches here, and the PRs
+    // its tracker links (in repos with no worktree here too).
+    const work = w.handle
+      ? (this.store.snapshot([w.handle.key]).get(w.handle.key) ?? [])
+      : [];
     cx.spawn(async (cx) => {
       const who = this.who(w);
       try {
-        const note = await runStep(step.id, w, pr, others);
+        const note = await runStep(step.id, w, pr, work);
         const at = Date.now();
         this.steps.set(path, { phase: "done", text: note, at, staleAt: at });
         if (step.kind === "direct")
