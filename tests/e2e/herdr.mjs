@@ -140,7 +140,7 @@ export class Herdr {
       HERDR_DEMO: this.demo,
       HERDR_APP_HOME: this.home,
       HC_SESSION: this.session,
-      DEMO_CI_SECONDS: "2",
+      DEMO_CI_SECONDS: "1",
       GIT_TERMINAL_PROMPT: "0",
     };
   }
@@ -287,13 +287,13 @@ export class Herdr {
   }
 
   // Waits until the sidebar's row for `worktree` satisfies `check`,
-  // refreshing it (like ↻) every couple of seconds. Returns the row.
+  // refreshing it (like ↻) about every second. Returns the row.
   async waitRow(what, worktree, check, timeout = 30_000) {
     let refreshed = 0;
     return waitFor(
       `${what} (sidebar)`,
       async () => {
-        if (Date.now() - refreshed > 2_000) {
+        if (Date.now() - refreshed > 750) {
           refreshed = Date.now();
           await this.sh("herdr-app", ["do", "work.refresh"]);
         }
