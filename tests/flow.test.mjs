@@ -120,10 +120,14 @@ test("a conflicting PR: only Resolve conflicts, labelled conflicts (bad)", () =>
 
   assert.deepEqual(prLabel(conflicting), {
     text: "#7 draft conflicts",
+    head: "#7 draft",
+    tail: "conflicts",
     tone: "bad",
   });
   assert.deepEqual(prLabel({ ...approved, mergeable: "CONFLICTING" }), {
     text: "#7 approved ✓ conflicts",
+    head: "#7 approved",
+    tail: "✓ conflicts",
     tone: "bad",
   });
   // Merged or closed: no longer about conflicts.
@@ -135,7 +139,12 @@ test("mergeable UNKNOWN: neither Ready nor Merge, nor Resolve conflicts", () => 
   assert.deepEqual(ids(unknown), []);
   assert.deepEqual(ids({ ...approved, mergeable: "UNKNOWN" }), []);
   assert.deepEqual(ids({ ...unknown, checks: "failed" }), ["fix-ci"]);
-  assert.deepEqual(prLabel(unknown), { text: "#7 draft ✓", tone: null });
+  assert.deepEqual(prLabel(unknown), {
+    text: "#7 draft ✓",
+    head: "#7 draft",
+    tail: "✓",
+    tone: null,
+  });
 });
 
 test("an open PR with no checks is never offered Ready or Merge", () => {
@@ -147,13 +156,35 @@ test("an open PR with no checks is never offered Ready or Merge", () => {
   // Nor is it labelled good for being approved.
   assert.deepEqual(prLabel({ ...approved, checks: null }), {
     text: "#7 approved",
+    head: "#7 approved",
+    tail: "",
     tone: null,
   });
-  assert.deepEqual(prLabel(approved), { text: "#7 approved ✓", tone: "good" });
+  assert.deepEqual(prLabel(approved), {
+    text: "#7 approved ✓",
+    head: "#7 approved",
+    tail: "✓",
+    tone: "good",
+  });
   // With counts, GitHub's "passed/total" follows the icon.
   assert.deepEqual(
     prLabel({ ...approved, checks: "failed", checksPassed: 2, checksTotal: 5 }),
-    { text: "#7 approved ✗ 2/5", tone: "bad" },
+    {
+      text: "#7 approved ✗ 2/5",
+      head: "#7 approved",
+      tail: "✗ 2/5",
+      tone: "bad",
+    },
+  );
+  // Changes requested with no checks: the tone still has a whole tail.
+  assert.deepEqual(
+    prLabel({ ...draft, checks: null, review: "CHANGES_REQUESTED" }),
+    {
+      text: "#7 draft changes requested",
+      head: "#7 draft changes requested",
+      tail: "●",
+      tone: "bad",
+    },
   );
   // With checks that passed, it's as before.
   assert.deepEqual(ids(draft), ["ready"]);

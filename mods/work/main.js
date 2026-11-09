@@ -673,8 +673,8 @@ export default class Work extends View {
         .child("●");
     };
 
-    // A step button keeps its label's width while it fits, and on its own
-    // line (the steps wrap) narrower than that shrinks to an ellipsis.
+    // A step button keeps its label's width while it fits, and narrower
+    // than that shrinks to an ellipsis.
     const button = (w, s, chosen) => {
       const confirming = this.confirm?.id === `${w.path}:${s.id}`;
       const label = confirming
@@ -940,12 +940,17 @@ export default class Work extends View {
                   .justify_end()
                   .when(Boolean(pr), (el) =>
                     el.child(
-                      div()
+                      // The tail (the tone: checks, conflicts) stays whole;
+                      // the rest of the PR truncates before it.
+                      h_flex()
                         .min_w(0)
-                        .truncate()
+                        .gap(4)
                         .text_size(11)
                         .text_color(prColor)
-                        .child(pr.text),
+                        .child(div().min_w(0).truncate().child(pr.head))
+                        .when(Boolean(pr.tail), (e) =>
+                          e.child(div().flex_none().child(pr.tail)),
+                        ),
                     ),
                   ),
               )
@@ -1017,8 +1022,9 @@ export default class Work extends View {
           )
           .when(steps.length > 0 || Boolean(note), (el) =>
             el.child(
+              // One line: narrow, the step buttons shrink to ellipses
+              // rather than wrapping one per line.
               h_flex()
-                .flex_wrap()
                 .pl(18)
                 .pt(2)
                 .gap_x(4)
