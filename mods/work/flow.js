@@ -330,17 +330,6 @@ export function rowSteps({
   });
 }
 
-// Which status glyph a row shows, most important first: its last step
-// failed, it has no space, its agent is working, else its agent's status.
-export const glyphOf = (failed, space) =>
-  failed
-    ? "failed"
-    : !space
-      ? "no-space"
-      : space.status === "working"
-        ? "working"
-        : (space.status ?? null);
-
 // --- The agent --------------------------------------------------------------
 
 // The agent terminal in a space: one reporting its status (Claude Code does),

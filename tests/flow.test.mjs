@@ -9,7 +9,6 @@ import { live } from "herdr";
 import { C, useConfig } from "../src/config.js";
 import {
   agentSaysDone,
-  glyphOf,
   nextSteps,
   prEvents,
   prLabel,
@@ -500,12 +499,4 @@ test("rowSteps: a new space's agent gets START_MS to start working", () => {
   assert.deepEqual(at(START_MS - 1), []);
   assert.deepEqual(at(START_MS), ["draft-pr"]);
   assert.deepEqual(at(0, "working"), []);
-});
-
-test("glyphOf: failed > no space > working > the agent's status", () => {
-  assert.equal(glyphOf(true, { status: "working" }), "failed");
-  assert.equal(glyphOf(true, null), "failed");
-  assert.equal(glyphOf(false, null), "no-space");
-  assert.equal(glyphOf(false, { status: "working" }), "working");
-  assert.equal(glyphOf(false, { status: "blocked" }), "blocked");
 });
