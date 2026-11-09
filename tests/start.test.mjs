@@ -53,3 +53,22 @@ test("drainRequests handles each request once and leaves its result", async () =
   assert.match(b.error, /JSON/);
   fs.rmSync(dir, { recursive: true });
 });
+
+test("drainRequests handles requests oldest first", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const { drainRequests } = await import("../src/start.js");
+  const dir = fs.mkdtempSync(`${os.tmpdir()}/work-start-`);
+  const now = Date.now() / 1000;
+  ["b", "c", "a"].forEach((id, i) => {
+    fs.writeFileSync(`${dir}/${id}.json`, JSON.stringify(id));
+    fs.utimesSync(`${dir}/${id}.json`, now - 60 + i, now - 60 + i);
+  });
+  const seen = [];
+  await drainRequests(dir, async (r) => {
+    seen.push(r);
+    return [];
+  });
+  assert.deepEqual(seen, ["b", "c", "a"]);
+  fs.rmSync(dir, { recursive: true });
+});
