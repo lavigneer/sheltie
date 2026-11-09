@@ -9,6 +9,7 @@ const ticket = (s) => s.tickets.find((t) => t.key === "WEB-105");
 flow(
   {
     tracker: "jira",
+    key: "WEB-105",
     filter: "WEB-105",
     ref: "WEB-105",
     repo: "storage",

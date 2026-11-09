@@ -63,16 +63,30 @@ export function spaceName(ticket, repo, work = []) {
   return others.length ? `${ticket.label} ${repo.name}` : ticket.label;
 }
 
+// A repo cloned in place of `target` in `repos` (or added), so later choices
+// find it local.
+export function learnClone(repos, target, cloned) {
+  const at = repos.indexOf(target);
+  if (at >= 0) repos[at] = cloned;
+  else repos.push(cloned);
+}
+
 // Everything up to opening the space for new work on the ticket's own branch
-// in `target` (cloned first if it isn't local): { name, folder, task, repo }.
-// `work` is the ticket's known work, so an existing worktree is reused (and
-// its agent not told the task again). `onStep` hears what's happening.
-/** @param {Ticket} ticket @param {Repo} target @param {WorkItem[]} work @param {(message: string) => void} [onStep] */
-export async function prepareStart(ticket, target, work, onStep = () => {}) {
+// in `target` (cloned first if it isn't local, and `repos` told): { name,
+// folder, task, repo }. `work` is the ticket's known work, so an existing
+// worktree is reused (and its agent not told the task again). `onStep` hears
+// what's happening.
+/** @param {Ticket} ticket @param {Repo} target @param {{ work?: WorkItem[], repos?: Repo[], onStep?: (message: string) => void }} [opts] */
+export async function prepareStart(
+  ticket,
+  target,
+  { work = [], repos = [], onStep = () => {} } = {},
+) {
   let repo = target;
   if (!repo.path) {
     onStep(`Cloning ${repo.slug}…`);
     repo = await cloneRepo(repo.slug);
+    learnClone(repos, target, repo);
   }
   const branch = branchFor(ticket, repo);
   const existing = work.find(
@@ -143,55 +157,47 @@ export function ticketNamed(name, tickets) {
   return byLabel.length === 1 ? byLabel[0] : null;
 }
 
-// Starts each requested ticket (see requested()) like Enter in the tickets
-// popup: in the entry's repo, else its best suggested one. Tickets that
-// already have work (a branch, worktree or PR) are skipped: the person
-// decides what to do with those. All the spaces open at the end. Returns
-// one result per entry: { ticket, status: "started" | "skipped" | "failed",
-// folder?, repo?, why? }.
-/** @param {unknown} request */
-export async function startRequested(request) {
-  const entries = requested(request);
-  const repos = await localRepos();
-  const listed = await listTickets(repos);
+/**
+ * @typedef {{ ticket: string, label?: string, status: "started" | "skipped" | "failed", why?: string, repo?: string, folder?: string }} StartResult
+ */
+
+// Starts each of `entries` ({ ticket, repo }): in its repo, else the ticket's
+// best suggested one (`here` is the current repo, a hint). Tickets with open
+// work in `work` (key -> WorkItem[]: a branch, worktree or open PR) are
+// skipped, the person decides what to do with those; otherwise an existing
+// worktree for its branch is reused, untold. `repos` learns any clone. The
+// spaces aren't opened: that's the caller's, once all are ready. Returns one
+// result per entry (StartResult) and the spaces to open.
+/**
+ * @param {{ ticket: Ticket, repo: Repo | null }[]} entries
+ * @param {{ repos: Repo[], work: Map<string, WorkItem[]>, here?: string | null, onStep?: (message: string) => void }} opts
+ */
+export async function startTickets(
+  entries,
+  { repos, work, here = null, onStep = () => {} },
+) {
+  /** @type {StartResult[]} */
   const results = [];
-  const found = [];
-  for (const e of entries) {
-    const t =
-      ticketNamed(e.ticket, listed) ??
-      (await viewTicket(e.ticket, e.repo ? findRepo(e.repo, repos) : null));
-    if (t) found.push({ e, t });
-    else
-      results.push({
-        ticket: e.ticket,
-        status: "failed",
-        why: "no such ticket",
-      });
-  }
-  const work = await workFor(
-    found.map((f) => f.t),
-    repos,
-  );
   const spaces = [];
-  for (const { e, t } of found) {
+  for (const { ticket: t, repo } of entries) {
     const result = { ticket: t.key, label: t.label };
-    results.push(result);
-    if (work.get(t.key)?.some(isOpenWork)) {
+    results.push(/** @type {StartResult} */ (result));
+    const known = work.get(t.key) ?? [];
+    if (known.some(isOpenWork)) {
       Object.assign(result, {
         status: "skipped",
         why: "already has open work",
       });
       continue;
     }
-    const target = e.repo
-      ? findRepo(e.repo, repos)
-      : suggestRepos(t, repos, null, rememberedRepo(t.key))[0]?.repo;
+    const target =
+      repo ?? suggestRepos(t, repos, here, rememberedRepo(t.key))[0]?.repo;
     if (!target) {
       Object.assign(result, { status: "failed", why: "no repo for it" });
       continue;
     }
     try {
-      const s = await prepareStart(t, target, []);
+      const s = await prepareStart(t, target, { work: known, repos, onStep });
       spaces.push(s);
       Object.assign(result, {
         status: "started",
@@ -202,8 +208,39 @@ export async function startRequested(request) {
       Object.assign(result, { status: "failed", why: errorText(err) });
     }
   }
+  return { results, spaces };
+}
+
+// work.start: each requested ticket (see requested()) found by key or label,
+// started by startTickets, and all the spaces opened at the end. Returns one
+// StartResult per entry.
+/** @param {unknown} request */
+export async function startRequested(request) {
+  const entries = requested(request);
+  const repos = await localRepos();
+  const listed = await listTickets(repos);
+  /** @type {StartResult[]} */
+  const missing = [];
+  const found = [];
+  for (const e of entries) {
+    const t =
+      ticketNamed(e.ticket, listed) ??
+      (await viewTicket(e.ticket, e.repo ? findRepo(e.repo, repos) : null));
+    if (t) found.push({ ticket: t, repo: findRepo(e.repo, repos) });
+    else
+      missing.push({
+        ticket: e.ticket,
+        status: "failed",
+        why: "no such ticket",
+      });
+  }
+  const work = await workFor(
+    found.map((f) => f.ticket),
+    repos,
+  );
+  const { results, spaces } = await startTickets(found, { repos, work });
   openSpaces(spaces);
-  return results;
+  return [...missing, ...results];
 }
 
 const DAY_MIN = "1440"; // results nobody collected are removed after a day
