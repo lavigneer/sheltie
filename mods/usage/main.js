@@ -148,7 +148,7 @@ export default class Usage extends View {
           .text_size(11)
           .font_semibold()
           .text_color(t.dim)
-          .child("USAGE"),
+          .child("Usage"),
       )
       .child(
         div()
@@ -209,8 +209,8 @@ export default class Usage extends View {
             limitList.flatMap((l) => [
               heading(
                 limitList.length > 1
-                  ? `CLAUDE CODE LIMITS (${l.home})`
-                  : "CLAUDE CODE LIMITS",
+                  ? `Claude Code limits (${l.home})`
+                  : "Claude Code limits",
               ),
               ...l.windows.flatMap((w) => [
                 h_flex()
@@ -301,12 +301,12 @@ export default class Usage extends View {
                       .border_t_1()
                       .border_color(t.border ?? t.dim),
                   )
-                  .child(heading("AGENT COSTS (API PRICES)")),
+                  .child(heading("Agent costs (API prices)")),
               )
               .child(line("usage-today", "Today", today, true))
               .child(line("usage-7", "7 days", total(since(dayAgo(6)))))
               .child(line("usage-30", "30 days", total(recent)))
-              .child(heading("30 DAYS BY MODEL"))
+              .child(heading("30 days by model"))
               .children(
                 by(recent, (g) => JSON.stringify([g.agent, g.model, g.fast]))
                   .slice(0, TOP)
