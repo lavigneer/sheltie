@@ -40,9 +40,9 @@
 //                          unreachable) is retried after a minute, never shown as "none"
 //   steps                  per worktree: the last step run from here
 //                          (running / done / failed, with a note)
-//   confirming             the step waiting for its second click, if any
-//   picked                 the row the keys moved to ({ path, step, active }),
-//                          dropped when the focused space changes
+//   nav                    folded groups, the row and step the keys moved to
+//                          (dropped when the focused space changes) and the
+//                          step waiting for its second press (Nav, nav.js)
 //   watched                folders of spaces not yet listed as worktrees,
 //                          rechecked a few times (the tickets popup makes the
 //                          worktree first; an agent may make it later)
@@ -72,7 +72,8 @@ import {
   runStep,
 } from "./flow.js";
 import { hubExcept, localRepos, sameSlug } from "./git.js";
-import { basename, cycle, openUrl, spaceFor } from "./lib.js";
+import { basename, openUrl, spaceFor } from "./lib.js";
+import { CONFIRM_MS, Nav } from "./nav.js";
 import { drainRequests } from "./start.js";
 import { ticketOfBranch } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
@@ -81,7 +82,6 @@ import { prRef, WorkStore } from "./work.js";
 
 const GIT_MS = 30_000;
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
-const CONFIRM_MS = 4_000;
 const NOTE_MS = 60_000; // how long a step's success note stays
 const USAGE_MS = 120_000; // agent costs (see usage.js)
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
@@ -132,7 +132,7 @@ export default class Work extends View {
     // Repo state, tickets and PRs, and when each is due (work.js).
     this.store = new WorkStore();
     this.tickets = this.store.tickets; // by ticket key
-    this.folded = new Set();
+    this.nav = new Nav(); // picked row and step, folds, confirm (nav.js)
     this.watched = new Map(); // space folder -> tries
     // Folders of spaces that appeared while we run, and when: their agent is
     // starting until it first works (or START_MS passes), so it isn't offered
@@ -140,12 +140,8 @@ export default class Work extends View {
     this.starting = new Map();
     this.repos = null; // the last localRepos(), and when: { list, at }
     this.steps = new Map(); // worktree path -> { phase, text }
-    // The step waiting for its second click: null | { id: `${path}:${step id}`,
-    // byKey: whether a key press asked for it }.
-    this.confirm = null;
     this.hovered = null; // the path of the row under the pointer
     this.linksOpen = null; // the path of the row whose ↗ menu is open
-    this.picked = null; // { path, step, active }: see selection()
     this.watchTimer = false;
     this.width = null; // ours, from on_size_change
     this.usage = null; // usage groups (usage.js), for each row's agent cost
@@ -202,7 +198,7 @@ export default class Work extends View {
     return this.shownGroups()
       .flatMap((g) => {
         const rows = rowsOf(g);
-        return this.folded.has(g.repo.path) ? rows.slice(0, 1) : rows;
+        return this.nav.isFolded(g.repo.path) ? rows.slice(0, 1) : rows;
       })
       .map((w) => {
         const space = spaceOf(w);
@@ -235,39 +231,24 @@ export default class Work extends View {
     });
   }
 
-  // The selected row and step: the one the keys moved to while the same
-  // space stays focused, else the focused space's row, else the first.
-  // Returns { rows, at, step, active } (at: -1 without rows; active: the
-  // focused space's id).
+  // The shown rows and the selected one (Nav.select): { rows, at, step }.
   selection() {
     const rows = this.shownRows();
     const active = spaces().find((s) => s.active && !s.machine)?.id ?? null;
-    if (this.picked && this.picked.active !== active) this.picked = null;
-    let at = this.picked
-      ? rows.findIndex((r) => r.w.path === this.picked.path)
-      : -1;
-    let step = at >= 0 ? this.picked.step : 0;
-    if (at < 0) {
-      at = rows.findIndex((r) => r.space?.active);
-      if (at < 0 && rows.length) at = 0;
-      step = 0;
-    }
-    const n = rows[at]?.steps.length ?? 0;
-    return { rows, at, step: n ? Math.min(step, n - 1) : 0, active };
+    const navRows = rows.map((r) => ({
+      path: r.w.path,
+      steps: r.steps,
+      active: Boolean(r.space?.active),
+    }));
+    return { rows, navRows, active, ...this.nav.select(navRows, active) };
   }
 
   command(cx, c) {
-    const { rows, at, step, active } = this.selection();
+    const { rows, navRows, at, step, active } = this.selection();
     const row = rows[at];
-    const pick = (i, s = 0) => {
-      if (rows[i]) this.picked = { path: rows[i].w.path, step: s, active };
-    };
-    if (c === "next" || c === "prev") {
-      if (rows.length) pick(cycle(rows.length, at, c === "next" ? 1 : -1));
-    } else if (c === "step-next" || c === "step-prev") {
-      if (row?.steps.length)
-        pick(at, cycle(row.steps.length, step, c === "step-next" ? 1 : -1));
-    } else if (c === "step") {
+    if (["next", "prev", "step-next", "step-prev"].includes(c))
+      this.nav.move(navRows, active, c);
+    else if (c === "step") {
       if (row?.steps[step]) this.step(cx, row.w, row.steps[step], true);
     } else if (c === "open") {
       if (row) this.open(row.w);
@@ -312,8 +293,9 @@ export default class Work extends View {
       rows: rows.map((r, i) => {
         const pr = this.prOf(r.w);
         const last = this.steps.get(r.w.path) ?? null;
-        const confirming = this.confirm?.id.startsWith(`${r.w.path}:`)
-          ? this.confirm.id.slice(r.w.path.length + 1)
+        const waiting = this.nav.confirming(Date.now());
+        const confirming = waiting?.id.startsWith(`${r.w.path}:`)
+          ? waiting.id.slice(r.w.path.length + 1)
           : null;
         return {
           path: r.w.path,
@@ -516,18 +498,11 @@ export default class Work extends View {
     const path = w.path;
     if (this.steps.get(path)?.phase === "running") return;
     const id = `${path}:${step.id}`;
-    if (step.confirm && this.confirm?.id !== id) {
-      // Only this request's timer ends it: an earlier one for the same step
-      // (asked, run, then asked again) mustn't clear the new one.
-      const mine = { id, byKey };
-      this.confirm = mine;
-      cx.timer.after(CONFIRM_MS, (cx) => {
-        if (this.confirm === mine) this.confirm = null;
-        cx.notify();
-      });
+    if (!this.nav.press(id, Boolean(step.confirm), byKey, Date.now())) {
+      // Redraws once it expires.
+      cx.timer.after(CONFIRM_MS, (cx) => cx.notify());
       return cx.notify();
     }
-    this.confirm = null;
     this.steps.set(path, { phase: "running", text: `${step.label}…` });
     cx.notify();
     const pr = this.prOf(w);
@@ -720,10 +695,11 @@ export default class Work extends View {
     // A step button's label is never cut: narrow, it takes its short label,
     // and the buttons wrap when even those don't fit on one line.
     const button = (w, s, chosen) => {
-      const confirming = this.confirm?.id === `${w.path}:${s.id}`;
+      const waiting = this.nav.confirming(Date.now());
+      const confirming = waiting?.id === `${w.path}:${s.id}`;
       const name = narrow ? s.short : s.label;
       const label = confirming
-        ? `${name}? ${this.confirm.byKey ? "Press" : "Click"} again`
+        ? `${name}? ${waiting.byKey ? "Press" : "Click"} again`
         : name;
       // Filled and accent-coloured, so it reads as clickable next to plain
       // labels; outlined only while picked or confirming.
@@ -1133,12 +1109,15 @@ export default class Work extends View {
     // ticket, PR or steps, so a row of its own would repeat in every group):
     // the chevron folds the group, the rest opens the hub like a row.
     const group = (g) => {
-      const open = !this.folded.has(g.repo.path);
+      const open = !this.nav.isFolded(g.repo.path);
       const n = g.worktrees.length;
       const count = `hub and ${n} worktree${n === 1 ? "" : "s"}`;
       const [hub, ...worktrees] = rowsOf(g);
       const fold = (cx) => {
-        open ? this.folded.add(g.repo.path) : this.folded.delete(g.repo.path);
+        this.nav.fold(
+          g.repo.path,
+          g.worktrees.map((w) => w.path),
+        );
         cx.notify();
       };
       const chevron = svg(
