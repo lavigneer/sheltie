@@ -73,6 +73,7 @@ import {
 } from "./flow.js";
 import { hubExcept, localRepos, sameSlug } from "./git.js";
 import { basename, cycle, openUrl, spaceFor } from "./lib.js";
+import { band, RAIL, resize } from "./sidebar.js";
 import { drainRequests } from "./start.js";
 import { ticketOfBranch } from "./tracker.js";
 import { costIn, dollars, usageGroups } from "./usage.js";
@@ -90,24 +91,18 @@ const WATCH_TRIES = 3;
 // Between finds of the local repos (and reads of their settings); the git
 // scans in between reuse the last list. ↻ and new space folders find now.
 const REPOS_MS = 300_000;
-// Narrower than this, the sidebar draws a rail (as Herdr's own sidebar mods
-// do): a status per row, its details on hover.
-const RAIL = 160;
-// Narrower than SHORT, a row's PR is a short word ("#7 CI failed"), its
-// ticket status gives way and its step buttons take short labels; narrower
-// than GLYPH, the PR is its glyph alone.
+// Narrower than RAIL, the sidebar draws a rail. Narrower than SHORT, a row's
+// PR is a short word ("#7 CI failed"), its ticket status gives way and its
+// step buttons take short labels; narrower than GLYPH, the PR is its glyph
+// alone.
 const SHORT = 340;
 const GLYPH = 220;
 const fit = (width) =>
-  width === null
-    ? "full"
-    : width < RAIL
-      ? "rail"
-      : width < GLYPH
-        ? "glyph"
-        : width < SHORT
-          ? "short"
-          : "full";
+  band(width, [
+    ["rail", RAIL],
+    ["glyph", GLYPH],
+    ["short", SHORT],
+  ]);
 
 // A repo's rail monogram: its name's first letter or digit, upper-cased.
 const monogram = (name) =>
@@ -1281,9 +1276,7 @@ export default class Work extends View {
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        const was = fit(this.width);
-        this.width = size.width;
-        if (fit(size.width) !== was) cx.notify();
+        if (resize(this, size.width, fit)) cx.notify();
       })
       .child(header)
       .when(Boolean(problem), (el) => el.child(problem))
