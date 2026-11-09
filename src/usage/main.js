@@ -153,7 +153,7 @@ export default class Usage extends View {
           .text_size(11)
           .font_semibold()
           .text_color(t.dim)
-          .child("USAGE"),
+          .child("Usage"),
       )
       .child(
         div()
@@ -215,8 +215,8 @@ export default class Usage extends View {
             limitList.flatMap((l) => [
               heading(
                 limitList.length > 1
-                  ? `CLAUDE CODE LIMITS (${l.home})`
-                  : "CLAUDE CODE LIMITS",
+                  ? `Claude Code limits (${l.home})`
+                  : "Claude Code limits",
               ),
               ...l.windows.flatMap((w) => [
                 h_flex()
@@ -315,7 +315,7 @@ export default class Usage extends View {
                   )
                   .child(
                     heading(
-                      narrow ? "AGENT COSTS" : "AGENT COSTS (API PRICES)",
+                      narrow ? "Agent costs" : "Agent costs (API prices)",
                     ),
                   ),
               )

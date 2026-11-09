@@ -670,7 +670,7 @@ export default class Work extends View {
               .text_size(11)
               .font_semibold()
               .text_color(t.dim)
-              .child("WORK"),
+              .child("Work"),
           )
           .child(
             icon("refresh", "↻", "Refresh now", (cx) => this.refresh(cx, true)),
@@ -1236,7 +1236,8 @@ export default class Work extends View {
                 .id(`work-count-${g.repo.path}`)
                 .flex_none()
                 .text_size(11)
-                .text_color(t.dim)
+                // Neutral, like the repo name: the count carries no state.
+                .text_color(t.muted)
                 .tooltip(count)
                 .child(String(n + 1)),
             ),
