@@ -90,7 +90,12 @@ test("localRepos: a worktree outside its repo is no repo of its own", async () =
 
 test("suggestRepos: the issue's repo", async () => {
   const repos = await D.localRepos();
-  const s = D.suggestRepos(await T.view("acme/storage#5"), repos, null, null);
+  const s = D.suggestRepos(
+    await D.viewTicket("acme/storage#5", null),
+    repos,
+    null,
+    null,
+  );
   assert.deepEqual(
     s.map((x) => [x.repo.slug, x.why]),
     [["acme/storage", "issue's repo"]],

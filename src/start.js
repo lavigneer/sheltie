@@ -15,12 +15,12 @@ import {
 import { C } from "./config.js";
 import { addWorktree, branchFor, cloneRepo, localRepos } from "./git.js";
 import { fill, firstLine, spaceFor } from "./lib.js";
-import { tracker } from "./tracker.js";
 import {
   findRepo,
   isOpenWork,
   listTickets,
   suggestRepos,
+  viewTicket,
   workFor,
 } from "./work.js";
 
@@ -52,7 +52,7 @@ export function taskValues(ticket, extra = {}) {
     summary: ticket.summary,
     branch: branchFor(ticket, extra.repo),
     worktreeDir: C.worktreeDir,
-    viewCommand: (ticket.tracker ?? tracker()).viewCommand(ticket.key),
+    viewCommand: ticket.tracker.viewCommand(ticket.key),
     ...extra,
   };
 }
@@ -84,15 +84,13 @@ export async function prepareStart(ticket, target, work, onStep = () => {}) {
   // Work has started: the tracker's "start" step (a Jira transition, if
   // configured). A failure is reported and stops nothing.
   onStep(`Starting ${ticket.label}…`);
-  await (ticket.tracker ?? tracker())
-    .move(ticket.key, "start", ticket.status)
-    .catch((e) =>
-      notify({
-        title: `${ticket.label}: couldn't update the ticket`,
-        body: errorText(e),
-        level: "warning",
-      }),
-    );
+  await ticket.tracker.move(ticket.key, "start", ticket.status).catch((e) =>
+    notify({
+      title: `${ticket.label}: couldn't update the ticket`,
+      body: errorText(e),
+      level: "warning",
+    }),
+  );
   return {
     repo,
     name: spaceName(ticket, repo, work),
@@ -159,12 +157,9 @@ export async function startRequested(request) {
   const results = [];
   const found = [];
   for (const e of entries) {
-    let t = ticketNamed(e.ticket, listed);
-    if (!t) {
-      const global = tracker();
-      const viewed = await global.view(e.ticket).catch(() => null);
-      t = viewed && { ...viewed, tracker: global, homes: [] };
-    }
+    const t =
+      ticketNamed(e.ticket, listed) ??
+      (await viewTicket(e.ticket, e.repo ? findRepo(e.repo, repos) : null));
     if (t) found.push({ e, t });
     else
       results.push({
