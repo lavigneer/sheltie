@@ -43,10 +43,13 @@ export function stageOf(pr) {
 }
 
 // "#881 draft approved ✓ 3/3" (or "#881 draft conflicts") and a tone for
-// coloring: "bad" | "good" | null.
+// coloring: "bad" | "good" | null. `tail` is the end of `text` that carries
+// the tone (checks, conflicts; a "●" when only the review does), kept
+// whole where the line is too narrow for all of it.
 export function prLabel(pr) {
   if (!pr) return null;
   const parts = [`#${pr.number}`];
+  const tail = [];
   if (pr.state === "MERGED") parts.push("merged");
   else if (pr.state === "CLOSED") parts.push("closed");
   else {
@@ -57,19 +60,25 @@ export function prLabel(pr) {
     if (pr.checks) {
       // GitHub's icon and count of passed checks: "✗ 2/5".
       const icon = { failed: "✗", pending: "◌", passed: "✓" }[pr.checks];
-      parts.push(
+      tail.push(
         pr.checksTotal ? `${icon} ${pr.checksPassed}/${pr.checksTotal}` : icon,
       );
     }
   }
   const conflicts = pr.state === "OPEN" && pr.mergeable === "CONFLICTING";
-  if (conflicts) parts.push("conflicts");
+  if (conflicts) tail.push("conflicts");
   const bad =
     conflicts || pr.checks === "failed" || pr.review === "CHANGES_REQUESTED";
   const good =
     pr.state === "MERGED" ||
     (pr.review === "APPROVED" && pr.checks === "passed");
-  return { text: parts.join(" "), tone: bad ? "bad" : good ? "good" : null };
+  const tone = bad ? "bad" : good ? "good" : null;
+  return {
+    text: [...parts, ...tail].join(" "),
+    head: parts.join(" "),
+    tail: tail.length ? tail.join(" ") : tone ? "●" : "",
+    tone,
+  };
 }
 
 // Whether a PR is offered Merge: open, ready, CI passed (not failed, pending
