@@ -84,3 +84,12 @@ test("windows: text without limits gives none", () => {
     { key: "Weekly", label: "Weekly", used: 5, resets: null },
   ]);
 });
+
+test("resetsLabel leaves out today's date", async () => {
+  const { resetsLabel } = await import("../src/limits.js");
+  const now = new Date(2026, 10, 8, 12);
+  assert.equal(resetsLabel("Nov 8, 4:39pm", now), "resets 4:39pm");
+  assert.equal(resetsLabel("Nov 14, 5:59pm", now), "resets Nov 14, 5:59pm");
+  assert.equal(resetsLabel("Nov 18, 1am", now), "resets Nov 18, 1am");
+  assert.equal(resetsLabel(null, now), "");
+});
