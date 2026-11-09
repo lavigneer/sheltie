@@ -197,6 +197,8 @@ test("a conflicting PR: mergeable CONFLICTING, no checks, no auto-merge", async 
   assert.equal(pr.checks, null, "GitHub runs no CI on it");
   assert.deepEqual((await import("../src/flow.js")).prLabel(pr), {
     text: "#56 conflicts",
+    head: "#56",
+    tail: "conflicts",
     tone: "bad",
   });
   assert.deepEqual(
