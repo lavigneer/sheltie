@@ -66,9 +66,11 @@ import { C, configReady } from "./config.js";
 import {
   agentIn,
   agentSaysDone,
-  nextSteps,
   prEvents,
+  rowSteps,
   runStep,
+  START_MS,
+  stillStarting,
 } from "./flow.js";
 import { hubExcept, localRepos, sameSlug } from "./git.js";
 import { basename, openUrl, spaceFor } from "./lib.js";
@@ -85,7 +87,6 @@ const GIT_MS = 30_000;
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
 const USAGE_MS = 120_000; // agent costs (see usage.js)
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
-const START_MS = 30_000; // how long a new space's agent may take to start working
 const WATCH_TRIES = 3;
 // Between finds of the local repos (and reads of their settings); the git
 // scans in between reuse the last list. ↻ and new space folders find now.
@@ -164,22 +165,15 @@ export default class Work extends View {
     );
   }
 
-  // A row's next steps; none for a hub, or until its PR lookup has answered
-  // (null then means "not known yet", not "no PR": guessing Draft PR would
-  // flash a wrong, clickable button and shift the rows below when it goes).
+  // A row's next steps (rowSteps).
   stepsOf(w, space) {
-    if (w.hub) return [];
-    const pr = this.prOf(w);
-    const entry = this.store.prEntry(w.repo, w.branch);
-    if (!pr && (!entry || entry.state === "failed")) return [];
-    // A step just ran (Merge, Ready…): its PR is stale until looked up again,
-    // and would offer that step once more.
-    if (this.steps.get(w.path)?.staleAt) return [];
-    const born = this.starting.get(w.path);
-    if (space?.status === "working" || Date.now() - born >= START_MS)
-      this.starting.delete(w.path);
-    return nextSteps(pr, {
-      working: space?.status === "working" || this.starting.has(w.path),
+    return rowSteps({
+      hub: w.hub,
+      pr: this.prOf(w),
+      lookup: w.hub ? null : this.store.prEntry(w.repo, w.branch),
+      last: this.steps.get(w.path),
+      status: space?.status,
+      bornAt: this.starting.get(w.path),
       agentDone: agentSaysDone(space),
       repo: w.repo,
     });
@@ -414,6 +408,10 @@ export default class Work extends View {
   // rather than at the next poll, and recheck a few times in case it appears
   // a little later.
   watchSpaces(cx) {
+    const now = Date.now();
+    for (const [f, born] of this.starting)
+      if (!stillStarting(born, spaceFor(f)?.status, now))
+        this.starting.delete(f);
     if (!this.groups) return;
     const known = this.knownFolders();
     const fresh = spaces()
