@@ -68,21 +68,20 @@ import {
   agentSaysDone,
   nextSteps,
   prEvents,
-  prLabel,
   runStep,
 } from "./flow.js";
 import { hubExcept, localRepos, sameSlug } from "./git.js";
 import { basename, cycle, openUrl, spaceFor } from "./lib.js";
 import { drainRequests } from "./start.js";
 import { ticketOfBranch } from "./tracker.js";
-import { costIn, dollars, usageGroups } from "./usage.js";
+import { costIn, usageGroups } from "./usage.js";
 import { serial } from "./watch.js";
 import { prRef, WorkStore } from "./work.js";
+import { fit, workView } from "./work-rows.js";
 
 const GIT_MS = 30_000;
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
 const CONFIRM_MS = 4_000;
-const NOTE_MS = 60_000; // how long a step's success note stays
 const USAGE_MS = 120_000; // agent costs (see usage.js)
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
 const START_MS = 30_000; // how long a new space's agent may take to start working
@@ -90,38 +89,10 @@ const WATCH_TRIES = 3;
 // Between finds of the local repos (and reads of their settings); the git
 // scans in between reuse the last list. ↻ and new space folders find now.
 const REPOS_MS = 300_000;
-// Narrower than this, the sidebar draws a rail (as Herdr's own sidebar mods
-// do): a status per row, its details on hover.
-const RAIL = 160;
-// Narrower than SHORT, a row's PR is a short word ("#7 CI failed"), its
-// ticket status gives way and its step buttons take short labels; narrower
-// than GLYPH, the PR is its glyph alone.
-const SHORT = 340;
-const GLYPH = 220;
-const fit = (width) =>
-  width === null
-    ? "full"
-    : width < RAIL
-      ? "rail"
-      : width < GLYPH
-        ? "glyph"
-        : width < SHORT
-          ? "short"
-          : "full";
-
-// A repo's rail monogram: its name's first letter or digit, upper-cased.
-const monogram = (name) =>
-  (name.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
 const LINKS_W = 18; // a row's ↗ button
 
 // A row's space: a hub's leaves out its worktrees' folders (see spaceFor).
 const spaceOf = (w) => spaceFor(w.path, w.except);
-
-// A group's rows: its hub, then its worktrees.
-const rowsOf = (g) => [
-  { ...g.hub, repo: g.repo },
-  ...g.worktrees.map((w) => ({ ...w, repo: g.repo })),
-];
 
 export default class Work extends View {
   init(_props, cx) {
@@ -145,7 +116,7 @@ export default class Work extends View {
     this.confirm = null;
     this.hovered = null; // the path of the row under the pointer
     this.linksOpen = null; // the path of the row whose ↗ menu is open
-    this.picked = null; // { path, step, active }: see selection()
+    this.picked = null; // { path, step, active }: see view()
     this.watchTimer = false;
     this.width = null; // ours, from on_size_change
     this.usage = null; // usage groups (usage.js), for each row's agent cost
@@ -196,24 +167,6 @@ export default class Work extends View {
     );
   }
 
-  // The rows shown, in order, with their next steps: every group's hub (its
-  // header stays when folded), and the worktrees of unfolded groups.
-  shownRows() {
-    return this.shownGroups()
-      .flatMap((g) => {
-        const rows = rowsOf(g);
-        return this.folded.has(g.repo.path) ? rows.slice(0, 1) : rows;
-      })
-      .map((w) => {
-        const space = spaceOf(w);
-        const steps =
-          this.steps.get(w.path)?.phase === "running"
-            ? []
-            : this.stepsOf(w, space);
-        return { w, space, steps };
-      });
-  }
-
   // A row's next steps; none for a hub, or until its PR lookup has answered
   // (null then means "not known yet", not "no PR": guessing Draft PR would
   // flash a wrong, clickable button and shift the rows below when it goes).
@@ -235,29 +188,32 @@ export default class Work extends View {
     });
   }
 
-  // The selected row and step: the one the keys moved to while the same
-  // space stays focused, else the focused space's row, else the first.
-  // Returns { rows, at, step, active } (at: -1 without rows; active: the
-  // focused space's id).
-  selection() {
-    const rows = this.shownRows();
+  // What the sidebar shows (work-rows.js), with the selected row and step:
+  // the one the keys moved to while the same space stays focused, else the
+  // focused space's row, else the first. Adds active: the focused space's id.
+  view() {
     const active = spaces().find((s) => s.active && !s.machine)?.id ?? null;
     if (this.picked && this.picked.active !== active) this.picked = null;
-    let at = this.picked
-      ? rows.findIndex((r) => r.w.path === this.picked.path)
-      : -1;
-    let step = at >= 0 ? this.picked.step : 0;
-    if (at < 0) {
-      at = rows.findIndex((r) => r.space?.active);
-      if (at < 0 && rows.length) at = 0;
-      step = 0;
-    }
-    const n = rows[at]?.steps.length ?? 0;
-    return { rows, at, step: n ? Math.min(step, n - 1) : 0, active };
+    const view = workView({
+      groups: this.shownGroups(),
+      folded: this.folded,
+      width: this.width,
+      steps: this.steps,
+      confirm: this.confirm,
+      picked: this.picked,
+      now: Date.now(),
+      spaceOf,
+      stepsOf: (w, space) => this.stepsOf(w, space),
+      prOf: (w) => this.prOf(w),
+      ticketOf: (w) => this.tickets.get(w.handle.key),
+      isTicket: (w) => this.isTicket(w),
+      costOf: (w) => this.costOf(w),
+    });
+    return { ...view, active };
   }
 
   command(cx, c) {
-    const { rows, at, step, active } = this.selection();
+    const { rows, at, step, active } = this.view();
     const row = rows[at];
     const pick = (i, s = 0) => {
       if (rows[i]) this.picked = { path: rows[i].w.path, step: s, active };
@@ -276,7 +232,7 @@ export default class Work extends View {
     } else if (c === "open-ticket") {
       if (row) this.openTicket(cx, row.w);
     } else if (c === "refresh") this.refresh(cx, true);
-    else if (c === "report") this.report(cx, rows, at, step);
+    else if (c === "report") this.report(cx, rows);
     else if (c === "start") this.starts(cx);
     else console.error(`work: unknown command ${c}`);
   }
@@ -288,8 +244,8 @@ export default class Work extends View {
   // work.open-pr / work.open-ticket would open (prUrl / ticketUrl).
   // Everything but the ticket URLs is taken now, so a row's steps and its PR
   // always agree (a lookup may finish while the URLs are awaited).
-  report(cx, rows, at, step) {
-    const out = this.reportNow(rows, at, step);
+  report(cx, rows) {
+    const out = this.reportNow(rows);
     cx.spawn(async () => {
       const urls = await Promise.all(
         rows.map((r) => this.ticketUrl(r.w).catch(() => null)),
@@ -304,44 +260,50 @@ export default class Work extends View {
     });
   }
 
-  // The report, without the ticket URLs (null until report() adds them).
-  reportNow(rows, at, step) {
+  // The report of the view's rows (view()), without the ticket URLs (null
+  // until report() adds them).
+  reportNow(rows) {
     return {
       at: Date.now(),
       loaded: this.groups !== null,
-      rows: rows.map((r, i) => {
-        const pr = this.prOf(r.w);
-        const last = this.steps.get(r.w.path) ?? null;
-        const confirming = this.confirm?.id.startsWith(`${r.w.path}:`)
-          ? this.confirm.id.slice(r.w.path.length + 1)
-          : null;
+      rows: rows.map((r) => {
+        const pr = r.prValue;
+        const confirming = r.steps.find((s) => s.confirming)?.id ?? null;
         return {
           path: r.w.path,
-          hub: Boolean(r.w.hub),
+          hub: r.hub,
           branch: r.w.branch,
           key: r.w.handle?.key ?? null,
           repo: r.w.repo.slug ?? r.w.repo.name,
           space: r.space?.id ?? null,
           // The status dot: working, blocked… (null: no space).
           status: r.space?.status ?? null,
+          // What the row's status shows (null: the working spinner).
+          glyph: r.status.glyph,
+          title: r.title,
+          sub: r.sub,
           agent: agentIn(r.space),
           agentDone: agentSaysDone(r.space),
-          cost: this.costOf(r.w),
-          selected: i === at,
-          step: i === at ? step : null,
+          cost: r.cost,
+          selected: r.selected,
+          step: r.selected
+            ? Math.max(
+                0,
+                r.steps.findIndex((s) => s.chosen),
+              )
+            : null,
           steps: r.steps.map((s) => ({
             id: s.id,
             label: s.label,
             confirm: Boolean(s.confirm),
           })),
           confirming,
-          ticket:
-            (r.w.handle && this.tickets.get(r.w.handle.key)?.value) || null,
+          ticket: r.ticket,
           ticketUrl: null,
           prUrl: pr?.url ?? null,
           pr: pr && {
             number: pr.number,
-            label: prLabel(pr)?.text ?? null,
+            label: r.pr?.text ?? null,
             state: pr.state,
             draft: pr.draft,
             review: pr.review,
@@ -350,14 +312,18 @@ export default class Work extends View {
             mergeable: pr.mergeable,
             unresolved: pr.unresolved ?? null,
           },
-          last: last && {
-            phase: last.phase,
-            text: last.text,
-            at: last.at ?? null,
-          },
+          last: this.lastOf(r.w),
         };
       }),
     };
+  }
+
+  // The last step run on a row (unfaded: a report keeps its note), or null.
+  lastOf(w) {
+    const last = this.steps.get(w.path);
+    return last
+      ? { phase: last.phase, text: last.text, at: last.at ?? null }
+      : null;
   }
 
   // What the agents started in a row's folder have cost, in $, or null.
@@ -626,9 +592,9 @@ export default class Work extends View {
   render(cx) {
     this.watchSpaces(cx);
     const t = theme();
-    const span = fit(this.width);
-    const rail = span === "rail";
-    const narrow = span === "short" || span === "glyph";
+    const view = this.view();
+    const rail = view.span === "rail";
+    const tone = (name) => t[name] ?? t.accent;
     const icon = (name, label, tip, onClick) =>
       div()
         .id(`work-${name}`)
@@ -684,51 +650,26 @@ export default class Work extends View {
             ),
           );
 
-    // Each state has its own glyph, not only its own colour; a failed last
-    // step marks the row's dot too, until the next step.
-    const GLYPHS = { blocked: "!", done: "✓" };
-    // Without a space, a row with a PR shows the PR's glyph, so rows tell
-    // apart at a glance (on the rail too).
-    const status = (w, space, failed, pr, prColor) => {
-      if (failed)
-        return div().w(12).flex_none().text_color(t.blocked).child("✕");
-      if (!space)
-        return div()
-          .id(`work-nospace-${w.path}`)
-          .w(12)
-          .flex_none()
-          .text_color(pr ? prColor : t.dim)
-          .tooltip(
-            pr
-              ? `${pr.text} · no space open — Enter to open`
-              : "No space open — Enter to open",
-          )
-          .child(pr ? pr.glyph : "○");
-      if (space.status === "working")
+    // A row's status glyph (or spinner), as work-rows.js decided it.
+    const status = (r) => {
+      const st = r.status;
+      if (st.spin)
         return svg("mods/workspace-chrome/spinner.svg")
           .size(11)
           .flex_none()
-          .text_color(t.working)
+          .text_color(tone(st.tone))
           .spin(900);
-      return div()
-        .w(12)
-        .flex_none()
-        .text_color(t[space.status] ?? t.accent)
-        .child(GLYPHS[space.status] ?? "●");
+      const el = div().w(12).flex_none().text_color(tone(st.tone));
+      return (
+        st.tip ? el.id(`work-nospace-${r.w.path}`).tooltip(st.tip) : el
+      ).child(st.glyph);
     };
 
-    // A step button's label is never cut: narrow, it takes its short label,
-    // and the buttons wrap when even those don't fit on one line.
-    const button = (w, s, chosen) => {
-      const confirming = this.confirm?.id === `${w.path}:${s.id}`;
-      const name = narrow ? s.short : s.label;
-      const label = confirming
-        ? `${name}? ${this.confirm.byKey ? "Press" : "Click"} again`
-        : name;
-      // Filled and accent-coloured, so it reads as clickable next to plain
-      // labels; outlined only while picked or confirming.
-      return div()
-        .id(`work-step-${w.path}-${s.id}`)
+    // A step button: filled and accent-coloured, so it reads as clickable
+    // next to plain labels; outlined only while picked or confirming.
+    const button = (r, s) =>
+      div()
+        .id(`work-step-${r.w.path}-${s.id}`)
         .flex_none()
         .h(18)
         .px(6)
@@ -737,19 +678,24 @@ export default class Work extends View {
         .rounded(5)
         .bg(t.hover)
         .border_1()
-        .border_color(confirming ? t.blocked : chosen ? t.accent : "#00000000")
+        .border_color(
+          s.confirming ? t.blocked : s.chosen ? t.accent : "#00000000",
+        )
         .text_size(11)
-        .text_color(confirming ? t.blocked : t.accent)
+        .text_color(s.confirming ? t.blocked : t.accent)
         .cursor_pointer()
-        .hover((st) => st.text_color(confirming ? t.blocked : t.foreground))
+        .hover((st) => st.text_color(s.confirming ? t.blocked : t.foreground))
         .on_click((_e, cx) => {
           cx.stop_propagation();
-          this.step(cx, w, s);
+          this.step(cx, r.w, s);
         })
-        .child(label);
-    };
+        .child(s.text);
 
-    // A row's ↗: a menu of what it opens in the browser (see look()'s links).
+    // What a link in a row's ↗ menu does.
+    const follow = (w, id, cx) =>
+      id === "pr" ? this.openPR(w) : this.openTicket(cx, w);
+
+    // A row's ↗: a menu of what it opens in the browser (the row's links).
     // It keeps its place while hidden, so showing it moves nothing.
     const linksMenu = (w, links) => {
       const close = (cx) => {
@@ -806,7 +752,7 @@ export default class Work extends View {
                   .on_click((_e, cx) => {
                     cx.stop_propagation();
                     close(cx);
-                    l.open(cx);
+                    follow(w, l.id, cx);
                   })
                   .child(l.label),
               ),
@@ -814,104 +760,13 @@ export default class Work extends View {
         );
     };
 
-    const sel = this.selection();
-    const selected = sel.rows[sel.at]?.w.path ?? null;
-
-    // What a row shows, for the full row and the rail.
-    const look = (w) => {
-      const space = spaceOf(w);
-      const isSelected = w.path === selected;
-      const entry = w.handle ? this.tickets.get(w.handle.key) : null;
-      const ticket = entry?.value ?? null;
-      const prValue = this.prOf(w);
-      const pr = prLabel(prValue);
-      const extras = [
-        prValue?.state === "OPEN" && prValue.autoMerge ? "auto-merge" : null,
-      ].filter(Boolean);
-      const steps = this.stepsOf(w, space);
-      const step = this.steps.get(w.path);
-      // A success note fades after a minute; a failure stays until the next step.
-      const last =
-        step?.phase === "done" && Date.now() - step.at > NOTE_MS ? null : step;
-      // The row's third line: the last step's note, else these extras.
-      const note = last
-        ? {
-            text: last.text,
-            color: last.phase === "failed" ? t.blocked : t.dim,
-          }
-        : extras.length
-          ? { text: extras.join(" · "), color: t.dim }
-          : null;
-      const prColor =
-        pr?.tone === "bad" ? t.blocked : pr?.tone === "good" ? t.done : t.muted;
-      // A branch that isn't a ticket (see isTicket) shows the branch.
-      const isTicket = this.isTicket(w);
-      // What the row's ↗ menu offers: only what applies.
-      const links = w.hub
-        ? []
-        : [
-            prValue?.url
-              ? { id: "pr", label: "Open PR", open: () => this.openPR(w) }
-              : null,
-            isTicket
-              ? {
-                  id: "ticket",
-                  label: "Open ticket",
-                  open: (cx) => this.openTicket(cx, w),
-                }
-              : null,
-          ].filter(Boolean);
-      const title = w.hub
-        ? (w.branch ?? "detached")
-        : isTicket
-          ? w.handle.label
-          : w.branch;
-      const sub = ticket
-        ? ticket.summary
-        : isTicket
-          ? entry?.state === "failed"
-            ? `${w.branch} · ${w.handle.tracker.name} unreachable`
-            : w.branch
-          : "";
-      const cost = this.costOf(w);
-      return {
-        space,
-        isSelected,
-        cost: cost === null ? null : dollars(cost),
-        ticket,
-        pr,
-        prColor,
-        steps,
-        last,
-        note,
-        title,
-        sub,
-        links,
-      };
-    };
-
-    // The rail (narrower than RAIL px): a row is its status, and a hover says
-    // the rest. Clicks and keys work as in the full rows.
-    const dot = (w) => {
-      const { space, isSelected, pr, prColor, cost, steps, last, title, sub } =
-        look(w);
-      // A ticket's number tells rows apart without a hover: "#141" or
-      // "PROJ-123" shows 141 or 123.
-      const num =
-        !w.hub && this.isTicket(w)
-          ? (w.handle.label.match(/\d+$/)?.[0] ?? null)
-          : null;
-      const tip = [
-        w.hub ? `${w.repo.name} hub: ${title}` : title,
-        sub,
-        pr?.text,
-        cost && `agents ${cost}`,
-        last?.phase === "running"
-          ? last.text
-          : steps.length
-            ? `Next: ${steps.map((s) => s.label).join(", ")}`
-            : null,
-      ].filter(Boolean);
+    // The rail: a row is its status, and a hover says the rest. Clicks and
+    // keys work as in the full rows.
+    const dot = (r) => {
+      const { w, space, pr, num } = r;
+      // With a space, the dot is the agent's: the PR's glyph goes by the
+      // number.
+      const prGlyph = Boolean(space && pr);
       return h_flex()
         .id(`work-${w.path}`)
         .mx(4)
@@ -921,19 +776,17 @@ export default class Work extends View {
         .items_center()
         .rounded(6)
         .border_l_2()
-        .border_color(isSelected ? t.accent : "#00000000")
+        .border_color(r.selected ? t.accent : "#00000000")
         .cursor_pointer()
         .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
         .hover((s) => s.bg(t.hover))
-        .tooltip(tip.join(" · "))
+        .tooltip(r.tip)
         .on_click(() => this.open(w))
         .child(
           v_flex()
             .items_center()
-            .child(status(w, space, last?.phase === "failed", pr, prColor))
-            // With a space, the dot is the agent's: the PR's glyph goes by
-            // the number.
-            .when(Boolean(num) || Boolean(space && pr), (el) =>
+            .child(status(r))
+            .when(Boolean(num) || prGlyph, (el) =>
               el.child(
                 h_flex()
                   .gap(2)
@@ -941,29 +794,16 @@ export default class Work extends View {
                   .when(Boolean(num), (e) =>
                     e.child(div().text_color(t.dim).child(num)),
                   )
-                  .when(Boolean(space && pr), (e) =>
-                    e.child(div().text_color(prColor).child(pr.glyph)),
+                  .when(prGlyph, (e) =>
+                    e.child(div().text_color(tone(pr.tone)).child(pr.glyph)),
                   ),
               ),
             ),
         );
     };
 
-    const row = (w) => {
-      const {
-        space,
-        isSelected,
-        cost,
-        ticket,
-        pr,
-        prColor,
-        steps,
-        last,
-        note,
-        title,
-        sub,
-        links,
-      } = look(w);
+    const row = (r) => {
+      const { w, space, pr, steps, note, links } = r;
       return (
         v_flex()
           .id(`work-${w.path}`)
@@ -973,7 +813,7 @@ export default class Work extends View {
           .gap(1)
           .rounded(7)
           .border_l_2()
-          .border_color(isSelected ? t.accent : "#00000000")
+          .border_color(r.selected ? t.accent : "#00000000")
           .cursor_pointer()
           .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
           .hover((s) => s.bg(t.hover))
@@ -987,7 +827,7 @@ export default class Work extends View {
             h_flex()
               .gap(6)
               .items_center()
-              .child(status(w, space, last?.phase === "failed", pr, prColor))
+              .child(status(r))
               .child(
                 div()
                   .flex_shrink(1)
@@ -1001,7 +841,7 @@ export default class Work extends View {
                       .text_size(12.5)
                       .text_color(t.foreground)
                       .when(Boolean(space?.active), (d) => d.font_semibold())
-                      .child(title),
+                      .child(r.title),
                   ),
               )
               // The rest of the line after the title (sized to its text): the
@@ -1011,20 +851,18 @@ export default class Work extends View {
                   .flex_1()
                   .min_w(0)
                   .justify_end()
-                  // Narrow, the PR shrinks to a word, then a glyph, rather
-                  // than being cut.
-                  .when(Boolean(pr) && narrow, (el) =>
+                  .when(Boolean(pr) && pr.shown !== "full", (el) =>
                     el.child(
                       div()
                         .id(`work-pr-${w.path}`)
                         .flex_none()
                         .text_size(11)
-                        .text_color(prColor)
+                        .text_color(tone(pr.tone))
                         .tooltip(pr.text)
-                        .child(span === "glyph" ? pr.glyph : pr.short),
+                        .child(pr.shown === "glyph" ? pr.glyph : pr.short),
                     ),
                   )
-                  .when(Boolean(pr) && !narrow, (el) =>
+                  .when(Boolean(pr) && pr.shown === "full", (el) =>
                     el.child(
                       // The tail (the tone: checks, conflicts) stays whole;
                       // the rest of the PR truncates before it.
@@ -1032,7 +870,7 @@ export default class Work extends View {
                         .min_w(0)
                         .gap(4)
                         .text_size(11)
-                        .text_color(prColor)
+                        .text_color(tone(pr.tone))
                         .child(div().min_w(0).truncate().child(pr.head))
                         .when(Boolean(pr.tail), (e) =>
                           e.child(div().flex_none().child(pr.tail)),
@@ -1042,7 +880,7 @@ export default class Work extends View {
               )
               .when(links.length > 0, (el) =>
                 el.child(
-                  isSelected ||
+                  r.selected ||
                     this.hovered === w.path ||
                     this.linksOpen === w.path
                     ? linksMenu(w, links)
@@ -1054,48 +892,37 @@ export default class Work extends View {
           // status and cost come from lookups that finish later, and the line
           // appearing then would push every row below it down. Any other
           // branch (its title already) is one line unless agents there cost.
-          .when(Boolean(sub) || Boolean(w.handle) || Boolean(cost), (el) =>
-            el.child(
-              h_flex()
-                .pl(18)
-                .gap(6)
-                .child(
-                  div()
-                    .flex_1()
-                    .min_w(48)
-                    .truncate()
-                    .text_size(11)
-                    .text_color(t.dim)
-                    .child(sub),
-                )
-                // The ticket status gives way first: narrow, it's left out.
-                .when(Boolean(ticket?.status) && !narrow, (e) =>
-                  e.child(
-                    // Capped, so the summary keeps most of the line.
+          .when(
+            Boolean(r.sub) || Boolean(w.handle) || Boolean(r.costText),
+            (el) =>
+              el.child(
+                h_flex()
+                  .pl(18)
+                  .gap(6)
+                  .child(
                     div()
-                      .flex_shrink(1)
-                      .min_w(0)
-                      .max_w(88)
+                      .flex_1()
+                      .min_w(48)
                       .truncate()
                       .text_size(11)
                       .text_color(t.dim)
-                      .child(ticket.status),
-                  ),
-                )
-                .when(Boolean(cost), (e) =>
-                  e.child(
-                    div()
-                      .id(`work-cost-${w.path}`)
-                      .flex_none()
-                      .text_size(11)
-                      .text_color(t.dim)
-                      .tooltip(
-                        "What agents working here have cost (at API prices)",
-                      )
-                      .child(cost),
-                  ),
-                ),
-            ),
+                      .child(r.sub),
+                  )
+                  .when(Boolean(r.ticketStatus), (e) =>
+                    e.child(
+                      // Capped, so the summary keeps most of the line.
+                      div()
+                        .flex_shrink(1)
+                        .min_w(0)
+                        .max_w(88)
+                        .truncate()
+                        .text_size(11)
+                        .text_color(t.dim)
+                        .child(r.ticketStatus),
+                    ),
+                  )
+                  .when(Boolean(r.costText), (e) => e.child(costEl(r))),
+              ),
           )
           .when(steps.length > 0 || Boolean(note), (el) =>
             el.child(
@@ -1106,13 +933,7 @@ export default class Work extends View {
                 .gap_x(4)
                 .gap_y(3)
                 .items_center()
-                .children(
-                  last?.phase === "running"
-                    ? []
-                    : steps.map((s, i) =>
-                        button(w, s, isSelected && i === sel.step),
-                      ),
-                )
+                .children(steps.map((s) => button(r, s)))
                 .when(Boolean(note), (e) =>
                   e.child(
                     div()
@@ -1120,7 +941,7 @@ export default class Work extends View {
                       .min_w(60)
                       .truncate()
                       .text_size(11)
-                      .text_color(note.color)
+                      .text_color(tone(note.tone))
                       .child(note.text),
                   ),
                 ),
@@ -1129,20 +950,26 @@ export default class Work extends View {
       );
     };
 
+    const costEl = (r) =>
+      div()
+        .id(`work-cost-${r.w.path}`)
+        .flex_none()
+        .text_size(11)
+        .text_color(t.dim)
+        .tooltip("What agents working here have cost (at API prices)")
+        .child(r.costText);
+
     // A repo's header. In full, it is also its hub's row (the hub has no
     // ticket, PR or steps, so a row of its own would repeat in every group):
     // the chevron folds the group, the rest opens the hub like a row.
     const group = (g) => {
-      const open = !this.folded.has(g.repo.path);
-      const n = g.worktrees.length;
-      const count = `hub and ${n} worktree${n === 1 ? "" : "s"}`;
-      const [hub, ...worktrees] = rowsOf(g);
+      const { hub } = g;
       const fold = (cx) => {
-        open ? this.folded.add(g.repo.path) : this.folded.delete(g.repo.path);
+        g.open ? this.folded.add(g.repo.path) : this.folded.delete(g.repo.path);
         cx.notify();
       };
       const chevron = svg(
-        `mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`,
+        `mods/workspace-chrome/chevron-${g.open ? "down" : "right"}.svg`,
       )
         .size(11)
         .flex_none()
@@ -1158,7 +985,7 @@ export default class Work extends View {
               .gap(5)
               .items_center()
               .justify_center()
-              .tooltip(`${g.repo.name} (${count})`)
+              .tooltip(`${g.name} (${g.count})`)
               .rounded(6)
               .cursor_pointer()
               .hover((s) => s.bg(t.hover))
@@ -1170,12 +997,11 @@ export default class Work extends View {
                   .text_size(11)
                   .font_semibold()
                   .text_color(t.muted)
-                  .child(monogram(g.repo.name)),
+                  .child(g.monogram),
               ),
           )
           .child(dot(hub))
-          .when(open, (el) => el.children(worktrees.map(dot)));
-      const { space, isSelected, cost, last, title } = look(hub);
+          .children(g.worktrees.map(dot));
       return v_flex()
         .child(
           h_flex()
@@ -1187,12 +1013,14 @@ export default class Work extends View {
             .items_center()
             .rounded(6)
             .border_l_2()
-            .border_color(isSelected ? t.accent : "#00000000")
+            .border_color(hub.selected ? t.accent : "#00000000")
             .cursor_pointer()
-            .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
+            .when(Boolean(hub.space?.active), (el) =>
+              el.bg(t.selected ?? t.hover),
+            )
             .hover((s) => s.bg(t.hover))
-            .tooltip(`${g.repo.name} hub: ${title}`)
-            .on_click(() => this.open(hub))
+            .tooltip(`${g.name} hub: ${hub.title}`)
+            .on_click(() => this.open(hub.w))
             .child(
               div()
                 .id(`work-fold-${g.repo.path}`)
@@ -1205,7 +1033,7 @@ export default class Work extends View {
                 })
                 .child(chevron),
             )
-            .child(status(hub, space, last?.phase === "failed"))
+            .child(status(hub))
             .child(
               div()
                 .flex_shrink(1)
@@ -1214,7 +1042,7 @@ export default class Work extends View {
                 .text_size(12.5)
                 .font_semibold()
                 .text_color(t.muted)
-                .child(g.repo.name),
+                .child(g.name),
             )
             .child(
               div()
@@ -1223,19 +1051,9 @@ export default class Work extends View {
                 .truncate()
                 .text_size(11)
                 .text_color(t.dim)
-                .child(title),
+                .child(hub.title),
             )
-            .when(Boolean(cost), (el) =>
-              el.child(
-                div()
-                  .id(`work-cost-${hub.path}`)
-                  .flex_none()
-                  .text_size(11)
-                  .text_color(t.dim)
-                  .tooltip("What agents working here have cost (at API prices)")
-                  .child(cost),
-              ),
-            )
+            .when(Boolean(hub.costText), (el) => el.child(costEl(hub)))
             .child(
               div()
                 .id(`work-count-${g.repo.path}`)
@@ -1243,11 +1061,11 @@ export default class Work extends View {
                 .text_size(11)
                 // Neutral, like the repo name: the count carries no state.
                 .text_color(t.muted)
-                .tooltip(count)
-                .child(String(n + 1)),
+                .tooltip(g.count)
+                .child(g.size),
             ),
         )
-        .when(open, (el) => el.children(worktrees.map(row)));
+        .children(g.worktrees.map(row));
     };
 
     // Messages: in full on the rail too, on hover.
@@ -1264,12 +1082,11 @@ export default class Work extends View {
             .child(id === "problem" ? "!" : "…")
         : div().px(14).py(4).text_size(11).text_color(color).child(text);
     const problem = C.problem ? message("problem", C.problem, t.blocked) : null;
-    const shown = this.shownGroups();
     const body =
       this.groups === null
         ? message("loading", "Loading worktrees…", t.dim)
-        : shown.length
-          ? v_flex().gap(4).children(shown.map(group))
+        : view.groups.length
+          ? v_flex().gap(4).children(view.groups.map(group))
           : message(
               "empty",
               "No worktrees yet. Press + to start a ticket.",
