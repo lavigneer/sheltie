@@ -80,9 +80,10 @@ test("the PR at each width; the tone stays whole while the head truncates", () =
   assert.equal(full.tail, "✗ 2/5");
   assert.equal(full.tone, "blocked");
   assert.equal(at(300).shown, "short");
-  assert.equal(at(300).short, "#7 CI failed");
+  assert.equal(at(300).head, "#7 CI failed");
+  assert.equal(at(300).tail, "");
   assert.equal(at(200).shown, "glyph");
-  assert.equal(at(200).glyph, "✗");
+  assert.equal(at(200).head, "✗");
 });
 
 test("narrow: ticket status gives way and steps take short labels", () => {

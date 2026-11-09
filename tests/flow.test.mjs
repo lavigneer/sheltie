@@ -15,6 +15,7 @@ import {
   rowSteps,
   runStep,
   START_MS,
+  toneKey,
 } from "../src/flow.js";
 
 const draft = {
@@ -126,7 +127,6 @@ test("a conflicting PR: only Resolve conflicts, labelled conflicts (bad)", () =>
     head: "#7 draft",
     tail: "conflicts",
     tone: "bad",
-    short: "#7 conflicts",
     glyph: "!",
   });
   assert.deepEqual(prLabel({ ...approved, mergeable: "CONFLICTING" }), {
@@ -134,7 +134,6 @@ test("a conflicting PR: only Resolve conflicts, labelled conflicts (bad)", () =>
     head: "#7 approved",
     tail: "✓ conflicts",
     tone: "bad",
-    short: "#7 conflicts",
     glyph: "!",
   });
   // Merged or closed: no longer about conflicts.
@@ -151,7 +150,6 @@ test("mergeable UNKNOWN: neither Ready nor Merge, nor Resolve conflicts", () => 
     head: "#7 draft",
     tail: "✓",
     tone: null,
-    short: "#7 draft",
     glyph: "◌",
   });
 });
@@ -168,7 +166,6 @@ test("an open PR with no checks is never offered Ready or Merge", () => {
     head: "#7 approved",
     tail: "",
     tone: null,
-    short: "#7 approved",
     glyph: "✓",
   });
   assert.deepEqual(prLabel(approved), {
@@ -176,7 +173,6 @@ test("an open PR with no checks is never offered Ready or Merge", () => {
     head: "#7 approved",
     tail: "✓",
     tone: "good",
-    short: "#7 approved",
     glyph: "✓",
   });
   // With counts, GitHub's "passed/total" follows the icon.
@@ -187,7 +183,6 @@ test("an open PR with no checks is never offered Ready or Merge", () => {
       head: "#7 approved",
       tail: "✗ 2/5",
       tone: "bad",
-      short: "#7 CI failed",
       glyph: "✗",
     },
   );
@@ -199,7 +194,6 @@ test("an open PR with no checks is never offered Ready or Merge", () => {
       head: "#7 draft changes requested",
       tail: "●",
       tone: "bad",
-      short: "#7 changes",
       glyph: "±",
     },
   );
@@ -425,7 +419,7 @@ test("prEvents: each transition from was to now", () => {
 
 test("a PR's short word and glyph: the state that matters most", () => {
   const open = { number: 3, state: "OPEN", draft: false, review: null };
-  const short = (pr) => prLabel({ ...open, ...pr }).short;
+  const short = (pr) => prLabel({ ...open, ...pr }, "short").head;
   assert.equal(short({ state: "MERGED", checks: "failed" }), "#3 merged");
   assert.equal(short({ state: "CLOSED" }), "#3 closed");
   assert.equal(
@@ -467,7 +461,6 @@ test("an open PR's label names its review state, and ready-to-merge is good", ()
     head: "#7 in review",
     tail: "✓",
     tone: null,
-    short: "#7 in review",
     glyph: "◑",
   });
   assert.equal(prLabel({ ...open, review: null }).tone, "good");
@@ -499,4 +492,83 @@ test("rowSteps: a new space's agent gets START_MS to start working", () => {
   assert.deepEqual(at(START_MS - 1), []);
   assert.deepEqual(at(START_MS), ["draft-pr"]);
   assert.deepEqual(at(0, "working"), []);
+});
+test("what a PR shows at each width: head, then the tail kept whole", () => {
+  const open = {
+    number: 7,
+    state: "OPEN",
+    draft: false,
+    review: null,
+    checks: "passed",
+    checksPassed: 3,
+    checksTotal: 3,
+    mergeable: "MERGEABLE",
+  };
+  const shown = (pr, span) => {
+    const { head, tail } = prLabel({ ...open, ...pr }, span);
+    return [head, tail];
+  };
+  for (const [name, pr, full, short, glyph] of [
+    [
+      "draft",
+      { draft: true, checks: "pending", checksPassed: 1 },
+      ["#7 draft", "◌ 1/3"],
+      "#7 draft",
+      "◌",
+    ],
+    [
+      "in review",
+      { review: "REVIEW_REQUIRED" },
+      ["#7 in review", "✓ 3/3"],
+      "#7 in review",
+      "◑",
+    ],
+    [
+      "approved",
+      { review: "APPROVED" },
+      ["#7 approved", "✓ 3/3"],
+      "#7 approved",
+      "✓",
+    ],
+    [
+      "no checks, approved",
+      { review: "APPROVED", checks: null },
+      ["#7 approved", ""],
+      "#7 approved",
+      "✓",
+    ],
+    [
+      "changes requested",
+      { review: "CHANGES_REQUESTED", checks: null },
+      ["#7 changes requested", "●"],
+      "#7 changes",
+      "±",
+    ],
+    [
+      "CI failed",
+      { checks: "failed", checksPassed: 2 },
+      ["#7 no review needed", "✗ 2/3"],
+      "#7 CI failed",
+      "✗",
+    ],
+    [
+      "conflicts",
+      { mergeable: "CONFLICTING" },
+      ["#7 no review needed", "✓ 3/3 conflicts"],
+      "#7 conflicts",
+      "!",
+    ],
+    ["merged", { state: "MERGED" }, ["#7 merged", "●"], "#7 merged", "◆"],
+    ["closed", { state: "CLOSED" }, ["#7 closed", ""], "#7 closed", "×"],
+  ]) {
+    assert.deepEqual(shown(pr, "full"), full, `${name}, full`);
+    assert.deepEqual(shown(pr, "short"), [short, ""], `${name}, short`);
+    assert.deepEqual(shown(pr, "glyph"), [glyph, ""], `${name}, glyph`);
+  }
+});
+
+test("a PR's tone names its theme key", () => {
+  assert.equal(toneKey("bad"), "blocked");
+  assert.equal(toneKey("good"), "done");
+  assert.equal(toneKey(null), "muted");
 });

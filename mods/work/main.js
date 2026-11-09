@@ -40,9 +40,9 @@
 //                          unreachable) is retried after a minute, never shown as "none"
 //   steps                  per worktree: the last step run from here
 //                          (running / done / failed, with a note)
-//   confirming             the step waiting for its second click, if any
-//   picked                 the row the keys moved to ({ path, step, active }),
-//                          dropped when the focused space changes
+//   nav                    folded groups, the row and step the keys moved to
+//                          (dropped when the focused space changes) and the
+//                          step waiting for its second press (Nav, nav.js)
 //   watched                folders of spaces not yet listed as worktrees,
 //                          rechecked a few times (the tickets popup makes the
 //                          worktree first; an agent may make it later)
@@ -73,7 +73,9 @@ import {
   stillStarting,
 } from "./flow.js";
 import { hubExcept, localRepos, sameSlug } from "./git.js";
-import { basename, cycle, openUrl, spaceFor } from "./lib.js";
+import { basename, openUrl, spaceFor } from "./lib.js";
+import { CONFIRM_MS, Nav } from "./nav.js";
+import { resize } from "./sidebar.js";
 import { drainRequests } from "./start.js";
 import { ticketOfBranch } from "./tracker.js";
 import { costIn, usageGroups } from "./usage.js";
@@ -83,7 +85,6 @@ import { fit, workView } from "./work-rows.js";
 
 const GIT_MS = 30_000;
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
-const CONFIRM_MS = 4_000;
 const USAGE_MS = 120_000; // agent costs (see usage.js)
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
 const WATCH_TRIES = 3;
@@ -104,7 +105,7 @@ export default class Work extends View {
     // Repo state, tickets and PRs, and when each is due (work.js).
     this.store = new WorkStore();
     this.tickets = this.store.tickets; // by ticket key
-    this.folded = new Set();
+    this.nav = new Nav(); // folds, picked row and step, confirm (nav.js)
     this.watched = new Map(); // space folder -> tries
     // Folders of spaces that appeared while we run, and when: their agent is
     // starting until it first works (or START_MS passes), so it isn't offered
@@ -112,12 +113,8 @@ export default class Work extends View {
     this.starting = new Map();
     this.repos = null; // the last localRepos(), and when: { list, at }
     this.steps = new Map(); // worktree path -> { phase, text }
-    // The step waiting for its second click: null | { id: `${path}:${step id}`,
-    // byKey: whether a key press asked for it }.
-    this.confirm = null;
     this.hovered = null; // the path of the row under the pointer
     this.linksOpen = null; // the path of the row whose ↗ menu is open
-    this.picked = null; // { path, step, active }: see view()
     this.watchTimer = false;
     this.width = null; // ours, from on_size_change
     this.usage = null; // usage groups (usage.js), for each row's agent cost
@@ -187,15 +184,15 @@ export default class Work extends View {
   // focused space's row, else the first. Adds active: the focused space's id.
   view() {
     const active = spaces().find((s) => s.active && !s.machine)?.id ?? null;
-    if (this.picked && this.picked.active !== active) this.picked = null;
+    const now = Date.now();
     const view = workView({
       groups: this.shownGroups(),
-      folded: this.folded,
+      folded: this.nav.folded,
       width: this.width,
       steps: this.steps,
-      confirm: this.confirm,
-      picked: this.picked,
-      now: Date.now(),
+      confirm: this.nav.confirming(now),
+      picked: this.nav.picked(active),
+      now,
       spaceOf,
       stepsOf: (w, space) => this.stepsOf(w, space),
       prOf: (w) => this.prOf(w),
@@ -209,14 +206,9 @@ export default class Work extends View {
   command(cx, c) {
     const { rows, at, step, active } = this.view();
     const row = rows[at];
-    const pick = (i, s = 0) => {
-      if (rows[i]) this.picked = { path: rows[i].w.path, step: s, active };
-    };
-    if (c === "next" || c === "prev") {
-      if (rows.length) pick(cycle(rows.length, at, c === "next" ? 1 : -1));
-    } else if (c === "step-next" || c === "step-prev") {
-      if (row?.steps.length)
-        pick(at, cycle(row.steps.length, step, c === "step-next" ? 1 : -1));
+    if (["next", "prev", "step-next", "step-prev"].includes(c)) {
+      const navRows = rows.map((r) => ({ path: r.w.path, steps: r.steps }));
+      this.nav.move(navRows, at, step, active, c);
     } else if (c === "step") {
       if (row?.steps[step]) this.step(cx, row.w, row.steps[step], true);
     } else if (c === "open") {
@@ -480,18 +472,11 @@ export default class Work extends View {
     const path = w.path;
     if (this.steps.get(path)?.phase === "running") return;
     const id = `${path}:${step.id}`;
-    if (step.confirm && this.confirm?.id !== id) {
-      // Only this request's timer ends it: an earlier one for the same step
-      // (asked, run, then asked again) mustn't clear the new one.
-      const mine = { id, byKey };
-      this.confirm = mine;
-      cx.timer.after(CONFIRM_MS, (cx) => {
-        if (this.confirm === mine) this.confirm = null;
-        cx.notify();
-      });
+    if (!this.nav.press(id, Boolean(step.confirm), byKey, Date.now())) {
+      // Redraws once it expires.
+      cx.timer.after(CONFIRM_MS, (cx) => cx.notify());
       return cx.notify();
     }
-    this.confirm = null;
     this.steps.set(path, { phase: "running", text: `${step.label}…` });
     cx.notify();
     const pr = this.prOf(w);
@@ -849,6 +834,8 @@ export default class Work extends View {
                   .flex_1()
                   .min_w(0)
                   .justify_end()
+                  // Narrow, the PR is a word, then a glyph (see prLabel),
+                  // never cut.
                   .when(Boolean(pr) && pr.shown !== "full", (el) =>
                     el.child(
                       div()
@@ -857,7 +844,7 @@ export default class Work extends View {
                         .text_size(11)
                         .text_color(tone(pr.tone))
                         .tooltip(pr.text)
-                        .child(pr.shown === "glyph" ? pr.glyph : pr.short),
+                        .child(pr.head),
                     ),
                   )
                   .when(Boolean(pr) && pr.shown === "full", (el) =>
@@ -963,7 +950,10 @@ export default class Work extends View {
     const group = (g) => {
       const { hub } = g;
       const fold = (cx) => {
-        g.open ? this.folded.add(g.repo.path) : this.folded.delete(g.repo.path);
+        this.nav.fold(
+          g.repo.path,
+          g.worktrees.map((r) => r.w.path),
+        );
         cx.notify();
       };
       const chevron = svg(
@@ -1096,9 +1086,7 @@ export default class Work extends View {
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        const was = fit(this.width);
-        this.width = size.width;
-        if (fit(size.width) !== was) cx.notify();
+        if (resize(this, size.width, fit)) cx.notify();
       })
       .child(header)
       .when(Boolean(problem), (el) => el.child(problem))

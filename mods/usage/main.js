@@ -12,6 +12,7 @@ import { div, View } from "gpui-kit";
 import { theme } from "herdr";
 import { C, configReady } from "./config.js";
 import { planLimits, resetsLabel } from "./limits.js";
+import { band, RAIL, resize } from "./sidebar.js";
 import {
   dollars,
   LOADING,
@@ -24,7 +25,6 @@ import {
 const DAY_MS = 86_400_000;
 const REFRESH_MS = 120_000;
 const LIMITS_MS = 300_000;
-const RAIL = 160;
 // Narrower than this, the limits leave out when they reset (the row's
 // tooltip still says) and the cost heading is shortened.
 const NARROW = 240;
@@ -94,8 +94,12 @@ export default class Usage extends View {
 
   render(_cx) {
     const t = theme();
-    const rail = this.width !== null && this.width < RAIL;
-    const narrow = this.width !== null && this.width < NARROW;
+    const span = band(this.width, [
+      ["rail", RAIL],
+      ["narrow", NARROW],
+    ]);
+    const rail = span === "rail";
+    const narrow = span !== "full";
     const { phase, error } = this.state;
     const groups = this.state.groups ?? [];
     const since = (d) => groups.filter((g) => g.day >= d);
@@ -341,10 +345,9 @@ export default class Usage extends View {
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        // The rail switch and the plan limits' bars depend on the width.
-        const changed = size.width !== this.width;
-        this.width = size.width;
-        if (changed) cx.notify();
+        // The plan limits' bars span the sidebar, so any width change shows
+        // (not just a change of band).
+        if (resize(this, size.width, (w) => w)) cx.notify();
       })
       .child(
         rail

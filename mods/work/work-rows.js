@@ -6,30 +6,26 @@
 // Tones name theme colours ("blocked", "done", "muted", "dim", "working",
 // or a space status, which falls back to "accent" when the theme has none).
 
-import { prLabel } from "./flow.js";
+import { prLabel, toneKey } from "./flow.js";
+import { band, RAIL } from "./sidebar.js";
 import { dollars } from "./usage.js";
 
-// Narrower than RAIL, the sidebar draws a rail (as Herdr's own sidebar mods
-// do): a status per row, its details on hover. Narrower than SHORT, a row's
-// PR is a short word ("#7 CI failed"), its ticket status gives way and its
-// step buttons take short labels; narrower than GLYPH, the PR is its glyph
-// alone.
-export const RAIL = 160;
+// Narrower than RAIL (sidebar.js), the sidebar draws a rail. Narrower than
+// SHORT, a row's PR is a short word ("#7 CI failed"), its ticket status gives
+// way and its step buttons take short labels; narrower than GLYPH, the PR is
+// its glyph alone.
+export { RAIL };
 export const GLYPH = 220;
 export const SHORT = 340;
 
 // The band a width falls in: "rail", "glyph", "short" or "full" (not
 // measured yet: "full").
 export const fit = (width) =>
-  width === null || width === undefined
-    ? "full"
-    : width < RAIL
-      ? "rail"
-      : width < GLYPH
-        ? "glyph"
-        : width < SHORT
-          ? "short"
-          : "full";
+  band(width, [
+    ["rail", RAIL],
+    ["glyph", GLYPH],
+    ["short", SHORT],
+  ]);
 
 // A repo's rail monogram: its name's first letter or digit, upper-cased.
 export const monogram = (name) =>
@@ -40,9 +36,6 @@ export const NOTE_MS = 60_000;
 
 // Each state has its own glyph, not only its own colour.
 const GLYPHS = { blocked: "!", done: "✓" };
-
-const prTone = (pr) =>
-  pr?.tone === "bad" ? "blocked" : pr?.tone === "good" ? "done" : "muted";
 
 // The row's status: a failed last step marks it (until the next step);
 // without a space, a row with a PR shows the PR's glyph, so rows tell apart
@@ -96,13 +89,11 @@ export function workView(input) {
     const entry = w.handle ? input.ticketOf(w) : null;
     const ticket = entry?.value ?? null;
     const prValue = input.prOf(w);
-    const label = prLabel(prValue);
-    const pr = label && {
-      ...label,
-      tone: prTone(label),
-      // Narrow, the PR shrinks to a word, then a glyph, rather than being cut.
-      shown: span === "glyph" ? "glyph" : span === "short" ? "short" : "full",
-    };
+    const shown = span === "glyph" || span === "short" ? span : "full";
+    const label = prLabel(prValue, shown);
+    // `shown`: narrow, the PR shrinks to a word, then a glyph (its head),
+    // rather than being cut.
+    const pr = label && { ...label, tone: toneKey(label.tone), shown };
     // A branch that isn't a ticket (see isTicket) shows the branch.
     const isTicket = input.isTicket(w);
     const title = w.hub
