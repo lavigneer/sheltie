@@ -7,29 +7,25 @@
 // or a space status, which falls back to "accent" when the theme has none).
 
 import { prLabel, toneKey } from "./flow.js";
+import { band, RAIL } from "./sidebar.js";
 import { dollars } from "./usage.js";
 
-// Narrower than RAIL, the sidebar draws a rail (as Herdr's own sidebar mods
-// do): a status per row, its details on hover. Narrower than SHORT, a row's
-// PR is a short word ("#7 CI failed"), its ticket status gives way and its
-// step buttons take short labels; narrower than GLYPH, the PR is its glyph
-// alone.
-export const RAIL = 160;
+// Narrower than RAIL (sidebar.js), the sidebar draws a rail. Narrower than
+// SHORT, a row's PR is a short word ("#7 CI failed"), its ticket status gives
+// way and its step buttons take short labels; narrower than GLYPH, the PR is
+// its glyph alone.
+export { RAIL };
 export const GLYPH = 220;
 export const SHORT = 340;
 
 // The band a width falls in: "rail", "glyph", "short" or "full" (not
 // measured yet: "full").
 export const fit = (width) =>
-  width === null || width === undefined
-    ? "full"
-    : width < RAIL
-      ? "rail"
-      : width < GLYPH
-        ? "glyph"
-        : width < SHORT
-          ? "short"
-          : "full";
+  band(width, [
+    ["rail", RAIL],
+    ["glyph", GLYPH],
+    ["short", SHORT],
+  ]);
 
 // A repo's rail monogram: its name's first letter or digit, upper-cased.
 export const monogram = (name) =>

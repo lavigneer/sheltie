@@ -73,6 +73,7 @@ import {
 import { hubExcept, localRepos, sameSlug } from "./git.js";
 import { basename, openUrl, spaceFor } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
+import { resize } from "./sidebar.js";
 import { drainRequests } from "./start.js";
 import { ticketOfBranch } from "./tracker.js";
 import { costIn, usageGroups } from "./usage.js";
@@ -1087,9 +1088,7 @@ export default class Work extends View {
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        const was = fit(this.width);
-        this.width = size.width;
-        if (fit(size.width) !== was) cx.notify();
+        if (resize(this, size.width, fit)) cx.notify();
       })
       .child(header)
       .when(Boolean(problem), (el) => el.child(problem))
