@@ -664,7 +664,12 @@ export default class Work extends View {
             ),
           );
 
-    const status = (w, space) => {
+    // Each state has its own glyph, not only its own colour; a failed last
+    // step marks the row's dot too, until the next step.
+    const GLYPHS = { blocked: "!", done: "✓" };
+    const status = (w, space, failed) => {
+      if (failed)
+        return div().w(12).flex_none().text_color(t.blocked).child("✕");
       if (!space)
         return div()
           .id(`work-nospace-${w.path}`)
@@ -683,7 +688,7 @@ export default class Work extends View {
         .w(12)
         .flex_none()
         .text_color(t[space.status] ?? t.accent)
-        .child("●");
+        .child(GLYPHS[space.status] ?? "●");
     };
 
     // A step button keeps its label's width while it fits, and narrower
@@ -896,7 +901,7 @@ export default class Work extends View {
         .child(
           v_flex()
             .items_center()
-            .child(status(w, space))
+            .child(status(w, space, last?.phase === "failed"))
             .when(Boolean(num), (el) =>
               el.child(div().text_size(9).text_color(t.dim).child(num)),
             ),
@@ -941,7 +946,7 @@ export default class Work extends View {
             h_flex()
               .gap(6)
               .items_center()
-              .child(status(w, space))
+              .child(status(w, space, last?.phase === "failed"))
               .child(
                 div()
                   .flex_shrink(1)
