@@ -196,11 +196,14 @@ export default class Work extends View {
     );
   }
 
-  // The rows shown (unfolded groups), in order, with their next steps.
+  // The rows shown, in order, with their next steps: every group's hub (its
+  // header stays when folded), and the worktrees of unfolded groups.
   shownRows() {
     return this.shownGroups()
-      .filter((g) => !this.folded.has(g.repo.path))
-      .flatMap(rowsOf)
+      .flatMap((g) => {
+        const rows = rowsOf(g);
+        return this.folded.has(g.repo.path) ? rows.slice(0, 1) : rows;
+      })
       .map((w) => {
         const space = spaceOf(w);
         const steps =
@@ -1170,7 +1173,8 @@ export default class Work extends View {
                   .child(monogram(g.repo.name)),
               ),
           )
-          .when(open, (el) => el.children([hub, ...worktrees].map(dot)));
+          .child(dot(hub))
+          .when(open, (el) => el.children(worktrees.map(dot)));
       const { space, isSelected, cost, last, title } = look(hub);
       return v_flex()
         .child(
