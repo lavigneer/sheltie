@@ -300,6 +300,8 @@ export default class Work extends View {
           key: r.w.handle?.key ?? null,
           repo: r.w.repo.slug ?? r.w.repo.name,
           space: r.space?.id ?? null,
+          // The status dot: working, blocked… (null: no space).
+          status: r.space?.status ?? null,
           agent: agentIn(r.space),
           agentDone: agentSaysDone(r.space),
           cost: this.costOf(r.w),
