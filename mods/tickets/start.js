@@ -18,8 +18,8 @@ import { fill, firstLine, spaceFor } from "./lib.js";
 import { tracker } from "./tracker.js";
 import {
   findRepo,
-  isOpenWork,
   listTickets,
+  openWork,
   suggestRepos,
   workFor,
 } from "./work.js";
@@ -185,7 +185,7 @@ export async function startTickets(
     const result = { ticket: t.key, label: t.label };
     results.push(/** @type {StartResult} */ (result));
     const known = work.get(t.key) ?? [];
-    if (known.some(isOpenWork)) {
+    if (openWork(known).length) {
       Object.assign(result, {
         status: "skipped",
         why: "already has open work",

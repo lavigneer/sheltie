@@ -27,9 +27,10 @@
 
 import { agents, panes, run, spaces, terminals } from "herdr";
 import { C, settingsOf } from "./config.js";
-import { assertClean, removeWorktree, sameSlug } from "./git.js";
+import { assertClean, removeWorktree } from "./git.js";
 import { basename, inside, spaceFor, tool } from "./lib.js";
 import { markReady, mergePr, prDetails } from "./prs.js";
+import { openWork, workName } from "./work.js";
 
 // --- Stage ------------------------------------------------------------------
 
@@ -453,9 +454,7 @@ async function finish(w, pr, work, merged) {
   await removeWorktree(w.repo, w.path, w.branch, pr?.head ?? null);
   const notes = ["worktree removed"];
   if (merged && w.handle) {
-    const open = work.filter(
-      (i) => !isThis(i, w, pr) && !["merged", "closed"].includes(stageOf(i.pr)),
-    );
+    const open = openWork(work, w, pr);
     if (open.length)
       notes.push(
         `${w.handle.label} left open: ${open.map(workName).join(", ")} still in progress`,
@@ -467,17 +466,3 @@ async function finish(w, pr, work, merged) {
   }
   return notes.join(" · ");
 }
-
-// Whether work item `i` is worktree `w` (with PR `pr`) itself.
-const isThis = (i, w, pr) =>
-  i.worktree === w.path ||
-  (i.repo.path === w.repo.path && i.branch === w.branch) ||
-  (pr != null && i.pr?.number === pr.number && sameSlug(i.pr.slug, pr.slug));
-
-// A work item as a note names it: its worktree, else its PR, else its branch.
-const workName = (i) =>
-  i.worktree
-    ? basename(i.worktree)
-    : i.pr
-      ? `${i.pr.slug}#${i.pr.number}`
-      : i.branch;

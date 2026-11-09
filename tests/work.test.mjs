@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-const { isOpenWork, joinWork } = await import("../src/work.js");
+const { joinWork, openWork } = await import("../src/work.js");
 
 // A tracker whose keys are "#<n>" in a branch name like "me/issue-<n>".
 const tracker = {
@@ -194,15 +194,49 @@ test("WorkStore: a tracker-linked PR joins the worktree with its branch", async 
   ]);
 });
 
-test("isOpenWork: only a merged or closed PR ends a work item", () => {
+test("openWork: only a merged or closed PR ends a work item", () => {
   const item = (state) => ({
     repo,
     branch: "issue-1",
     worktree: null,
     pr: state && { ...pr(1, "issue-1"), state },
   });
-  assert.equal(isOpenWork(item(null)), true);
-  assert.equal(isOpenWork(item("OPEN")), true);
-  assert.equal(isOpenWork(item("MERGED")), false);
-  assert.equal(isOpenWork(item("CLOSED")), false);
+  const open = [item(null), item("OPEN")];
+  assert.deepEqual(openWork([...open, item("MERGED"), item("CLOSED")]), open);
+});
+
+test("openWork besides this item: the ticket stays open while other work remains", () => {
+  const self = { path: "/wt/1", repo, branch: "issue-1" };
+  const own = { ...pr(1, "issue-1"), state: "MERGED" };
+  const here = { repo, branch: "issue-1", worktree: "/wt/1", pr: own };
+  const other = { slug: "me/api", path: "/src/api", name: "api", tracker };
+  const elsewhere = { slug: "me/app", path: null, name: "app", tracker };
+  const otherRepo = {
+    repo: other,
+    branch: "issue-1",
+    worktree: null,
+    pr: null,
+  };
+  const otherMachine = {
+    repo: elsewhere,
+    branch: "issue-1-b",
+    worktree: null,
+    pr: { ...pr(2, "issue-1-b"), state: "OPEN" },
+  };
+  const fork = {
+    repo: elsewhere,
+    branch: null,
+    worktree: null,
+    pr: { ...pr(3, "issue-1", "you/app"), state: "OPEN" },
+  };
+  // This item, also seen as its PR only (linked by the tracker).
+  const samePr = {
+    repo: elsewhere,
+    branch: null,
+    worktree: null,
+    pr: { ...own, state: "OPEN" }, // a stale lookup
+  };
+  assert.deepEqual(openWork([here, samePr], self, own), []);
+  for (const w of [otherRepo, otherMachine, fork])
+    assert.deepEqual(openWork([here, samePr, w], self, own), [w]);
 });
