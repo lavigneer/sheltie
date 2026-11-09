@@ -148,18 +148,12 @@ export default class Projects extends View {
         .on_click(() => this.go(r))
         .child(
           div()
-            .w(12)
-            .flex_none()
-            .text_color(r.space ? t.accent : t.dim)
-            .child(r.space ? "●" : "○"),
-        )
-        .child(
-          div()
             .flex_shrink(1)
             .min_w(80)
             .max_w_2_5()
             .truncate()
-            .text_color(t.foreground)
+            // An open space tints the name; the active one is bold too.
+            .text_color(r.space ? t.accent : t.foreground)
             .when(Boolean(r.space?.active), (d) => d.font_semibold())
             .child(r.name),
         )
@@ -168,11 +162,11 @@ export default class Projects extends View {
             .flex_1()
             .min_w(80)
             .truncate()
-            // The tail tells paths apart.
+            // The name is already shown: just its parent folder, tail first.
             .text_ellipsis_start()
             .text_size(11)
             .text_color(t.dim)
-            .child(tilde(r.path)),
+            .child(tilde(r.path.slice(0, r.path.lastIndexOf("/")) || "/")),
         );
 
     const problem = this.problems[0] ? tilde(this.problems[0]) : null;
