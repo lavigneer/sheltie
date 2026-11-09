@@ -6,7 +6,7 @@
 // Tones name theme colours ("blocked", "done", "muted", "dim", "working",
 // or a space status, which falls back to "accent" when the theme has none).
 
-import { prLabel } from "./flow.js";
+import { prLabel, toneKey } from "./flow.js";
 import { band, RAIL } from "./sidebar.js";
 import { dollars } from "./usage.js";
 
@@ -36,9 +36,6 @@ export const NOTE_MS = 60_000;
 
 // Each state has its own glyph, not only its own colour.
 const GLYPHS = { blocked: "!", done: "✓" };
-
-const prTone = (pr) =>
-  pr?.tone === "bad" ? "blocked" : pr?.tone === "good" ? "done" : "muted";
 
 // The row's status: a failed last step marks it (until the next step);
 // without a space, a row with a PR shows the PR's glyph, so rows tell apart
@@ -92,13 +89,11 @@ export function workView(input) {
     const entry = w.handle ? input.ticketOf(w) : null;
     const ticket = entry?.value ?? null;
     const prValue = input.prOf(w);
-    const label = prLabel(prValue);
-    const pr = label && {
-      ...label,
-      tone: prTone(label),
-      // Narrow, the PR shrinks to a word, then a glyph, rather than being cut.
-      shown: span === "glyph" ? "glyph" : span === "short" ? "short" : "full",
-    };
+    const shown = span === "glyph" || span === "short" ? span : "full";
+    const label = prLabel(prValue, shown);
+    // `shown`: narrow, the PR shrinks to a word, then a glyph (its head),
+    // rather than being cut.
+    const pr = label && { ...label, tone: toneKey(label.tone), shown };
     // A branch that isn't a ticket (see isTicket) shows the branch.
     const isTicket = input.isTicket(w);
     const title = w.hub
