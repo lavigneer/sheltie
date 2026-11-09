@@ -46,6 +46,10 @@ test("usageGroups: a failed prices download keeps the last good copy", async () 
     JSON.parse(fs.readFileSync(path.join(tmp, "usage-prices.json"), "utf8")),
     last,
   );
-  assert.deepEqual(fs.readdirSync(tmp).sort(), ["codex", "usage-cache", "usage-prices.json"]);
+  assert.deepEqual(fs.readdirSync(tmp).sort(), [
+    "codex",
+    "usage-cache",
+    "usage-prices.json",
+  ]);
   fs.rmSync(tmp, { recursive: true });
 });
