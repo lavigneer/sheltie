@@ -113,9 +113,9 @@ export function prLabel(pr, span = "full") {
   };
 }
 
-// The theme color for a prLabel's tone (`t`: herdr's theme()).
-export const toneColor = (t, tone) =>
-  tone === "bad" ? t.blocked : tone === "good" ? t.done : t.muted;
+// The theme key for a prLabel's tone: "blocked" | "done" | "muted".
+export const toneKey = (tone) =>
+  tone === "bad" ? "blocked" : tone === "good" ? "done" : "muted";
 
 // Whether a PR is offered Merge: open, ready, CI passed (not failed, pending
 // or missing) on a PR GitHub says can merge, nothing unresolved, auto-merge

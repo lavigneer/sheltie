@@ -39,7 +39,7 @@ import { h_flex, Input, InputState, v_flex } from "gpui-base";
 import { div, svg, View } from "gpui-kit";
 import { closeOverlay, focused, props, run, theme } from "herdr";
 import { C, configReady } from "./config.js";
-import { prLabel, toneColor } from "./flow.js";
+import { prLabel, toneKey } from "./flow.js";
 import {
   addWorktree,
   adhocBranch,
@@ -573,7 +573,7 @@ export default class Tickets extends View {
     const t = theme();
     const rows = this.rows();
     const sel = rows[Math.max(0, Math.min(this.at, rows.length - 1))];
-    const tone = (label) => toneColor(t, label?.tone);
+    const tone = (label) => t[toneKey(label?.tone)];
     // Tags at a row's end: at most 150 px, and they shrink to an ellipsis
     // before the text they follow goes below its minimum.
     const small = (text, color = t.dim) =>

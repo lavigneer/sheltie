@@ -13,7 +13,7 @@ import {
   prEvents,
   prLabel,
   runStep,
-  toneColor,
+  toneKey,
 } from "../src/flow.js";
 
 const draft = {
@@ -539,9 +539,8 @@ test("what a PR shows at each width: head, then the tail kept whole", () => {
   }
 });
 
-test("a PR's tone takes the theme's color", () => {
-  const t = { blocked: "red", done: "green", muted: "grey" };
-  assert.equal(toneColor(t, "bad"), "red");
-  assert.equal(toneColor(t, "good"), "green");
-  assert.equal(toneColor(t, null), "grey");
+test("a PR's tone names its theme key", () => {
+  assert.equal(toneKey("bad"), "blocked");
+  assert.equal(toneKey("good"), "done");
+  assert.equal(toneKey(null), "muted");
 });
