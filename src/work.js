@@ -73,6 +73,13 @@ export function findRepo(target, repos) {
 // Where a PR lookup's result lives in joinWork's `details`: by branch or number.
 export const prRef = (slug, ref) => `${slug}#${ref}`;
 
+// Whether a work item is open work (GLOSSARY.md): its branch or PR hasn't
+// merged or closed. An item with no PR known (none yet, or a failed lookup)
+// counts as open.
+/** @param {WorkItem} item */
+export const isOpenWork = (item) =>
+  item.pr?.state !== "MERGED" && item.pr?.state !== "CLOSED";
+
 // The merge rules behind workFor, on plain data: key -> [{ repo, branch,
 // worktree, pr }]. `states` are repoState results with their `repo`; a branch
 // listed both as a worktree and a branch is one item. `linked` maps a key to
