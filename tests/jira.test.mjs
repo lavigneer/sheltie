@@ -338,3 +338,47 @@ test("a branch's ticket handle carries its key, label and bound tracker", async 
   assert.equal(await h.url(), await T.url("WEB-103"));
   assert.equal(ticketOfBranch("main", web), null);
 });
+
+test("finish leaves the ticket open while its PR in another repo is open", async () => {
+  const { runStep } = await import("../src/flow.js");
+  const web = (await D.localRepos()).find((r) => r.name === "web-app");
+  const wt = await D.addWorktree(web, "me/WEB-132", { create: true });
+  sh("git", ["commit", "--allow-empty", "-q", "-m", "WEB-132: x"], wt);
+  sh("git", ["push", "-q", "-u", "origin", "HEAD"], wt);
+  const s = state();
+  s.prs.push({
+    repo: "acme/web-app",
+    number: 37,
+    branch: "me/WEB-132",
+    title: "WEB-132: x",
+    body: "",
+    draft: false,
+    review: "APPROVED",
+    checks: "SUCCESS",
+    state: "MERGED",
+    unresolved: 0,
+  });
+  writeState(s);
+  const pr = await D.prDetails("acme/web-app", 37);
+  const w = {
+    path: wt,
+    branch: "me/WEB-132",
+    handle: D.ticketOfBranch("me/WEB-132", web),
+    repo: web,
+  };
+  // Its own (merged) PR, and an open one in a repo with no worktree here.
+  const work = [
+    { repo: web, branch: w.branch, worktree: wt, pr },
+    {
+      repo: { slug: "acme/api", path: null },
+      branch: "me/WEB-132",
+      worktree: null,
+      pr: { slug: "acme/api", number: 7, state: "OPEN", draft: true },
+    },
+  ];
+  assert.equal(
+    await runStep("finish", w, pr, work),
+    "worktree removed · WEB-132 left open: acme/api#7 still in progress",
+  );
+  assert.ok(!fs.existsSync(wt));
+});

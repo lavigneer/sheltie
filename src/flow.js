@@ -27,7 +27,7 @@
 
 import { agents, panes, run, spaces, terminals } from "herdr";
 import { C, settingsOf } from "./config.js";
-import { assertClean, removeWorktree } from "./git.js";
+import { assertClean, removeWorktree, sameSlug } from "./git.js";
 import { basename, inside, spaceFor, tool } from "./lib.js";
 import { markReady, mergePr, prDetails } from "./prs.js";
 
@@ -141,7 +141,7 @@ export function prEvents(was, pr) {
 //   when(pr, x)   whether it's offered now; x: { stage, open, conflicts,
 //                 green, working, agentDone, workflow }
 //   confirm(x)    whether it asks for a second click (direct steps)
-//   run(w, pr, others)  for direct steps: does it, returns a note
+//   run(w, pr, work)  for direct steps: does it, returns a note
 // A PR that conflicts with its base offers only Resolve conflicts: GitHub
 // runs no CI on it, so nothing else can get it green.
 const confirmFinish = ({ workflow }) => workflow.confirmFinish !== false;
@@ -205,7 +205,7 @@ const STEPS = [
     label: "Finish",
     when: (_pr, x) => x.stage === "merged",
     confirm: confirmFinish,
-    run: (w, pr, others) => finish(w, pr, others, true),
+    run: (w, pr, work) => finish(w, pr, work, true),
   },
   {
     id: "clean-up",
@@ -213,7 +213,7 @@ const STEPS = [
     label: "Clean up",
     when: (_pr, x) => x.stage === "closed",
     confirm: confirmFinish,
-    run: (w, pr, others) => finish(w, pr, others, false),
+    run: (w, pr, work) => finish(w, pr, work, false),
   },
 ];
 
@@ -318,12 +318,13 @@ async function tellAgent(w, id) {
 // --- Steps ------------------------------------------------------------------
 
 // Runs step `id` for worktree `w` ({ path, branch, handle, repo }) whose PR is
-// `pr`. `others`: the other worktrees with their PRs ([{ w, pr }]), to tell
-// whether the ticket still has open work. Returns a short note, or throws.
-export async function runStep(id, w, pr, others = []) {
+// `pr`. `work`: the ticket's work (WorkItem[], joinWork: worktrees, branches
+// and tracker-linked PRs, checked out here or not), to tell whether the
+// ticket still has open work. Returns a short note, or throws.
+export async function runStep(id, w, pr, work = []) {
   const step = STEPS.find((s) => s.id === id);
   if (!step) throw new Error(`unknown step ${id}`);
-  return step.run ? step.run(w, pr, others) : tellAgent(w, id);
+  return step.run ? step.run(w, pr, work) : tellAgent(w, id);
 }
 
 // Ready: out of draft; with autoMerge "when-reviews-required", auto-merge
@@ -352,8 +353,8 @@ async function ready(w, pr) {
 
 // Finish (`merged`) / Clean up: close its spaces, remove the worktree and
 // branch; after a merge, tracker step "done" unless other work on the ticket
-// is still open.
-async function finish(w, pr, others, merged) {
+// (any branch or PR not merged or closed, wherever it is) is still open.
+async function finish(w, pr, work, merged) {
   await assertClean(w.path, pr?.head ?? null);
   // Its spaces end with it (the agent's work is in the PR by now).
   for (const s of spaces())
@@ -362,14 +363,12 @@ async function finish(w, pr, others, merged) {
   await removeWorktree(w.repo, w.path, w.branch, pr?.head ?? null);
   const notes = ["worktree removed"];
   if (merged && w.handle) {
-    const open = others.filter(
-      (o) =>
-        o.w.handle?.key === w.handle.key &&
-        !["merged", "closed"].includes(stageOf(o.pr)),
+    const open = work.filter(
+      (i) => !isThis(i, w, pr) && !["merged", "closed"].includes(stageOf(i.pr)),
     );
     if (open.length)
       notes.push(
-        `${w.handle.label} left open: ${open.map((o) => basename(o.w.path)).join(", ")} still in progress`,
+        `${w.handle.label} left open: ${open.map(workName).join(", ")} still in progress`,
       );
     else {
       const moved = await w.handle.move("done");
@@ -378,3 +377,17 @@ async function finish(w, pr, others, merged) {
   }
   return notes.join(" · ");
 }
+
+// Whether work item `i` is worktree `w` (with PR `pr`) itself.
+const isThis = (i, w, pr) =>
+  i.worktree === w.path ||
+  (i.repo.path === w.repo.path && i.branch === w.branch) ||
+  (pr != null && i.pr?.number === pr.number && sameSlug(i.pr.slug, pr.slug));
+
+// A work item as a note names it: its worktree, else its PR, else its branch.
+const workName = (i) =>
+  i.worktree
+    ? basename(i.worktree)
+    : i.pr
+      ? `${i.pr.slug}#${i.pr.number}`
+      : i.branch;
