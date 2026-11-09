@@ -835,6 +835,8 @@ export default class Work extends View {
                   .flex_1()
                   .min_w(0)
                   .justify_end()
+                  // Narrow, the PR is a word, then a glyph (see prLabel),
+                  // never cut.
                   .when(Boolean(pr) && pr.shown !== "full", (el) =>
                     el.child(
                       div()
@@ -843,7 +845,7 @@ export default class Work extends View {
                         .text_size(11)
                         .text_color(tone(pr.tone))
                         .tooltip(pr.text)
-                        .child(pr.shown === "glyph" ? pr.glyph : pr.short),
+                        .child(pr.head),
                     ),
                   )
                   .when(Boolean(pr) && pr.shown === "full", (el) =>
