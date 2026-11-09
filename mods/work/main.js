@@ -93,6 +93,10 @@ const REPOS_MS = 300_000;
 // Narrower than this, the sidebar draws a rail (as Herdr's own sidebar mods
 // do): a status per row, its details on hover.
 const RAIL = 160;
+
+// A repo's rail monogram: its name's first letter or digit, upper-cased.
+const monogram = (name) =>
+  (name.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
 const LINKS_W = 18; // a row's ↗ button
 
 // A row's space: a hub's leaves out its worktrees' folders (see spaceFor).
@@ -848,6 +852,12 @@ export default class Work extends View {
     // the rest. Clicks and keys work as in the full rows.
     const dot = (w) => {
       const { space, isSelected, pr, cost, steps, last, title, sub } = look(w);
+      // A ticket's number tells rows apart without a hover: "#141" or
+      // "PROJ-123" shows 141 or 123.
+      const num =
+        !w.hub && this.isTicket(w)
+          ? (w.handle.label.match(/\d+$/)?.[0] ?? null)
+          : null;
       const tip = [
         w.hub ? `${w.repo.name} hub: ${title}` : title,
         sub,
@@ -862,7 +872,8 @@ export default class Work extends View {
       return h_flex()
         .id(`work-${w.path}`)
         .mx(4)
-        .h(24)
+        .min_h(24)
+        .py(2)
         .justify_center()
         .items_center()
         .rounded(6)
@@ -873,7 +884,14 @@ export default class Work extends View {
         .hover((s) => s.bg(t.hover))
         .tooltip(tip.join(" · "))
         .on_click(() => this.open(w))
-        .child(status(space));
+        .child(
+          v_flex()
+            .items_center()
+            .child(status(space))
+            .when(Boolean(num), (el) =>
+              el.child(div().text_size(9).text_color(t.dim).child(num)),
+            ),
+        );
     };
 
     const row = (w) => {
@@ -1085,6 +1103,16 @@ export default class Work extends View {
                 .size(11)
                 .flex_none()
                 .text_color(t.dim),
+            )
+            // On the rail, a monogram tells repos apart without a hover.
+            .when(rail, (el) =>
+              el.child(
+                div()
+                  .text_size(11)
+                  .font_semibold()
+                  .text_color(t.muted)
+                  .child(monogram(g.repo.name)),
+              ),
             )
             .when(!rail, (el) =>
               el
