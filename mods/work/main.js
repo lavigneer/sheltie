@@ -995,48 +995,51 @@ export default class Work extends View {
                 ),
               ),
           )
-          // Always there, even while empty: a ticket's status and the cost
-          // come from lookups that finish later, and the line appearing then
-          // would push every row below it down.
-          .child(
-            h_flex()
-              .pl(18)
-              .gap(6)
-              .child(
-                div()
-                  .flex_1()
-                  .min_w(48)
-                  .truncate()
-                  .text_size(11)
-                  .text_color(t.dim)
-                  .child(sub),
-              )
-              .when(Boolean(ticket?.status), (e) =>
-                e.child(
-                  // Capped, so the summary keeps most of the line.
+          // Always there on a worktree row, even while empty: a ticket's
+          // status and the cost come from lookups that finish later, and the
+          // line appearing then would push every row below it down. A hub has
+          // no ticket, so its row is one line unless agents there cost.
+          .when(!w.hub || Boolean(cost), (el) =>
+            el.child(
+              h_flex()
+                .pl(18)
+                .gap(6)
+                .child(
                   div()
-                    .flex_shrink(1)
-                    .min_w(0)
-                    .max_w(88)
+                    .flex_1()
+                    .min_w(48)
                     .truncate()
                     .text_size(11)
                     .text_color(t.dim)
-                    .child(ticket.status),
+                    .child(sub),
+                )
+                .when(Boolean(ticket?.status), (e) =>
+                  e.child(
+                    // Capped, so the summary keeps most of the line.
+                    div()
+                      .flex_shrink(1)
+                      .min_w(0)
+                      .max_w(88)
+                      .truncate()
+                      .text_size(11)
+                      .text_color(t.dim)
+                      .child(ticket.status),
+                  ),
+                )
+                .when(Boolean(cost), (e) =>
+                  e.child(
+                    div()
+                      .id(`work-cost-${w.path}`)
+                      .flex_none()
+                      .text_size(11)
+                      .text_color(t.dim)
+                      .tooltip(
+                        "What agents working here have cost (at API prices)",
+                      )
+                      .child(cost),
+                  ),
                 ),
-              )
-              .when(Boolean(cost), (e) =>
-                e.child(
-                  div()
-                    .id(`work-cost-${w.path}`)
-                    .flex_none()
-                    .text_size(11)
-                    .text_color(t.dim)
-                    .tooltip(
-                      "What agents working here have cost (at API prices)",
-                    )
-                    .child(cost),
-                ),
-              ),
+            ),
           )
           .when(steps.length > 0 || Boolean(note), (el) =>
             el.child(
