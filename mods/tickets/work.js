@@ -77,8 +77,37 @@ export const prRef = (slug, ref) => `${slug}#${ref}`;
 // merged or closed. An item with no PR known (none yet, or a failed lookup)
 // counts as open.
 /** @param {WorkItem} item */
-export const isOpenWork = (item) =>
+const isOpenWork = (item) =>
   item.pr?.state !== "MERGED" && item.pr?.state !== "CLOSED";
+
+// The open work a ticket has (`work`: its WorkItem[]) besides worktree `self`
+// ({ path, repo, branch }, with PR `pr`), wherever it is: other repos, other
+// machines, fork PRs. Without `self`, all its open work. The ticket is
+// resolved when this is empty.
+/**
+ * @param {WorkItem[]} work
+ * @param {{ path: string, repo: Repo, branch: string | null } | null} [self]
+ * @param {{ number: number, slug: string } | null} [pr]
+ * @returns {WorkItem[]}
+ */
+export const openWork = (work, self = null, pr = null) =>
+  work.filter((i) => isOpenWork(i) && !(self && isItem(i, self, pr)));
+
+// Whether work item `i` is worktree `w` (with PR `pr`) itself.
+/** @param {WorkItem} i @param {{ path: string, repo: Repo, branch: string | null }} w @param {{ number: number, slug: string } | null} pr */
+const isItem = (i, w, pr) =>
+  i.worktree === w.path ||
+  (i.repo.path === w.repo.path && i.branch === w.branch) ||
+  (pr != null && i.pr?.number === pr.number && sameSlug(i.pr.slug, pr.slug));
+
+// A work item as a note names it: its worktree, else its PR, else its branch.
+/** @param {WorkItem} i */
+export const workName = (i) =>
+  i.worktree
+    ? basename(i.worktree)
+    : i.pr
+      ? `${i.pr.slug}#${i.pr.number}`
+      : i.branch;
 
 // The merge rules behind workFor, on plain data: key -> [{ repo, branch,
 // worktree, pr }]. `states` are repoState results with their `repo`; a branch
