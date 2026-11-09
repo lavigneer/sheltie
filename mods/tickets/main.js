@@ -72,17 +72,27 @@ export default class Tickets extends View {
     this.filter = "";
     this.at = 0;
     this.marked = new Set(); // ticket keys to start together (Tab)
-    this.input = InputState.new({ placeholder: "Find a ticket…" });
-    this.input.on("change", (_e, cx) => {
-      this.filter = this.input.value();
-      this.at = 0;
-      cx.notify();
-    });
-    this.input.on("submit", (_e, cx) =>
-      this.screen.name === "list" && this.marked.size
-        ? this.startMarked(cx)
-        : this.choose(this.selected(), cx),
-    );
+    // One search box per kind of list, each with its own placeholder (an
+    // InputState's is fixed); go() swaps them.
+    this.inputs = {
+      list: InputState.new({ placeholder: "Find a ticket…" }),
+      ticket: InputState.new({ placeholder: "Filter actions…" }),
+      pick: InputState.new({ placeholder: "Find a repo…" }),
+    };
+    this.inputs.adhoc = this.inputs.pick;
+    for (const input of new Set(Object.values(this.inputs))) {
+      input.on("change", (_e, cx) => {
+        this.filter = input.value();
+        this.at = 0;
+        cx.notify();
+      });
+      input.on("submit", (_e, cx) =>
+        this.screen.name === "list" && this.marked.size
+          ? this.startMarked(cx)
+          : this.choose(this.selected(), cx),
+      );
+    }
+    this.input = this.inputs.list;
     this.input.focus();
     cx.timer.after(600, () => this.input.focus());
     this.handle = cx.focus_handle();
@@ -95,6 +105,9 @@ export default class Tickets extends View {
     this.screen = screen;
     this.filter = "";
     this.input.set_value("");
+    this.input = this.inputs[screen.name];
+    this.input.set_value("");
+    this.input.focus();
     this.at = 0;
     if (this.action.phase === "failed") this.action = { phase: "idle" };
     cx.notify();
@@ -581,11 +594,19 @@ export default class Tickets extends View {
     // its full width and the title gives way instead.
     const prTag = (pr) =>
       div().flex_none().text_size(11).text_color(tone(pr)).child(pr.text);
+    const col = (w, text, color = t.dim) =>
+      div()
+        .w(w)
+        .flex_none()
+        .truncate()
+        .text_size(11)
+        .text_color(color)
+        .child(text);
     const dot = (on) =>
       div()
         .w(12)
         .flex_none()
-        .text_color(on ? t.accent : t.dim)
+        .text_color(on ? t.accent : t.muted)
         .child(on ? "●" : "○");
 
     const line = (r, i, cells) =>
@@ -624,13 +645,14 @@ export default class Tickets extends View {
             .truncate()
             .text_color(t.foreground)
             .child(r.ticket.summary),
-          where.length
-            ? small(
-                where.length > 2 ? `${where.length} repos` : where.join(", "),
-              )
-            : null,
-          pr ? prTag(pr) : null,
-          small(r.ticket.status),
+          // Fixed-width columns, so they line up from row to row; a long
+          // repo name is cut, never the PR's state.
+          col(
+            130,
+            where.length > 2 ? `${where.length} repos` : where.join(", "),
+          ),
+          col(190, pr?.text ?? "", tone(pr)),
+          col(90, r.ticket.status),
         ]);
       }
       if (r.kind === "item") {
@@ -728,7 +750,6 @@ export default class Tickets extends View {
               .min_w(120)
               .max_h(40)
               .overflow_hidden()
-              .text_ellipsis()
               .line_height(20)
               .text_size(15)
               .font_semibold()

@@ -405,3 +405,15 @@ test("prEvents: each transition from was to now", () => {
       name,
     );
 });
+
+test("an open PR's label names its review state, and ready-to-merge is good", () => {
+  const open = { ...draft, draft: false };
+  assert.deepEqual(prLabel(open), {
+    text: "#7 in review ✓",
+    head: "#7 in review",
+    tail: "✓",
+    tone: null,
+  });
+  assert.equal(prLabel({ ...open, review: null }).tone, "good");
+  assert.equal(prLabel({ ...open, review: "APPROVED" }).tone, "good");
+});
