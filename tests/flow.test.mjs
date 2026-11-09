@@ -9,10 +9,13 @@ import { live } from "herdr";
 import { C, useConfig } from "../src/config.js";
 import {
   agentSaysDone,
+  glyphOf,
   nextSteps,
   prEvents,
   prLabel,
+  rowSteps,
   runStep,
+  START_MS,
 } from "../src/flow.js";
 
 const draft = {
@@ -470,4 +473,39 @@ test("an open PR's label names its review state, and ready-to-merge is good", ()
   });
   assert.equal(prLabel({ ...open, review: null }).tone, "good");
   assert.equal(prLabel({ ...open, review: "APPROVED" }).tone, "good");
+});
+
+const rowIds = (opts) => rowSteps(opts).map((s) => s.id);
+const found = { state: "found" };
+
+test("rowSteps: no Draft PR before the PR lookup answers, or when it failed", () => {
+  assert.deepEqual(rowIds({ lookup: null }), []);
+  assert.deepEqual(rowIds({ lookup: { state: "failed" } }), []);
+  assert.deepEqual(rowIds({ lookup: found }), ["draft-pr"]);
+  assert.deepEqual(rowIds({ hub: true, lookup: found }), []);
+});
+
+test("rowSteps: none while a step runs or its PR is stale after one", () => {
+  assert.deepEqual(rowIds({ pr: draft, last: { phase: "running" } }), []);
+  assert.deepEqual(
+    rowIds({ pr: draft, last: { phase: "done", staleAt: 1 } }),
+    [],
+  );
+  assert.deepEqual(rowIds({ pr: draft, last: { phase: "done" } }), ["ready"]);
+});
+
+test("rowSteps: a new space's agent gets START_MS to start working", () => {
+  const at = (now, status = "idle") =>
+    rowIds({ lookup: found, status, bornAt: 0, now });
+  assert.deepEqual(at(START_MS - 1), []);
+  assert.deepEqual(at(START_MS), ["draft-pr"]);
+  assert.deepEqual(at(0, "working"), []);
+});
+
+test("glyphOf: failed > no space > working > the agent's status", () => {
+  assert.equal(glyphOf(true, { status: "working" }), "failed");
+  assert.equal(glyphOf(true, null), "failed");
+  assert.equal(glyphOf(false, null), "no-space");
+  assert.equal(glyphOf(false, { status: "working" }), "working");
+  assert.equal(glyphOf(false, { status: "blocked" }), "blocked");
 });

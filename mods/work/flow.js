@@ -292,6 +292,55 @@ export function nextSteps(
   return steps;
 }
 
+// How long a new space's agent may take to start working.
+export const START_MS = 30_000;
+
+// Whether a new space's agent still counts as starting (`bornAt`: when its
+// space appeared, null if it didn't while we run): until it first works or
+// START_MS passes, so it isn't offered Draft PR before it has begun.
+export const stillStarting = (bornAt, status, now) =>
+  bornAt != null && status !== "working" && now - bornAt < START_MS;
+
+// A worktree row's next steps, or none while they'd mislead. `hub`: the row is
+// a repo's hub. `pr`, `lookup`: its PR and the store's lookup entry for it (no
+// PR before the lookup answers means "not known yet", not "no PR": guessing
+// Draft PR would flash a wrong, clickable button). `last`: its last step
+// ({ phase, staleAt }): none while one runs, nor while its PR is stale after
+// one (it would offer that step once more). `status`: its space's agent
+// status. `bornAt`, `now`: see stillStarting. `agentDone`, `repo`: see nextSteps.
+/** @param {{ hub?: boolean, pr?: any, lookup?: { state: string } | null, last?: { phase: string, staleAt?: number } | null, status?: string | null, bornAt?: number | null, now?: number, agentDone?: boolean, repo?: any }} row */
+export function rowSteps({
+  hub = false,
+  pr = null,
+  lookup = null,
+  last = null,
+  status = null,
+  bornAt = null,
+  now = Date.now(),
+  agentDone = false,
+  repo = null,
+}) {
+  if (hub) return [];
+  if (!pr && (!lookup || lookup.state === "failed")) return [];
+  if (last?.phase === "running" || last?.staleAt) return [];
+  return nextSteps(pr, {
+    working: status === "working" || stillStarting(bornAt, status, now),
+    agentDone,
+    repo,
+  });
+}
+
+// Which status glyph a row shows, most important first: its last step
+// failed, it has no space, its agent is working, else its agent's status.
+export const glyphOf = (failed, space) =>
+  failed
+    ? "failed"
+    : !space
+      ? "no-space"
+      : space.status === "working"
+        ? "working"
+        : (space.status ?? null);
+
 // --- The agent --------------------------------------------------------------
 
 // The agent terminal in a space: one reporting its status (Claude Code does),

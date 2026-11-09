@@ -66,10 +66,13 @@ import { C, configReady } from "./config.js";
 import {
   agentIn,
   agentSaysDone,
-  nextSteps,
+  glyphOf,
   prEvents,
   prLabel,
+  rowSteps,
   runStep,
+  START_MS,
+  stillStarting,
 } from "./flow.js";
 import { hubExcept, localRepos, sameSlug } from "./git.js";
 import { basename, cycle, openUrl, spaceFor } from "./lib.js";
@@ -85,7 +88,6 @@ const CONFIRM_MS = 4_000;
 const NOTE_MS = 60_000; // how long a step's success note stays
 const USAGE_MS = 120_000; // agent costs (see usage.js)
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
-const START_MS = 30_000; // how long a new space's agent may take to start working
 const WATCH_TRIES = 3;
 // Between finds of the local repos (and reads of their settings); the git
 // scans in between reuse the last list. ↻ and new space folders find now.
@@ -206,30 +208,19 @@ export default class Work extends View {
       })
       .map((w) => {
         const space = spaceOf(w);
-        const steps =
-          this.steps.get(w.path)?.phase === "running"
-            ? []
-            : this.stepsOf(w, space);
-        return { w, space, steps };
+        return { w, space, steps: this.stepsOf(w, space) };
       });
   }
 
-  // A row's next steps; none for a hub, or until its PR lookup has answered
-  // (null then means "not known yet", not "no PR": guessing Draft PR would
-  // flash a wrong, clickable button and shift the rows below when it goes).
+  // A row's next steps (rowSteps).
   stepsOf(w, space) {
-    if (w.hub) return [];
-    const pr = this.prOf(w);
-    const entry = this.store.prEntry(w.repo, w.branch);
-    if (!pr && (!entry || entry.state === "failed")) return [];
-    // A step just ran (Merge, Ready…): its PR is stale until looked up again,
-    // and would offer that step once more.
-    if (this.steps.get(w.path)?.staleAt) return [];
-    const born = this.starting.get(w.path);
-    if (space?.status === "working" || Date.now() - born >= START_MS)
-      this.starting.delete(w.path);
-    return nextSteps(pr, {
-      working: space?.status === "working" || this.starting.has(w.path),
+    return rowSteps({
+      hub: w.hub,
+      pr: this.prOf(w),
+      lookup: w.hub ? null : this.store.prEntry(w.repo, w.branch),
+      last: this.steps.get(w.path),
+      status: space?.status,
+      bornAt: this.starting.get(w.path),
       agentDone: agentSaysDone(space),
       repo: w.repo,
     });
@@ -456,6 +447,10 @@ export default class Work extends View {
   // rather than at the next poll, and recheck a few times in case it appears
   // a little later.
   watchSpaces(cx) {
+    const now = Date.now();
+    for (const [f, born] of this.starting)
+      if (!stillStarting(born, spaceFor(f)?.status, now))
+        this.starting.delete(f);
     if (!this.groups) return;
     const known = this.knownFolders();
     const fresh = spaces()
@@ -690,9 +685,10 @@ export default class Work extends View {
     // Without a space, a row with a PR shows the PR's glyph, so rows tell
     // apart at a glance (on the rail too).
     const status = (w, space, failed, pr, prColor) => {
-      if (failed)
+      const glyph = glyphOf(failed, space);
+      if (glyph === "failed")
         return div().w(12).flex_none().text_color(t.blocked).child("✕");
-      if (!space)
+      if (glyph === "no-space")
         return div()
           .id(`work-nospace-${w.path}`)
           .w(12)
@@ -704,7 +700,7 @@ export default class Work extends View {
               : "No space open — Enter to open",
           )
           .child(pr ? pr.glyph : "○");
-      if (space.status === "working")
+      if (glyph === "working")
         return svg("mods/workspace-chrome/spinner.svg")
           .size(11)
           .flex_none()
@@ -713,8 +709,8 @@ export default class Work extends View {
       return div()
         .w(12)
         .flex_none()
-        .text_color(t[space.status] ?? t.accent)
-        .child(GLYPHS[space.status] ?? "●");
+        .text_color(t[glyph] ?? t.accent)
+        .child(GLYPHS[glyph] ?? "●");
     };
 
     // A step button's label is never cut: narrow, it takes its short label,
