@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-const { joinWork } = await import("../src/work.js");
+const { isOpenWork, joinWork } = await import("../src/work.js");
 
 // A tracker whose keys are "#<n>" in a branch name like "me/issue-<n>".
 const tracker = {
@@ -192,4 +192,17 @@ test("WorkStore: a tracker-linked PR joins the worktree with its branch", async 
   assert.deepEqual(f.store.snapshot(["#1"]).get("#1"), [
     { repo, branch: "issue-1", worktree: "/wt/1", pr: linkedPr },
   ]);
+});
+
+test("isOpenWork: only a merged or closed PR ends a work item", () => {
+  const item = (state) => ({
+    repo,
+    branch: "issue-1",
+    worktree: null,
+    pr: state && { ...pr(1, "issue-1"), state },
+  });
+  assert.equal(isOpenWork(item(null)), true);
+  assert.equal(isOpenWork(item("OPEN")), true);
+  assert.equal(isOpenWork(item("MERGED")), false);
+  assert.equal(isOpenWork(item("CLOSED")), false);
 });

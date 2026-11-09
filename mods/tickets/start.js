@@ -16,7 +16,13 @@ import { C } from "./config.js";
 import { addWorktree, branchFor, cloneRepo, localRepos } from "./git.js";
 import { fill, firstLine, spaceFor } from "./lib.js";
 import { tracker } from "./tracker.js";
-import { findRepo, listTickets, suggestRepos, workFor } from "./work.js";
+import {
+  findRepo,
+  isOpenWork,
+  listTickets,
+  suggestRepos,
+  workFor,
+} from "./work.js";
 
 /** @typedef {import("./types.js").Ticket} Ticket */
 /** @typedef {import("./types.js").Repo} Repo */
@@ -175,8 +181,11 @@ export async function startRequested(request) {
   for (const { e, t } of found) {
     const result = { ticket: t.key, label: t.label };
     results.push(result);
-    if (work.get(t.key)?.length) {
-      Object.assign(result, { status: "skipped", why: "already has work" });
+    if (work.get(t.key)?.some(isOpenWork)) {
+      Object.assign(result, {
+        status: "skipped",
+        why: "already has open work",
+      });
       continue;
     }
     const target = e.repo
