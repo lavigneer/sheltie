@@ -582,7 +582,7 @@ export default class Tickets extends View {
         .w(12)
         .flex_none()
         .text_color(on ? t.accent : t.dim)
-        .child(on ? "●" : "·");
+        .child(on ? "●" : "○");
 
     const line = (r, i, cells) =>
       h_flex()
@@ -633,9 +633,11 @@ export default class Tickets extends View {
         const pr = prLabel(r.item.pr);
         return line(r, i, [
           dot(Boolean(r.item.worktree)),
+          // Sized to the name (up to half the row), so the branch, not the
+          // repo, gives way first.
           div()
-            .w(150)
             .flex_none()
+            .max_w_1_2()
             .truncate()
             .text_color(t.foreground)
             .child(repoLabel(r.item.repo)),
@@ -712,15 +714,28 @@ export default class Tickets extends View {
                   .child("‹"),
               ),
             )
+            // A ticket's title may take two lines.
             .child(
               div()
                 .flex_1()
                 .min_w(120)
-                .truncate()
+                .max_h(40)
+                .overflow_hidden()
+                .text_ellipsis()
+                .line_height(20)
                 .text_size(15)
                 .font_semibold()
                 .text_color(t.foreground)
                 .child(title),
+            )
+            .when(this.running, (el) =>
+              el.child(
+                svg("mods/workspace-chrome/spinner.svg")
+                  .size(11)
+                  .flex_none()
+                  .text_color(t.working)
+                  .spin(900),
+              ),
             )
             .child(
               div()

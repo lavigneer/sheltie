@@ -151,12 +151,13 @@ export default class Projects extends View {
             .w(12)
             .flex_none()
             .text_color(r.space ? t.accent : t.dim)
-            .child(r.space ? "●" : "·"),
+            .child(r.space ? "●" : "○"),
         )
         .child(
           div()
             .flex_shrink(1)
             .min_w(80)
+            .max_w_2_5()
             .truncate()
             .text_color(t.foreground)
             .when(Boolean(r.space?.active), (d) => d.font_semibold())
@@ -167,14 +168,11 @@ export default class Projects extends View {
             .flex_1()
             .min_w(80)
             .truncate()
+            // The tail tells paths apart.
+            .text_ellipsis_start()
             .text_size(11)
             .text_color(t.dim)
             .child(tilde(r.path)),
-        )
-        .when(Boolean(r.space), (el) =>
-          el.child(
-            div().flex_none().text_size(11).text_color(t.dim).child("open"),
-          ),
         );
 
     const problem = this.problems[0] ? tilde(this.problems[0]) : null;

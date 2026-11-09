@@ -611,7 +611,7 @@ export default class Work extends View {
         .flex()
         .items_center()
         .rounded(5)
-        .text_size(12)
+        .text_size(12.5)
         .text_color(t.dim)
         .cursor_pointer()
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -658,8 +658,15 @@ export default class Work extends View {
             ),
           );
 
-    const status = (space) => {
-      if (!space) return div().w(12).flex_none().text_color(t.dim).child("○");
+    const status = (w, space) => {
+      if (!space)
+        return div()
+          .id(`work-nospace-${w.path}`)
+          .w(12)
+          .flex_none()
+          .text_color(t.dim)
+          .tooltip("No space open — Enter to open")
+          .child("○");
       if (space.status === "working")
         return svg("mods/workspace-chrome/spinner.svg")
           .size(11)
@@ -753,7 +760,7 @@ export default class Work extends View {
                   .flex()
                   .items_center()
                   .rounded(5)
-                  .text_size(12)
+                  .text_size(12.5)
                   .text_color(t.foreground)
                   .cursor_pointer()
                   .hover((s) => s.bg(t.hover))
@@ -866,14 +873,14 @@ export default class Work extends View {
         .justify_center()
         .items_center()
         .rounded(6)
-        .border_1()
+        .border_l_2()
         .border_color(isSelected ? t.accent : "#00000000")
         .cursor_pointer()
         .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
         .hover((s) => s.bg(t.hover))
         .tooltip(tip.join(" · "))
         .on_click(() => this.open(w))
-        .child(status(space));
+        .child(status(w, space));
     };
 
     const row = (w) => {
@@ -899,7 +906,7 @@ export default class Work extends View {
           .py(4)
           .gap(1)
           .rounded(7)
-          .border_1()
+          .border_l_2()
           .border_color(isSelected ? t.accent : "#00000000")
           .cursor_pointer()
           .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
@@ -914,7 +921,7 @@ export default class Work extends View {
             h_flex()
               .gap(6)
               .items_center()
-              .child(status(space))
+              .child(status(w, space))
               .child(
                 div()
                   .flex_shrink(1)
@@ -1049,6 +1056,8 @@ export default class Work extends View {
 
     const group = (g) => {
       const open = !this.folded.has(g.repo.path);
+      const n = g.worktrees.length;
+      const count = `hub and ${n} worktree${n === 1 ? "" : "s"}`;
       return v_flex()
         .child(
           h_flex()
@@ -1059,9 +1068,7 @@ export default class Work extends View {
             .gap(5)
             .items_center()
             .when(rail, (el) =>
-              el
-                .justify_center()
-                .tooltip(`${g.repo.name} (${g.worktrees.length})`),
+              el.justify_center().tooltip(`${g.repo.name} (${count})`),
             )
             .rounded(6)
             .cursor_pointer()
@@ -1087,17 +1094,19 @@ export default class Work extends View {
                     .flex_1()
                     .min_w(0)
                     .truncate()
-                    .text_size(12)
+                    .text_size(12.5)
                     .font_semibold()
                     .text_color(t.muted)
                     .child(g.repo.name),
                 )
                 .child(
                   div()
+                    .id(`work-count-${g.repo.path}`)
                     .flex_none()
                     .text_size(11)
                     .text_color(t.dim)
-                    .child(String(g.worktrees.length)),
+                    .tooltip(count)
+                    .child(String(g.worktrees.length + 1)),
                 ),
             ),
         )
@@ -1112,11 +1121,11 @@ export default class Work extends View {
             .py(4)
             .flex()
             .justify_center()
-            .text_size(12)
+            .text_size(12.5)
             .text_color(color)
             .tooltip(text)
             .child(id === "problem" ? "!" : "…")
-        : div().px(14).py(4).text_size(11.5).text_color(color).child(text);
+        : div().px(14).py(4).text_size(11).text_color(color).child(text);
     const problem = C.problem ? message("problem", C.problem, t.blocked) : null;
     const shown = this.shownGroups();
     const body =
@@ -1147,6 +1156,8 @@ export default class Work extends View {
           .flex_1()
           .min_h(0)
           .pb(6)
+          .border_b_1()
+          .border_color(t.border ?? t.dim)
           .overflow_y_scrollbar()
           .child(body),
       );
