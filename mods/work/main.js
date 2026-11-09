@@ -658,7 +658,12 @@ export default class Work extends View {
             ),
           );
 
-    const status = (space) => {
+    // Each state has its own glyph, not only its own colour; a failed last
+    // step marks the row's dot too, until the next step.
+    const GLYPHS = { blocked: "!", done: "✓" };
+    const status = (space, failed) => {
+      if (failed)
+        return div().w(12).flex_none().text_color(t.blocked).child("✕");
       if (!space) return div().w(12).flex_none().text_color(t.dim).child("○");
       if (space.status === "working")
         return svg("mods/workspace-chrome/spinner.svg")
@@ -670,7 +675,7 @@ export default class Work extends View {
         .w(12)
         .flex_none()
         .text_color(t[space.status] ?? t.accent)
-        .child("●");
+        .child(GLYPHS[space.status] ?? "●");
     };
 
     // A step button keeps its label's width while it fits, and on its own
@@ -873,7 +878,7 @@ export default class Work extends View {
         .hover((s) => s.bg(t.hover))
         .tooltip(tip.join(" · "))
         .on_click(() => this.open(w))
-        .child(status(space));
+        .child(status(space, last?.phase === "failed"));
     };
 
     const row = (w) => {
@@ -914,7 +919,7 @@ export default class Work extends View {
             h_flex()
               .gap(6)
               .items_center()
-              .child(status(space))
+              .child(status(space, last?.phase === "failed"))
               .child(
                 div()
                   .flex_shrink(1)
