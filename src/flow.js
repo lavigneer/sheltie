@@ -78,11 +78,31 @@ export function prLabel(pr) {
       (pr.review === "APPROVED" || !pr.review) &&
       pr.checks === "passed");
   const tone = bad ? "bad" : good ? "good" : null;
+  // When space is short: the one state that matters most, as a word and as
+  // a glyph.
+  const [word, glyph] =
+    pr.state === "MERGED"
+      ? ["merged", "◆"]
+      : pr.state === "CLOSED"
+        ? ["closed", "×"]
+        : conflicts
+          ? ["conflicts", "!"]
+          : pr.checks === "failed"
+            ? ["CI failed", "✗"]
+            : pr.review === "CHANGES_REQUESTED"
+              ? ["changes", "±"]
+              : pr.draft
+                ? ["draft", "◌"]
+                : pr.review === "APPROVED"
+                  ? ["approved", "✓"]
+                  : ["in review", "◑"];
   return {
     text: [...parts, ...tail].join(" "),
     head: parts.join(" "),
     tail: tail.length ? tail.join(" ") : tone ? "●" : "",
     tone,
+    short: `#${pr.number} ${word}`,
+    glyph,
   };
 }
 
@@ -170,6 +190,7 @@ const STEPS = [
     id: "resolve-conflicts",
     kind: "agent",
     label: "Resolve conflicts",
+    short: "Conflicts",
     when: (_pr, x) => x.open && x.conflicts,
   },
   {
@@ -185,6 +206,10 @@ const STEPS = [
       pr.unresolved > 0
         ? `Address ${pr.unresolved} comment${pr.unresolved === 1 ? "" : "s"}`
         : "Address review",
+    short: (pr) =>
+      pr.unresolved > 0
+        ? `${pr.unresolved} comment${pr.unresolved === 1 ? "" : "s"}`
+        : "Review",
     when: (pr, x) =>
       x.open &&
       !x.conflicts &&
@@ -231,7 +256,8 @@ const STEPS = [
   },
 ];
 
-// The next steps for a worktree: [{ id, label, kind: "agent" | "direct", confirm }].
+// The next steps for a worktree: [{ id, label, short, kind: "agent" | "direct",
+// confirm }]; `short`: the label when space is short.
 // `working`: its agent is busy, so nothing is sent to it and the PR isn't
 // marked Ready or merged while the agent may still be iterating on it. `agentDone`: its
 // agent says the PR is done (see agentSaysDone), which Ready waits for with
@@ -258,7 +284,8 @@ export function nextSteps(
     if (s.kind === "agent" && (working || !C.agent.steps?.[s.id])) continue;
     if (!s.when(pr, x)) continue;
     const label = typeof s.label === "function" ? s.label(pr) : s.label;
-    const step = { id: s.id, label, kind: s.kind };
+    const short = typeof s.short === "function" ? s.short(pr) : s.short;
+    const step = { id: s.id, label, short: short ?? label, kind: s.kind };
     if (s.confirm) step.confirm = s.confirm(x);
     steps.push(step);
   }

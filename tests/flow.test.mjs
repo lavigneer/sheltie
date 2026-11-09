@@ -103,6 +103,7 @@ test("a conflicting PR: only Resolve conflicts, labelled conflicts (bad)", () =>
   assert.deepEqual(ids(conflicting), ["resolve-conflicts"]);
   assert.equal(nextSteps(conflicting)[0].label, "Resolve conflicts");
   assert.equal(nextSteps(conflicting)[0].kind, "agent");
+  assert.equal(nextSteps(conflicting)[0].short, "Conflicts");
   // Not Merge once approved, nor anything else it has to do first.
   assert.deepEqual(ids({ ...approved, mergeable: "CONFLICTING" }), [
     "resolve-conflicts",
@@ -123,12 +124,16 @@ test("a conflicting PR: only Resolve conflicts, labelled conflicts (bad)", () =>
     head: "#7 draft",
     tail: "conflicts",
     tone: "bad",
+    short: "#7 conflicts",
+    glyph: "!",
   });
   assert.deepEqual(prLabel({ ...approved, mergeable: "CONFLICTING" }), {
     text: "#7 approved ✓ conflicts",
     head: "#7 approved",
     tail: "✓ conflicts",
     tone: "bad",
+    short: "#7 conflicts",
+    glyph: "!",
   });
   // Merged or closed: no longer about conflicts.
   assert.equal(prLabel({ ...conflicting, state: "MERGED" }).text, "#7 merged");
@@ -144,6 +149,8 @@ test("mergeable UNKNOWN: neither Ready nor Merge, nor Resolve conflicts", () => 
     head: "#7 draft",
     tail: "✓",
     tone: null,
+    short: "#7 draft",
+    glyph: "◌",
   });
 });
 
@@ -159,12 +166,16 @@ test("an open PR with no checks is never offered Ready or Merge", () => {
     head: "#7 approved",
     tail: "",
     tone: null,
+    short: "#7 approved",
+    glyph: "✓",
   });
   assert.deepEqual(prLabel(approved), {
     text: "#7 approved ✓",
     head: "#7 approved",
     tail: "✓",
     tone: "good",
+    short: "#7 approved",
+    glyph: "✓",
   });
   // With counts, GitHub's "passed/total" follows the icon.
   assert.deepEqual(
@@ -174,6 +185,8 @@ test("an open PR with no checks is never offered Ready or Merge", () => {
       head: "#7 approved",
       tail: "✗ 2/5",
       tone: "bad",
+      short: "#7 CI failed",
+      glyph: "✗",
     },
   );
   // Changes requested with no checks: the tone still has a whole tail.
@@ -184,6 +197,8 @@ test("an open PR with no checks is never offered Ready or Merge", () => {
       head: "#7 draft changes requested",
       tail: "●",
       tone: "bad",
+      short: "#7 changes",
+      glyph: "±",
     },
   );
   // With checks that passed, it's as before.
@@ -406,6 +421,43 @@ test("prEvents: each transition from was to now", () => {
     );
 });
 
+test("a PR's short word and glyph: the state that matters most", () => {
+  const open = { number: 3, state: "OPEN", draft: false, review: null };
+  const short = (pr) => prLabel({ ...open, ...pr }).short;
+  assert.equal(short({ state: "MERGED", checks: "failed" }), "#3 merged");
+  assert.equal(short({ state: "CLOSED" }), "#3 closed");
+  assert.equal(
+    short({ mergeable: "CONFLICTING", checks: "failed" }),
+    "#3 conflicts",
+  );
+  assert.equal(
+    short({ checks: "failed", review: "CHANGES_REQUESTED" }),
+    "#3 CI failed",
+  );
+  assert.equal(
+    short({ review: "CHANGES_REQUESTED", draft: true }),
+    "#3 changes",
+  );
+  assert.equal(short({ draft: true }), "#3 draft");
+  assert.equal(short({ review: "APPROVED" }), "#3 approved");
+  assert.equal(short({ review: "REVIEW_REQUIRED" }), "#3 in review");
+});
+
+test("Address comments' short label keeps the count", () => {
+  const pr = {
+    number: 3,
+    state: "OPEN",
+    draft: true,
+    review: null,
+    checks: "pending",
+    mergeable: "MERGEABLE",
+    unresolved: 12,
+  };
+  const s = nextSteps(pr).find((x) => x.id === "address-comments");
+  assert.equal(s.label, "Address 12 comments");
+  assert.equal(s.short, "12 comments");
+});
+
 test("an open PR's label names its review state, and ready-to-merge is good", () => {
   const open = { ...draft, draft: false };
   assert.deepEqual(prLabel(open), {
@@ -413,6 +465,8 @@ test("an open PR's label names its review state, and ready-to-merge is good", ()
     head: "#7 in review",
     tail: "✓",
     tone: null,
+    short: "#7 in review",
+    glyph: "◑",
   });
   assert.equal(prLabel({ ...open, review: null }).tone, "good");
   assert.equal(prLabel({ ...open, review: "APPROVED" }).tone, "good");

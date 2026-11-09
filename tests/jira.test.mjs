@@ -200,6 +200,8 @@ test("a conflicting PR: mergeable CONFLICTING, no checks, no auto-merge", async 
     head: "#56 in review",
     tail: "conflicts",
     tone: "bad",
+    short: "#56 conflicts",
+    glyph: "!",
   });
   assert.deepEqual(
     nextSteps({ ...pr, unresolved: 0 }).map((s) => s.id),

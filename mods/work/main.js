@@ -93,6 +93,21 @@ const REPOS_MS = 300_000;
 // Narrower than this, the sidebar draws a rail (as Herdr's own sidebar mods
 // do): a status per row, its details on hover.
 const RAIL = 160;
+// Narrower than SHORT, a row's PR is a short word ("#7 CI failed"), its
+// ticket status gives way and its step buttons take short labels; narrower
+// than GLYPH, the PR is its glyph alone.
+const SHORT = 340;
+const GLYPH = 220;
+const fit = (width) =>
+  width === null
+    ? "full"
+    : width < RAIL
+      ? "rail"
+      : width < GLYPH
+        ? "glyph"
+        : width < SHORT
+          ? "short"
+          : "full";
 
 // A repo's rail monogram: its name's first letter or digit, upper-cased.
 const monogram = (name) =>
@@ -608,7 +623,9 @@ export default class Work extends View {
   render(cx) {
     this.watchSpaces(cx);
     const t = theme();
-    const rail = this.width !== null && this.width < RAIL;
+    const span = fit(this.width);
+    const rail = span === "rail";
+    const narrow = span === "short" || span === "glyph";
     const icon = (name, label, tip, onClick) =>
       div()
         .id(`work-${name}`)
@@ -667,7 +684,9 @@ export default class Work extends View {
     // Each state has its own glyph, not only its own colour; a failed last
     // step marks the row's dot too, until the next step.
     const GLYPHS = { blocked: "!", done: "✓" };
-    const status = (w, space, failed) => {
+    // Without a space, a row with a PR shows the PR's glyph, so rows tell
+    // apart at a glance (on the rail too).
+    const status = (w, space, failed, pr, prColor) => {
       if (failed)
         return div().w(12).flex_none().text_color(t.blocked).child("✕");
       if (!space)
@@ -675,9 +694,13 @@ export default class Work extends View {
           .id(`work-nospace-${w.path}`)
           .w(12)
           .flex_none()
-          .text_color(t.dim)
-          .tooltip("No space open — Enter to open")
-          .child("○");
+          .text_color(pr ? prColor : t.dim)
+          .tooltip(
+            pr
+              ? `${pr.text} · no space open — Enter to open`
+              : "No space open — Enter to open",
+          )
+          .child(pr ? pr.glyph : "○");
       if (space.status === "working")
         return svg("mods/workspace-chrome/spinner.svg")
           .size(11)
@@ -691,16 +714,17 @@ export default class Work extends View {
         .child(GLYPHS[space.status] ?? "●");
     };
 
-    // A step button keeps its label's width while it fits, and narrower
-    // than that shrinks to an ellipsis.
+    // A step button's label is never cut: narrow, it takes its short label,
+    // and the buttons wrap when even those don't fit on one line.
     const button = (w, s, chosen) => {
       const confirming = this.confirm?.id === `${w.path}:${s.id}`;
+      const name = narrow ? s.short : s.label;
       const label = confirming
-        ? `${s.label}? ${this.confirm.byKey ? "Press" : "Click"} again`
-        : s.label;
+        ? `${name}? ${this.confirm.byKey ? "Press" : "Click"} again`
+        : name;
       return div()
         .id(`work-step-${w.path}-${s.id}`)
-        .min_w(0)
+        .flex_none()
         .h(18)
         .px(6)
         .flex()
@@ -718,7 +742,7 @@ export default class Work extends View {
           cx.stop_propagation();
           this.step(cx, w, s);
         })
-        .child(div().min_w(0).truncate().child(label));
+        .child(label);
     };
 
     // A row's ↗: a menu of what it opens in the browser (see look()'s links).
@@ -865,7 +889,8 @@ export default class Work extends View {
     // The rail (narrower than RAIL px): a row is its status, and a hover says
     // the rest. Clicks and keys work as in the full rows.
     const dot = (w) => {
-      const { space, isSelected, pr, cost, steps, last, title, sub } = look(w);
+      const { space, isSelected, pr, prColor, cost, steps, last, title, sub } =
+        look(w);
       // A ticket's number tells rows apart without a hover: "#141" or
       // "PROJ-123" shows 141 or 123.
       const num =
@@ -901,9 +926,21 @@ export default class Work extends View {
         .child(
           v_flex()
             .items_center()
-            .child(status(w, space, last?.phase === "failed"))
-            .when(Boolean(num), (el) =>
-              el.child(div().text_size(9).text_color(t.dim).child(num)),
+            .child(status(w, space, last?.phase === "failed", pr, prColor))
+            // With a space, the dot is the agent's: the PR's glyph goes by
+            // the number.
+            .when(Boolean(num) || Boolean(space && pr), (el) =>
+              el.child(
+                h_flex()
+                  .gap(2)
+                  .text_size(9)
+                  .when(Boolean(num), (e) =>
+                    e.child(div().text_color(t.dim).child(num)),
+                  )
+                  .when(Boolean(space && pr), (e) =>
+                    e.child(div().text_color(prColor).child(pr.glyph)),
+                  ),
+              ),
             ),
         );
     };
@@ -946,7 +983,7 @@ export default class Work extends View {
             h_flex()
               .gap(6)
               .items_center()
-              .child(status(w, space, last?.phase === "failed"))
+              .child(status(w, space, last?.phase === "failed", pr, prColor))
               .child(
                 div()
                   .flex_shrink(1)
@@ -970,7 +1007,20 @@ export default class Work extends View {
                   .flex_1()
                   .min_w(0)
                   .justify_end()
-                  .when(Boolean(pr), (el) =>
+                  // Narrow, the PR shrinks to a word, then a glyph, rather
+                  // than being cut.
+                  .when(Boolean(pr) && narrow, (el) =>
+                    el.child(
+                      div()
+                        .id(`work-pr-${w.path}`)
+                        .flex_none()
+                        .text_size(11)
+                        .text_color(prColor)
+                        .tooltip(pr.text)
+                        .child(span === "glyph" ? pr.glyph : pr.short),
+                    ),
+                  )
+                  .when(Boolean(pr) && !narrow, (el) =>
                     el.child(
                       // The tail (the tone: checks, conflicts) stays whole;
                       // the rest of the PR truncates before it.
@@ -1014,7 +1064,8 @@ export default class Work extends View {
                     .text_color(t.dim)
                     .child(sub),
                 )
-                .when(Boolean(ticket?.status), (e) =>
+                // The ticket status gives way first: narrow, it's left out.
+                .when(Boolean(ticket?.status) && !narrow, (e) =>
                   e.child(
                     // Capped, so the summary keeps most of the line.
                     div()
@@ -1044,9 +1095,8 @@ export default class Work extends View {
           )
           .when(steps.length > 0 || Boolean(note), (el) =>
             el.child(
-              // One line: narrow, the step buttons shrink to ellipses
-              // rather than wrapping one per line.
               h_flex()
+                .flex_wrap()
                 .pl(18)
                 .pt(2)
                 .gap_x(4)
@@ -1225,9 +1275,9 @@ export default class Work extends View {
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        const was = this.width !== null && this.width < RAIL;
+        const was = fit(this.width);
         this.width = size.width;
-        if (size.width < RAIL !== was) cx.notify();
+        if (fit(size.width) !== was) cx.notify();
       })
       .child(header)
       .when(Boolean(problem), (el) => el.child(problem))
