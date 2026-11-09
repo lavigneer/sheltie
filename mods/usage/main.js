@@ -221,15 +221,20 @@ export default class Usage extends View {
                   .text_size(11.5)
                   .child(
                     div()
-                      .flex_1()
                       .min_w(0)
                       .truncate()
                       .text_color(t.muted)
                       .child(w.label),
                   )
+                  // The date gives way first: it shrinks so heavily that the
+                  // label only truncates once the date is gone, and the
+                  // row's tooltip still says when the window resets.
+                  .child(div().flex_1())
                   .child(
                     div()
-                      .flex_none()
+                      .flex_shrink(1000)
+                      .min_w(0)
+                      .truncate()
                       .text_size(11)
                       .text_color(t.dim)
                       .child(w.resets ?? ""),
