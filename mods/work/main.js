@@ -710,13 +710,13 @@ export default class Work extends View {
         // labels like "hub"; outlined only while picked or confirming.
         .bg(t.hover)
         .border_1()
-        .border_color(
-          confirming ? t.blocked : chosen ? t.accent : "#00000000",
-        )
+        .border_color(confirming ? t.blocked : chosen ? t.accent : "#00000000")
         .text_size(11)
         .text_color(confirming ? t.blocked : t.accent)
         .cursor_pointer()
-        .hover((st) => st.text_color(confirming ? t.blocked : t.foreground))
+        .hover((st) =>
+          st.text_color(confirming ? t.blocked : t.foreground),
+        )
         .on_click((_e, cx) => {
           cx.stop_propagation();
           this.step(cx, w, s);
