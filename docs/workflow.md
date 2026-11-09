@@ -94,8 +94,10 @@ several callers can ask at once: `{"tickets": ["WEB-142", {"ticket":
 `repo`, a slug or path, overrides its best suggested repo). Requests run one
 at a time; each is removed once read, and what happened to each ticket is
 written to `<id>.result.json` for the caller to read and delete (results left
-over a day are removed). Tickets that already have a branch, worktree or PR
-are skipped. The `start-work` skill
+over a day are removed). Tickets that already have open work (a branch,
+worktree or PR, unless its PR is merged or closed) are skipped, as when
+starting marked tickets in the popup; a worktree left from closed work is
+reused, without telling its agent the task again. The `start-work` skill
 (`./install.sh --skills`) teaches an agent, such as one in a repo's hub, to
 pick tickets, order them by their dependencies and start the ready ones this
 way, then the rest once what they wait on merges.
