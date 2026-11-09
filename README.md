@@ -39,7 +39,7 @@ request without leaving Herdr:
    Click a row to go to its space; its ↗ menu opens the PR or ticket in
    the browser.
 
-   Each repo also has a **hub** row: the main checkout, with its own space for
+   Each repo also has a **hub**: the main checkout, with its own space for
    longer-running agents.
 3. **Get notified** when CI finishes, reviews arrive, the PR starts
    conflicting, or it merges.
