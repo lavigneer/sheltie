@@ -22,7 +22,7 @@ here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 
 hc label "${HC_TERMINAL_ID:-}" agent=herdr-demo >/dev/null 2>&1 || true
 
-status() { printf '\033]7501;state=%s\033\\' "$1"; }
+status() { printf '\033]7501;state=%s\033\134' "$1"; } # ESC ] 7501;… ESC \
 status working
 
 branch="$(git branch --show-current 2>/dev/null || echo '?')"
