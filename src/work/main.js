@@ -706,14 +706,17 @@ export default class Work extends View {
         .flex()
         .items_center()
         .rounded(5)
+        // Filled and accent-coloured, so it reads as clickable next to plain
+        // labels like "hub"; outlined only while picked or confirming.
+        .bg(t.hover)
         .border_1()
         .border_color(
-          confirming ? t.blocked : chosen ? t.accent : (t.border ?? t.dim),
+          confirming ? t.blocked : chosen ? t.accent : "#00000000",
         )
         .text_size(11)
-        .text_color(confirming ? t.blocked : t.foreground)
+        .text_color(confirming ? t.blocked : t.accent)
         .cursor_pointer()
-        .hover((st) => st.bg(t.hover))
+        .hover((st) => st.text_color(confirming ? t.blocked : t.foreground))
         .on_click((_e, cx) => {
           cx.stop_propagation();
           this.step(cx, w, s);
@@ -990,10 +993,6 @@ export default class Work extends View {
                 el.child(
                   div()
                     .flex_none()
-                    .px(5)
-                    .rounded(4)
-                    .border_1()
-                    .border_color(t.border ?? t.dim)
                     .text_size(11)
                     .text_color(t.dim)
                     .child("hub"),
