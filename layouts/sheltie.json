@@ -24,7 +24,7 @@
       "id": "sidebar",
       "type": "column",
       "size": {
-        "px": 340
+        "px": 300
       },
       "min": 44,
       "max": 480,
@@ -64,9 +64,10 @@
                 "mod": "usage"
               },
               "size": {
-                "px": 170
+                "weight": 1
               },
-              "min": 44
+              "min": 44,
+              "max": 240
             }
           ]
         },

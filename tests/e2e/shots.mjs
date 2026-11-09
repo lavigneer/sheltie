@@ -3,7 +3,8 @@
 // sidebar widths, zooms and in light and dark, saved to e2e-results/shots/.
 // For looking at after a Herdr update or a UI change: like the other
 // end-to-end tests it checks outcomes (no errors; the sidebar still offers
-// the long row's steps at every size), never pixels.
+// the long row's steps at every size), never pixels. Last, the rows' states:
+// an agent working, one blocked, and a failed step.
 //
 // Not part of `npm run e2e` (it isn't a *.test.mjs); CI runs it after the
 // end-to-end tests and keeps the shots as an artifact.
@@ -43,6 +44,17 @@ const LOOKS = [
   ["dark-narrow", "default", 160, { appearance: "dark" }],
   ["zoom-1.5", "default", 268, { zoom: 1.5 }],
   ["zoom-2-small", "small", 200, { zoom: 2 }],
+];
+// Worktrees for the states shot (their spaces' agents say working/blocked;
+// Finish fails on the merged one).
+const WORKING = "web-app/.claude/worktrees/WEB-102";
+const BLOCKED = "web-app/.claude/worktrees/WEB-103";
+const FAILED = "storage/.claude/worktrees/WEB-101";
+// An "agent" that reports a status (OSC 7501) and waits.
+const reporting = (status) => [
+  "bash",
+  "-c",
+  `printf '\\e]7501;${status}\\e\\\\'; exec sleep infinity`,
 ];
 const PLAIN = { appearance: "light", zoom: 1 };
 
@@ -151,5 +163,51 @@ else {
         async () => !(await h.status()).overlays.includes("projects"),
       );
     }
+  });
+
+  test("a working, a blocked and a failed row", {
+    timeout: 180_000,
+  }, async () => {
+    const at = (w) => path.join(h.demo, "ws", w);
+    await look("default", 268, {});
+    for (const [w, status, want] of [
+      [WORKING, "state=working", "working"],
+      [BLOCKED, "state=blocked:kind=question", "blocked"],
+    ]) {
+      await h.sh("herdr-app", [
+        "do",
+        "space.new",
+        JSON.stringify({ folder: at(w), argv: reporting(status) }),
+      ]);
+      await h.waitRow(`${w} ${want}`, at(w), (r) => r.status === want);
+    }
+    // Merged, then Finish refused for uncommitted changes.
+    await h.sh("herdr-app", [
+      "do",
+      "space.new",
+      JSON.stringify({ folder: at(FAILED) }),
+    ]);
+    await waitFor("its space", () => h.spaceAt(at(FAILED)));
+    const merged = await h.step(at(FAILED), "merge");
+    assert.equal(merged.last.phase, "done", merged.last.text);
+    await h.waitRow("merged, Finish offered", at(FAILED), (r) =>
+      r.steps.some((s) => s.id === "finish"),
+    );
+    fs.appendFileSync(path.join(at(FAILED), "README.md"), "\nnot committed\n");
+    const refused = await h.step(at(FAILED), "finish");
+    assert.equal(refused.last?.phase, "failed", "Finish refused");
+
+    for (const [name, settings] of [
+      ["light", {}],
+      ["dark", { appearance: "dark" }],
+    ]) {
+      // Large: every row shows, the failed note under the last.
+      await look("large", 268, settings);
+      await shot(`states-${name}`);
+      await h.assertNoErrors(`showing the states ${name}`);
+    }
+    assert.equal((await h.row(at(WORKING)))?.status, "working");
+    assert.equal((await h.row(at(BLOCKED)))?.status, "blocked");
+    assert.equal((await h.row(at(FAILED)))?.last?.phase, "failed");
   });
 }

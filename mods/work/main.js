@@ -93,6 +93,10 @@ const REPOS_MS = 300_000;
 // Narrower than this, the sidebar draws a rail (as Herdr's own sidebar mods
 // do): a status per row, its details on hover.
 const RAIL = 160;
+
+// A repo's rail monogram: its name's first letter or digit, upper-cased.
+const monogram = (name) =>
+  (name.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
 const LINKS_W = 18; // a row's ↗ button
 
 // A row's space: a hub's leaves out its worktrees' folders (see spaceFor).
@@ -300,6 +304,8 @@ export default class Work extends View {
           key: r.w.handle?.key ?? null,
           repo: r.w.repo.slug ?? r.w.repo.name,
           space: r.space?.id ?? null,
+          // The status dot: working, blocked… (null: no space).
+          status: r.space?.status ?? null,
           agent: agentIn(r.space),
           agentDone: agentSaysDone(r.space),
           cost: this.costOf(r.w),
@@ -611,7 +617,7 @@ export default class Work extends View {
         .flex()
         .items_center()
         .rounded(5)
-        .text_size(12)
+        .text_size(12.5)
         .text_color(t.dim)
         .cursor_pointer()
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -661,10 +667,17 @@ export default class Work extends View {
     // Each state has its own glyph, not only its own colour; a failed last
     // step marks the row's dot too, until the next step.
     const GLYPHS = { blocked: "!", done: "✓" };
-    const status = (space, failed) => {
+    const status = (w, space, failed) => {
       if (failed)
         return div().w(12).flex_none().text_color(t.blocked).child("✕");
-      if (!space) return div().w(12).flex_none().text_color(t.dim).child("○");
+      if (!space)
+        return div()
+          .id(`work-nospace-${w.path}`)
+          .w(12)
+          .flex_none()
+          .text_color(t.dim)
+          .tooltip("No space open — Enter to open")
+          .child("○");
       if (space.status === "working")
         return svg("mods/workspace-chrome/spinner.svg")
           .size(11)
@@ -678,8 +691,8 @@ export default class Work extends View {
         .child(GLYPHS[space.status] ?? "●");
     };
 
-    // A step button keeps its label's width while it fits, and on its own
-    // line (the steps wrap) narrower than that shrinks to an ellipsis.
+    // A step button keeps its label's width while it fits, and narrower
+    // than that shrinks to an ellipsis.
     const button = (w, s, chosen) => {
       const confirming = this.confirm?.id === `${w.path}:${s.id}`;
       const label = confirming
@@ -758,7 +771,7 @@ export default class Work extends View {
                   .flex()
                   .items_center()
                   .rounded(5)
-                  .text_size(12)
+                  .text_size(12.5)
                   .text_color(t.foreground)
                   .cursor_pointer()
                   .hover((s) => s.bg(t.hover))
@@ -853,6 +866,12 @@ export default class Work extends View {
     // the rest. Clicks and keys work as in the full rows.
     const dot = (w) => {
       const { space, isSelected, pr, cost, steps, last, title, sub } = look(w);
+      // A ticket's number tells rows apart without a hover: "#141" or
+      // "PROJ-123" shows 141 or 123.
+      const num =
+        !w.hub && this.isTicket(w)
+          ? (w.handle.label.match(/\d+$/)?.[0] ?? null)
+          : null;
       const tip = [
         w.hub ? `${w.repo.name} hub: ${title}` : title,
         sub,
@@ -867,18 +886,26 @@ export default class Work extends View {
       return h_flex()
         .id(`work-${w.path}`)
         .mx(4)
-        .h(24)
+        .min_h(24)
+        .py(2)
         .justify_center()
         .items_center()
         .rounded(6)
-        .border_1()
+        .border_l_2()
         .border_color(isSelected ? t.accent : "#00000000")
         .cursor_pointer()
         .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
         .hover((s) => s.bg(t.hover))
         .tooltip(tip.join(" · "))
         .on_click(() => this.open(w))
-        .child(status(space, last?.phase === "failed"));
+        .child(
+          v_flex()
+            .items_center()
+            .child(status(w, space, last?.phase === "failed"))
+            .when(Boolean(num), (el) =>
+              el.child(div().text_size(9).text_color(t.dim).child(num)),
+            ),
+        );
     };
 
     const row = (w) => {
@@ -904,7 +931,7 @@ export default class Work extends View {
           .py(4)
           .gap(1)
           .rounded(7)
-          .border_1()
+          .border_l_2()
           .border_color(isSelected ? t.accent : "#00000000")
           .cursor_pointer()
           .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
@@ -919,7 +946,7 @@ export default class Work extends View {
             h_flex()
               .gap(6)
               .items_center()
-              .child(status(space, last?.phase === "failed"))
+              .child(status(w, space, last?.phase === "failed"))
               .child(
                 div()
                   .flex_shrink(1)
@@ -945,12 +972,17 @@ export default class Work extends View {
                   .justify_end()
                   .when(Boolean(pr), (el) =>
                     el.child(
-                      div()
+                      // The tail (the tone: checks, conflicts) stays whole;
+                      // the rest of the PR truncates before it.
+                      h_flex()
                         .min_w(0)
-                        .truncate()
+                        .gap(4)
                         .text_size(11)
                         .text_color(prColor)
-                        .child(pr.text),
+                        .child(div().min_w(0).truncate().child(pr.head))
+                        .when(Boolean(pr.tail), (e) =>
+                          e.child(div().flex_none().child(pr.tail)),
+                        ),
                     ),
                   ),
               )
@@ -977,53 +1009,57 @@ export default class Work extends View {
                 ),
               ),
           )
-          // Always there, even while empty: a ticket's status and the cost
-          // come from lookups that finish later, and the line appearing then
-          // would push every row below it down.
-          .child(
-            h_flex()
-              .pl(18)
-              .gap(6)
-              .child(
-                div()
-                  .flex_1()
-                  .min_w(48)
-                  .truncate()
-                  .text_size(11)
-                  .text_color(t.dim)
-                  .child(sub),
-              )
-              .when(Boolean(ticket?.status), (e) =>
-                e.child(
-                  // Capped, so the summary keeps most of the line.
+          // Always there on a worktree row, even while empty: a ticket's
+          // status and the cost come from lookups that finish later, and the
+          // line appearing then would push every row below it down. A hub has
+          // no ticket, so its row is one line unless agents there cost.
+          .when(!w.hub || Boolean(cost), (el) =>
+            el.child(
+              h_flex()
+                .pl(18)
+                .gap(6)
+                .child(
                   div()
-                    .flex_shrink(1)
-                    .min_w(0)
-                    .max_w(88)
+                    .flex_1()
+                    .min_w(48)
                     .truncate()
                     .text_size(11)
                     .text_color(t.dim)
-                    .child(ticket.status),
+                    .child(sub),
+                )
+                .when(Boolean(ticket?.status), (e) =>
+                  e.child(
+                    // Capped, so the summary keeps most of the line.
+                    div()
+                      .flex_shrink(1)
+                      .min_w(0)
+                      .max_w(88)
+                      .truncate()
+                      .text_size(11)
+                      .text_color(t.dim)
+                      .child(ticket.status),
+                  ),
+                )
+                .when(Boolean(cost), (e) =>
+                  e.child(
+                    div()
+                      .id(`work-cost-${w.path}`)
+                      .flex_none()
+                      .text_size(11)
+                      .text_color(t.dim)
+                      .tooltip(
+                        "What agents working here have cost (at API prices)",
+                      )
+                      .child(cost),
+                  ),
                 ),
-              )
-              .when(Boolean(cost), (e) =>
-                e.child(
-                  div()
-                    .id(`work-cost-${w.path}`)
-                    .flex_none()
-                    .text_size(11)
-                    .text_color(t.dim)
-                    .tooltip(
-                      "What agents working here have cost (at API prices)",
-                    )
-                    .child(cost),
-                ),
-              ),
+            ),
           )
           .when(steps.length > 0 || Boolean(note), (el) =>
             el.child(
+              // One line: narrow, the step buttons shrink to ellipses
+              // rather than wrapping one per line.
               h_flex()
-                .flex_wrap()
                 .pl(18)
                 .pt(2)
                 .gap_x(4)
@@ -1054,6 +1090,8 @@ export default class Work extends View {
 
     const group = (g) => {
       const open = !this.folded.has(g.repo.path);
+      const n = g.worktrees.length;
+      const count = `hub and ${n} worktree${n === 1 ? "" : "s"}`;
       return v_flex()
         .child(
           h_flex()
@@ -1064,9 +1102,7 @@ export default class Work extends View {
             .gap(5)
             .items_center()
             .when(rail, (el) =>
-              el
-                .justify_center()
-                .tooltip(`${g.repo.name} (${g.worktrees.length})`),
+              el.justify_center().tooltip(`${g.repo.name} (${count})`),
             )
             .rounded(6)
             .cursor_pointer()
@@ -1085,6 +1121,16 @@ export default class Work extends View {
                 .flex_none()
                 .text_color(t.dim),
             )
+            // On the rail, a monogram tells repos apart without a hover.
+            .when(rail, (el) =>
+              el.child(
+                div()
+                  .text_size(11)
+                  .font_semibold()
+                  .text_color(t.muted)
+                  .child(monogram(g.repo.name)),
+              ),
+            )
             .when(!rail, (el) =>
               el
                 .child(
@@ -1092,17 +1138,19 @@ export default class Work extends View {
                     .flex_1()
                     .min_w(0)
                     .truncate()
-                    .text_size(12)
+                    .text_size(12.5)
                     .font_semibold()
                     .text_color(t.muted)
                     .child(g.repo.name),
                 )
                 .child(
                   div()
+                    .id(`work-count-${g.repo.path}`)
                     .flex_none()
                     .text_size(11)
                     .text_color(t.dim)
-                    .child(String(g.worktrees.length)),
+                    .tooltip(count)
+                    .child(String(g.worktrees.length + 1)),
                 ),
             ),
         )
@@ -1117,11 +1165,11 @@ export default class Work extends View {
             .py(4)
             .flex()
             .justify_center()
-            .text_size(12)
+            .text_size(12.5)
             .text_color(color)
             .tooltip(text)
             .child(id === "problem" ? "!" : "…")
-        : div().px(14).py(4).text_size(11.5).text_color(color).child(text);
+        : div().px(14).py(4).text_size(11).text_color(color).child(text);
     const problem = C.problem ? message("problem", C.problem, t.blocked) : null;
     const shown = this.shownGroups();
     const body =
@@ -1152,6 +1200,8 @@ export default class Work extends View {
           .flex_1()
           .min_h(0)
           .pb(6)
+          .border_b_1()
+          .border_color(t.border ?? t.dim)
           .overflow_y_scrollbar()
           .child(body),
       );

@@ -107,7 +107,7 @@ export default class Usage extends View {
         .h(20)
         .gap(8)
         .items_center()
-        .text_size(11.5)
+        .text_size(12.5)
         .child(
           div()
             .flex_1()
@@ -158,7 +158,7 @@ export default class Usage extends View {
           .flex()
           .items_center()
           .rounded(5)
-          .text_size(12)
+          .text_size(12.5)
           .text_color(t.dim)
           .cursor_pointer()
           .hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -172,20 +172,24 @@ export default class Usage extends View {
       );
 
     const message = (text, color) =>
-      div().px(14).py(4).text_size(11.5).text_color(color).child(text);
+      div().px(14).py(4).text_size(11).text_color(color).child(text);
 
     const heading = (text) =>
       div()
         .px(14)
         .pt(6)
         .pb(2)
-        .text_size(10.5)
+        .text_size(11)
         .font_semibold()
         .text_color(t.dim)
         .child(text);
 
     const limitList = this.limits.list ?? [];
-    const session = limitList[0]?.windows.find((w) => w.key === "session");
+    // The rail's limit: the fuller of the session and the week, labelled.
+    const railLimit = (limitList[0]?.windows ?? [])
+      .filter((w) => w.key === "session" || /week/i.test(w.label))
+      .map((w) => ({ ...w, tag: w.key === "session" ? "S" : "W" }))
+      .reduce((a, w) => (a && a.used >= w.used ? a : w), null);
     const percent = (n) => `${Math.round(n)}%`;
     // Green while there's room, then warning, then red near the limit.
     const fullness = (n) =>
@@ -218,18 +222,23 @@ export default class Usage extends View {
                   .h(20)
                   .gap(8)
                   .items_center()
-                  .text_size(11.5)
+                  .text_size(12.5)
                   .child(
                     div()
-                      .flex_1()
                       .min_w(0)
                       .truncate()
                       .text_color(t.muted)
                       .child(w.label),
                   )
+                  // The date gives way first: it shrinks so heavily that the
+                  // label only truncates once the date is gone, and the
+                  // row's tooltip still says when the window resets.
+                  .child(div().flex_1())
                   .child(
                     div()
-                      .flex_none()
+                      .flex_shrink(1000)
+                      .min_w(0)
+                      .truncate()
                       .text_size(11)
                       .text_color(t.dim)
                       .child(w.resets ?? ""),
@@ -336,11 +345,11 @@ export default class Usage extends View {
               .text_color(t.dim)
               .tooltip(
                 error ??
-                  `Agents today: ${amount(today)}${session ? `; Claude Code session ${percent(session.used)} used` : ""}`,
+                  `Agents today: ${amount(today)}${railLimit ? `; Claude Code ${railLimit.label}: ${percent(railLimit.used)} used` : ""}`,
               )
               .child(
-                session
-                  ? percent(session.used)
+                railLimit
+                  ? `${railLimit.tag} ${percent(railLimit.used)}`
                   : this.state.groups === null
                     ? error
                       ? "!"
