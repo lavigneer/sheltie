@@ -1,6 +1,6 @@
 // Usage: what your agents cost, for the sidebar (see usage.js for where it
 // comes from). Today, the last 7 and 30 days, then the last 30 days by agent
-// and model, most expensive first. Days are UTC. ↻ refreshes now; it also
+// and model, most expensive first (the 30 days' tooltip). Days are UTC. ↻ refreshes now; it also
 // refreshes every 2 minutes. Narrower than RAIL, it shows today's cost only.
 // The Work sidebar shows each row's cost from the same data. Above them, a
 // Claude subscription's plan limits (limits.js): how much of the 5-hour
@@ -11,7 +11,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { div, View } from "gpui-kit";
 import { theme } from "herdr";
 import { C, configReady } from "./config.js";
-import { planLimits } from "./limits.js";
+import { planLimits, resetsLabel } from "./limits.js";
 import {
   dollars,
   LOADING,
@@ -25,7 +25,11 @@ const DAY_MS = 86_400_000;
 const REFRESH_MS = 120_000;
 const LIMITS_MS = 300_000;
 const RAIL = 160;
+// Narrower than this, the limits leave out when they reset (the row's
+// tooltip still says) and the cost heading is shortened.
+const NARROW = 240;
 const TOP = 5;
+const RAIL_BAR = 28;
 
 const dayAgo = (n) =>
   new Date(Date.now() - n * DAY_MS).toISOString().slice(0, 10);
@@ -91,6 +95,7 @@ export default class Usage extends View {
   render(_cx) {
     const t = theme();
     const rail = this.width !== null && this.width < RAIL;
+    const narrow = this.width !== null && this.width < NARROW;
     const { phase, error } = this.state;
     const groups = this.state.groups ?? [];
     const since = (d) => groups.filter((g) => g.day >= d);
@@ -182,6 +187,7 @@ export default class Usage extends View {
         .text_size(11)
         .font_semibold()
         .text_color(t.dim)
+        .truncate()
         .child(text);
 
     const limitList = this.limits.list ?? [];
@@ -216,7 +222,7 @@ export default class Usage extends View {
                 h_flex()
                   .id(`usage-limit-${l.home}-${w.key}`)
                   .when(Boolean(w.resets), (el) =>
-                    el.tooltip(`Resets ${w.resets}`),
+                    el.tooltip(`${w.label} limit ${resetsLabel(w.resets)}`),
                   )
                   .px(14)
                   .h(20)
@@ -225,27 +231,25 @@ export default class Usage extends View {
                   .text_size(12.5)
                   .child(
                     div()
+                      .flex_1()
                       .min_w(0)
                       .truncate()
                       .text_color(t.muted)
                       .child(w.label),
                   )
-                  // The date gives way first: it shrinks so heavily that the
-                  // label only truncates once the date is gone, and the
-                  // row's tooltip still says when the window resets.
-                  .child(div().flex_1())
-                  .child(
-                    div()
-                      .flex_shrink(1000)
-                      .min_w(0)
-                      .truncate()
-                      .text_size(11)
-                      .text_color(t.dim)
-                      .child(w.resets ?? ""),
+                  // When it resets, left out when narrow: the label and the
+                  // percentage are what tell the bars apart.
+                  .when(!narrow && Boolean(w.resets), (el) =>
+                    el.child(
+                      div()
+                        .flex_none()
+                        .text_size(11)
+                        .text_color(t.dim)
+                        .child(resetsLabel(w.resets)),
+                    ),
                   )
                   .child(
                     div()
-                      .w(52)
                       .flex_none()
                       .flex()
                       .justify_end()
@@ -278,6 +282,14 @@ export default class Usage extends View {
             el.child(message(this.limits.error, t.blocked)),
           );
 
+    const topModels = by(recent, (g) =>
+      JSON.stringify([g.agent, g.model, g.fast]),
+    )
+      .slice(0, TOP)
+      .map((r) => {
+        const [agent, model, fast] = JSON.parse(r.name);
+        return `${AGENTS[agent] ?? agent}: ${model}${fast ? " (fast)" : ""} ${dollars(r.cost)}`;
+      });
     const problem = phase === "failed" ? message(error, t.blocked) : null;
     const body =
       this.state.groups === null
@@ -301,26 +313,26 @@ export default class Usage extends View {
                       .border_t_1()
                       .border_color(t.border ?? t.dim),
                   )
-                  .child(heading("AGENT COSTS (API PRICES)")),
+                  .child(
+                    heading(
+                      narrow ? "AGENT COSTS" : "AGENT COSTS (API PRICES)",
+                    ),
+                  ),
               )
               .child(line("usage-today", "Today", today, true))
               .child(line("usage-7", "7 days", total(since(dayAgo(6)))))
-              .child(line("usage-30", "30 days", total(recent)))
-              .child(heading("30 DAYS BY MODEL"))
-              .children(
-                by(recent, (g) => JSON.stringify([g.agent, g.model, g.fast]))
-                  .slice(0, TOP)
-                  .map((r) => {
-                    const [agent, model, fast] = JSON.parse(r.name);
-                    const name = `${model}${fast ? " (fast)" : ""}`;
-                    return line(
-                      `usage-model-${r.name}`,
-                      name,
-                      r,
-                      false,
-                      `${AGENTS[agent] ?? agent}: ${name}`,
-                    );
-                  }),
+              // The breakdown by agent and model is the 30 days' tooltip,
+              // so the block fits the sidebar.
+              .child(
+                line(
+                  "usage-30",
+                  "30 days",
+                  total(recent),
+                  false,
+                  topModels.length
+                    ? `By model:\n${topModels.join("\n")}`
+                    : null,
+                ),
               )
               .when(Boolean(problem), (el) => el.child(problem));
 
@@ -347,6 +359,9 @@ export default class Usage extends View {
                 error ??
                   `Agents today: ${amount(today)}${railLimit ? `; Claude Code ${railLimit.label}: ${percent(railLimit.used)} used` : ""}`,
               )
+              .flex_col()
+              .items_center()
+              .gap(2)
               .child(
                 railLimit
                   ? `${railLimit.tag} ${percent(railLimit.used)}`
@@ -355,6 +370,30 @@ export default class Usage extends View {
                       ? "!"
                       : "…"
                     : amount(today),
+              )
+              // A small bar under the rail's percentage, so it reads as a
+              // limit's fullness rather than a stray number.
+              .when(Boolean(railLimit), (el) =>
+                el.child(
+                  div()
+                    .w(RAIL_BAR)
+                    .h(3)
+                    .rounded(2)
+                    .bg(t.hover)
+                    .child(
+                      div()
+                        .h_full()
+                        .rounded(2)
+                        .bg(fullness(railLimit.used))
+                        .w(
+                          Math.round(
+                            (RAIL_BAR *
+                              Math.min(100, Math.max(0, railLimit.used))) /
+                              100,
+                          ),
+                        ),
+                    ),
+                ),
               )
           : v_flex()
               .size_full()
