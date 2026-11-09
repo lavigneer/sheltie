@@ -42,11 +42,14 @@ export function stageOf(pr) {
   return pr.review === "APPROVED" ? "approved" : "in-review";
 }
 
-// "#881 draft approved ✓ 3/3" (or "#881 draft conflicts") and a tone for
-// coloring: "bad" | "good" | null. `tail` is the end of `text` that carries
-// the tone (checks, conflicts; a "●" when only the review does), kept
-// whole where the line is too narrow for all of it.
-export function prLabel(pr) {
+// What a PR shows at a width (`span`: "full" | "short" | "glyph"): `head`,
+// which may truncate, then `tail`, kept whole — at full width
+// "#881 draft approved" and the end that carries the tone (checks,
+// conflicts; a "●" when only the review does); short, the one state that
+// matters most as a word ("#881 CI failed"), with no tail; at glyph width,
+// that state's glyph alone. `text` is the whole label at any width (for a
+// tooltip), `glyph` the state's glyph, `tone` "bad" | "good" | null.
+export function prLabel(pr, span = "full") {
   if (!pr) return null;
   const parts = [`#${pr.number}`];
   const tail = [];
@@ -96,15 +99,23 @@ export function prLabel(pr) {
                 : pr.review === "APPROVED"
                   ? ["approved", "✓"]
                   : ["in review", "◑"];
+  const full = span === "full";
   return {
     text: [...parts, ...tail].join(" "),
-    head: parts.join(" "),
-    tail: tail.length ? tail.join(" ") : tone ? "●" : "",
+    head: full
+      ? parts.join(" ")
+      : span === "short"
+        ? `#${pr.number} ${word}`
+        : glyph,
+    tail: !full ? "" : tail.length ? tail.join(" ") : tone ? "●" : "",
     tone,
-    short: `#${pr.number} ${word}`,
     glyph,
   };
 }
+
+// The theme color for a prLabel's tone (`t`: herdr's theme()).
+export const toneColor = (t, tone) =>
+  tone === "bad" ? t.blocked : tone === "good" ? t.done : t.muted;
 
 // Whether a PR is offered Merge: open, ready, CI passed (not failed, pending
 // or missing) on a PR GitHub says can merge, nothing unresolved, auto-merge

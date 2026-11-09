@@ -70,6 +70,7 @@ import {
   prEvents,
   prLabel,
   runStep,
+  toneColor,
 } from "./flow.js";
 import { hubExcept, localRepos, sameSlug } from "./git.js";
 import { basename, cycle, openUrl, spaceFor } from "./lib.js";
@@ -824,7 +825,7 @@ export default class Work extends View {
       const entry = w.handle ? this.tickets.get(w.handle.key) : null;
       const ticket = entry?.value ?? null;
       const prValue = this.prOf(w);
-      const pr = prLabel(prValue);
+      const pr = prLabel(prValue, rail ? "glyph" : span);
       const extras = [
         prValue?.state === "OPEN" && prValue.autoMerge ? "auto-merge" : null,
       ].filter(Boolean);
@@ -842,8 +843,7 @@ export default class Work extends View {
         : extras.length
           ? { text: extras.join(" · "), color: t.dim }
           : null;
-      const prColor =
-        pr?.tone === "bad" ? t.blocked : pr?.tone === "good" ? t.done : t.muted;
+      const prColor = toneColor(t, pr?.tone);
       // A branch that isn't a ticket (see isTicket) shows the branch.
       const isTicket = this.isTicket(w);
       // What the row's ↗ menu offers: only what applies.
@@ -1011,8 +1011,8 @@ export default class Work extends View {
                   .flex_1()
                   .min_w(0)
                   .justify_end()
-                  // Narrow, the PR shrinks to a word, then a glyph, rather
-                  // than being cut.
+                  // Narrow, the PR is a word, then a glyph (see prLabel),
+                  // never cut.
                   .when(Boolean(pr) && narrow, (el) =>
                     el.child(
                       div()
@@ -1021,7 +1021,7 @@ export default class Work extends View {
                         .text_size(11)
                         .text_color(prColor)
                         .tooltip(pr.text)
-                        .child(span === "glyph" ? pr.glyph : pr.short),
+                        .child(pr.head),
                     ),
                   )
                   .when(Boolean(pr) && !narrow, (el) =>
