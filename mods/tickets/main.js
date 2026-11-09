@@ -37,7 +37,7 @@
 
 import { h_flex, Input, InputState, v_flex } from "gpui-base";
 import { div, svg, View } from "gpui-kit";
-import { closeOverlay, focused, props, run, theme } from "herdr";
+import { closeOverlay, focused, notify, props, run, theme } from "herdr";
 import { C, configReady } from "./config.js";
 import { prLabel, toneKey } from "./flow.js";
 import {
@@ -52,12 +52,14 @@ import {
 import { basename, fill, moveKey, openUrl, score, spaceFor } from "./lib.js";
 import {
   errorText,
+  learnClone,
   openSpaces,
   prepareStart,
   remember,
   rememberedRepo,
   repoId,
   spaceName,
+  startTickets,
   taskValues,
 } from "./start.js";
 import { listTickets, suggestRepos, workFor } from "./work.js";
@@ -407,7 +409,7 @@ export default class Tickets extends View {
     if (repo.path) return repo;
     this.setAction({ phase: "running", message: `Cloning ${repo.slug}…` }, cx);
     const cloned = await cloneRepo(repo.slug);
-    this.data.repos.push(cloned);
+    learnClone(this.data.repos, repo, cloned);
     return cloned;
   }
 
@@ -429,13 +431,15 @@ export default class Tickets extends View {
   // start()'s work up to opening the space: { name, folder, task }. Before
   // opening it, which closes this popup and with it any work still to do here.
   async prepare(ticket, target, cx) {
-    const repo = await this.local(target, cx);
-    return prepareStart(
-      ticket,
-      repo,
-      this.data.work.get(ticket.key) ?? [],
-      (m) => this.setAction({ phase: "running", message: m }, cx),
-    );
+    return prepareStart(ticket, target, {
+      work: this.data.work.get(ticket.key) ?? [],
+      repos: this.data.repos,
+      onStep: this.onStep(cx),
+    });
+  }
+
+  onStep(cx) {
+    return (message) => this.setAction({ phase: "running", message }, cx);
   }
 
   // Every marked ticket in its best suggested repo, then all their spaces at
@@ -449,18 +453,25 @@ export default class Tickets extends View {
         cx,
       );
     const tickets = d.tickets.filter((t) => this.marked.has(t.key));
-    const noRepo = tickets.find((t) => !this.suggestions(t).length);
-    if (noRepo)
-      return this.setAction(
-        { phase: "failed", error: `No repo to start ${noRepo.label} in` },
-        cx,
-      );
     this.act(cx, `Creating ${tickets.length} worktrees…`, async (cx) => {
-      const spaces = [];
-      for (const t of tickets) {
-        spaces.push(await this.prepare(t, this.suggestions(t)[0].repo, cx));
-        this.marked.delete(t.key); // done: a retry after a failure skips it
-      }
+      const { results, spaces } = await startTickets(
+        tickets.map((ticket) => ({ ticket, repo: null })),
+        {
+          repos: d.repos,
+          work: d.work,
+          here: d.here,
+          onStep: this.onStep(cx),
+        },
+      );
+      // Opening a space closes this popup: what didn't start is a notification.
+      const left = results.filter((r) => r.status !== "started");
+      if (left.length)
+        notify({
+          title: `${left.length} of ${results.length} tickets not started`,
+          body: left.map((r) => `${r.label}: ${r.why}`).join("\n"),
+          level: "warning",
+        });
+      this.marked.clear();
       this.openSpaces(spaces);
     });
   }

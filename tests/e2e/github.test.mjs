@@ -8,6 +8,7 @@ const issue = (s) =>
 
 flow({
   tracker: "github",
+  key: "acme/storage#5",
   filter: "Stream large files",
   ref: "issue-5",
   repo: "storage",

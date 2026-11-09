@@ -10,7 +10,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { Herdr, missingTools, waitFor } from "./herdr.mjs";
 
-// t: { tracker, filter (typed in the popup), ref (for herdr-demo), repo,
+// t: { tracker, key (the ticket's), filter (typed in the popup), ref (for herdr-demo), repo,
 //      worktree (relative to ws/), branch, task (RegExp the agent's screen
 //      shows), ticketUrl (where its ticket opens), ticketDone(state),
 //      readyWhen (the demo's workflow.readyWhen: "agent" checks that Ready
@@ -100,6 +100,28 @@ export function flow(t, { failures = false } = {}) {
     await h.waitRow("its agent", worktree(), (r) => r.agent === terminal);
     t.started?.(h.state());
     await h.assertNoErrors("after starting the ticket");
+  });
+
+  scenario("work.start: a request file's result", async () => {
+    const dir = path.join(h.home, "work-start");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "e2e.json.tmp"),
+      JSON.stringify({ tickets: [t.key, "NOPE-404"] }),
+    );
+    fs.renameSync(path.join(dir, "e2e.json.tmp"), path.join(dir, "e2e.json"));
+    await h.sh("herdr-app", ["do", "work.start"]);
+    const file = path.join(dir, "e2e.result.json");
+    await waitFor("its result", () => fs.existsSync(file), { timeout: 30_000 });
+    const out = JSON.parse(fs.readFileSync(file, "utf8"));
+    assert.deepEqual(
+      out.results.map((r) => [r.ticket, r.status]),
+      [
+        ["NOPE-404", "failed"],
+        [t.key, "skipped"], // started above: its work is open
+      ],
+    );
+    await h.assertNoErrors("after work.start");
   });
 
   scenario("open the row's ticket, and no PR yet, by keyboard", async () => {
