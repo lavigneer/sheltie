@@ -57,6 +57,7 @@ export function prLabel(pr) {
     if (pr.review === "APPROVED") parts.push("approved");
     else if (pr.review === "CHANGES_REQUESTED") parts.push("changes requested");
     else if (!pr.draft && !pr.review) parts.push("no review needed");
+    else if (!pr.draft) parts.push("in review");
     if (pr.checks) {
       // GitHub's icon and count of passed checks: "✗ 2/5".
       const icon = { failed: "✗", pending: "◌", passed: "✓" }[pr.checks];
@@ -71,7 +72,11 @@ export function prLabel(pr) {
     conflicts || pr.checks === "failed" || pr.review === "CHANGES_REQUESTED";
   const good =
     pr.state === "MERGED" ||
-    (pr.review === "APPROVED" && pr.checks === "passed");
+    // Ready to merge: approved, or needing no review, with checks passed.
+    (pr.state === "OPEN" &&
+      !pr.draft &&
+      (pr.review === "APPROVED" || !pr.review) &&
+      pr.checks === "passed");
   const tone = bad ? "bad" : good ? "good" : null;
   return {
     text: [...parts, ...tail].join(" "),
