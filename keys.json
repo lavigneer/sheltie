@@ -3,7 +3,7 @@
     "ctrl-shift-j": "mod.open:tickets",
     "ctrl-shift-f": "mod.open:projects"
   },
-  "layout:sheltie": {
+  "layout:work": {
     "alt-shift-down": "work.next",
     "alt-shift-up": "work.prev",
     "alt-shift-right": "work.step-next",
@@ -15,6 +15,6 @@
     "alt-shift-r": "layout.switch:review"
   },
   "layout:review": {
-    "alt-shift-r": "layout.switch:sheltie"
+    "alt-shift-r": "layout.switch:work"
   }
 }

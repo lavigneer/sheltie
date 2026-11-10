@@ -6,7 +6,7 @@ the parts you want.
 
 | Mod / layout | |
 |---|---|
-| **tickets** + **work** mods, **sheltie** layout | the ticket flow: a ticket from your tracker to a merged PR (below) |
+| **tickets** + **work** mods, **work** layout | the ticket flow: a ticket from your tracker to a merged PR (below) |
 | **projects** mod | a plain project switcher (Ctrl+Shift+F) |
 | **usage** mod | what your agents cost, and your Claude plan's limits |
 | **layouts** mod | a Work \| Reviews tab strip atop the sidebar of both layouts, switching between them; Reviews shows how many PRs await you |
@@ -82,15 +82,20 @@ Start Herdr once, then:
 git clone https://github.com/lavigneer/sheltie
 cd sheltie
 ./install.sh --skills
-herdr-app do layout.switch --name sheltie
+herdr-app do layout.switch --name work
 ```
 
 This copies the mods into Herdr's app home (`$HERDR_APP_HOME`, else
-`~/.config/herdr-app`), binds the keys below, adds the `sheltie` and `review` layouts and a
+`~/.config/herdr-app`), binds the keys below, adds the `work` and `review` layouts and a
 starter `sheltie.json`. `--skills` also installs the agent skills in
 `skills/` (draft-pr, fix-ci, address-comments, resolve-conflicts, start-work,
 review-pr) into
 `~/.agents/skills` and `~/.claude/skills`. Re-run after pulling to update.
+
+Upgrading from a version with a `sheltie` layout: it is now `work`. Re-running
+`install.sh` removes the old `layouts/sheltie.json`/`.svg`, moves your
+`layout:sheltie` keys (yours included) to `layout:work`, and moves you onto
+`work` if `sheltie` was your active layout.
 
 With Nix, `packages.default` provides the same files plus `sheltie-install`
 and `herdr-demo`.
@@ -107,7 +112,7 @@ and `herdr-demo`.
 | Alt+Shift+O | `work.open` | open the row's space |
 | Alt+Shift+P | `work.open-pr` | open the row's PR |
 | Alt+Shift+T | `work.open-ticket` | open the row's ticket |
-| Alt+Shift+R | `layout.switch:review` / `layout.switch:sheltie` | switch between the Work and Reviews layouts |
+| Alt+Shift+R | `layout.switch:review` / `layout.switch:work` | switch between the Work and Reviews layouts |
 
 Rebind them in `<Herdr app home>/keys.json`. They also work from the command
 line (`herdr-app do work.step`), as do `work.refresh`, `work.report` (writes

@@ -1,5 +1,5 @@
 // Layouts: a Work | Reviews tab strip at the top of the sidebar that switches
-// between the sheltie and review layouts (each keeps its own sizes and panel
+// between the work and review layouts (each keeps its own sizes and panel
 // state). Each layout places it with { current: "<its name>" }; the Reviews
 // tab shows the review queue's length, which the Reviews mod publishes.
 

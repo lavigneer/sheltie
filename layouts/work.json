@@ -51,7 +51,7 @@
           "content": {
             "mod": "layouts",
             "props": {
-              "current": "sheltie"
+              "current": "work"
             }
           }
         },
@@ -209,5 +209,5 @@
       ]
     }
   ],
-  "preview": "layouts/sheltie.svg"
+  "preview": "layouts/work.svg"
 }
