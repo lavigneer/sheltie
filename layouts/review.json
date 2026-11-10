@@ -43,6 +43,19 @@
           }
         },
         {
+          "id": "layout-switcher",
+          "type": "block",
+          "size": {
+            "px": 34
+          },
+          "content": {
+            "mod": "layouts",
+            "props": {
+              "current": "review"
+            }
+          }
+        },
+        {
           "id": "sidebar-lists",
           "type": "column",
           "children": [

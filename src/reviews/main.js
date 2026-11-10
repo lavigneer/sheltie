@@ -6,11 +6,12 @@
 // worktree has ✓ (Done reviewing: start.js finishReview); reviewed PRs keep a
 // row while their worktree stays, and one whose PR merged or closed is torn
 // down on the next refresh (sweepReviews).
+// Publishes the queue length (switcher.js REVIEW_COUNT) for the layouts mod.
 // Refreshed as often as the Work sidebar's PRs (PR_MS), and with ↻.
 
 import { h_flex, v_flex } from "gpui-base";
 import { div, View } from "gpui-kit";
-import { notify, theme } from "herdr";
+import { notify, setShared, theme } from "herdr";
 import { C, configReady } from "./config.js";
 import { localRepos, sameSlug } from "./git.js";
 import { openUrl } from "./lib.js";
@@ -24,6 +25,7 @@ import {
   prepareReview,
   sweepReviews,
 } from "./start.js";
+import { REVIEW_COUNT } from "./switcher.js";
 import { Cache, serial } from "./watch.js";
 import { PR_MS, RETRY_MS } from "./work.js";
 
@@ -54,6 +56,8 @@ export default class Reviews extends View {
     };
     // One entry, "queue": the last good queue survives a failed refresh.
     this.cache = new Cache({ retryMs: RETRY_MS });
+    // The queue length for the layouts mod's Reviews tab: none until loaded.
+    setShared(REVIEW_COUNT, null);
     this.refresh = serial(async (cx) => {
       await configReady();
       await this.cache.refresh("queue", async () => {
@@ -64,6 +68,8 @@ export default class Reviews extends View {
         this.repos = repos;
         return reviewQueue(data, repos.map((r) => r.slug).filter(Boolean));
       });
+      const queue = this.cache.get("queue")?.value;
+      if (queue) setShared(REVIEW_COUNT, queue.length);
       await this.sweep().catch(() => {});
       cx.notify();
     });
