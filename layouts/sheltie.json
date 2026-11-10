@@ -58,6 +58,17 @@
               "min": 90
             },
             {
+              "id": "reviews",
+              "type": "block",
+              "content": {
+                "mod": "reviews"
+              },
+              "size": {
+                "weight": 1
+              },
+              "min": 60
+            },
+            {
               "id": "usage",
               "type": "block",
               "content": {

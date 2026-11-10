@@ -78,6 +78,10 @@ One piece of work on a ticket (or ad-hoc work) in one repo: a branch checked out
 A work item as the Work sidebar shows it. Each row is exactly one work item; a repo's hub is shown alongside its rows but is not one.
 _Avoid_: Hub row
 
+**Review**:
+A PR in one of your repos that requests your review (from you or a team you're on), as the Reviews sidebar shows it. It leaves once you've reviewed it, until you're asked again. Not a work item: it's someone else's work.
+_Avoid_: Row, work item
+
 **PR stage**:
 Where a work item's PR stands: no PR, draft, in review, approved, merged or closed.
 _Avoid_: PR status, ticket status
