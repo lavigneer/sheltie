@@ -86,7 +86,8 @@ herdr-app do layout.switch --name sheltie
 This copies the mods into Herdr's app home (`$HERDR_APP_HOME`, else
 `~/.config/herdr-app`), binds the keys below, adds a `sheltie` layout and a
 starter `sheltie.json`. `--skills` also installs the agent skills in
-`skills/` (draft-pr, fix-ci, address-comments, resolve-conflicts, start-work) into
+`skills/` (draft-pr, fix-ci, address-comments, resolve-conflicts, start-work,
+review-pr) into
 `~/.agents/skills` and `~/.claude/skills`. Re-run after pulling to update.
 
 With Nix, `packages.default` provides the same files plus `sheltie-install`
