@@ -9,7 +9,7 @@ the parts you want.
 | **tickets** + **work** mods, **sheltie** layout | the ticket flow: a ticket from your tracker to a merged PR (below) |
 | **projects** mod | a plain project switcher (Ctrl+Shift+F) |
 | **usage** mod | what your agents cost, and your Claude plan's limits |
-| **reviews** mod | PRs in your repos awaiting your review, oldest request first |
+| **reviews** mod, **review** layout | PRs in your repos awaiting your review, oldest request first; the review layout puts them in the sidebar with the changes panel open beside the agent (`herdr-app do layout.switch --name review`) |
 
 More are welcome; see [Adding a mod or layout](docs/development.md#adding-a-mod-or-layout).
 
@@ -85,7 +85,7 @@ herdr-app do layout.switch --name sheltie
 ```
 
 This copies the mods into Herdr's app home (`$HERDR_APP_HOME`, else
-`~/.config/herdr-app`), binds the keys below, adds a `sheltie` layout and a
+`~/.config/herdr-app`), binds the keys below, adds the `sheltie` and `review` layouts and a
 starter `sheltie.json`. `--skills` also installs the agent skills in
 `skills/` (draft-pr, fix-ci, address-comments, resolve-conflicts, start-work,
 review-pr) into
