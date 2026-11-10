@@ -16,10 +16,10 @@
 # What it does:
 #   mods/*                  copied to <home>/mods/ (replacing earlier versions)
 #   keys.json               ctrl-shift-j (tickets), ctrl-shift-f (projects) and
-#                           the Work sidebar's alt-shift keys (in the sheltie
+#                           the Work sidebar's alt-shift keys (in the work
 #                           layout only) added to
 #                           <home>/keys.json, unless you use those keys
-#   layouts/*               copied to <home>/layouts/ (sheltie: Herdr with the
+#   layouts/*               copied to <home>/layouts/ (work: Herdr with the
 #                           Work sidebar)
 #   sheltie.json        a starter settings file if there is none
 # Needs bash and jq.
@@ -74,6 +74,18 @@ for mod in "$here"/mods/*/; do
   echo "mod: $name"
 done
 
+# Upgrade: the work layout used to be called sheltie. Move its key section
+# (keeping keys you added) and any layout.switch:sheltie bindings over first.
+tmp="$(mktemp "$home/keys.json.XXXXXX")"
+jq 'if has("layout:sheltie") then
+      .["layout:work"] = (.["layout:sheltie"] + (.["layout:work"] // {}))
+      | del(.["layout:sheltie"])
+    else . end
+    | map_values(if type == "object" then
+        map_values(if . == "layout.switch:sheltie" then "layout.switch:work" else . end)
+      else . end)' "$home/keys.json" >"$tmp"
+mv "$tmp" "$home/keys.json"
+
 # Keys: ours only where the key is free in that section.
 taken="$(jq -r --slurpfile ours "$here/keys.json" '
   [$ours[0] | to_entries[] | .key as $s | .value | to_entries[] | {s: $s, k: .key, a: .value}] as $want
@@ -100,6 +112,24 @@ for layout in "$here"/layouts/*.json; do
   done
   echo "layout: $name (switch with: herdr-app do layout.switch --name $name)"
 done
+# Upgrade: drop the old sheltie layout, and keep whoever was on it on work.
+for f in "$home/layouts/sheltie.json" "$home/layouts/sheltie.svg"; do
+  [ -f "$f" ] || continue
+  writable "$f"
+  rm -f "$f"
+  echo "layout: removed $f (renamed to work)"
+done
+if [ -f "$home/shared.json" ] && jq -e '.layout == "sheltie"' "$home/shared.json" >/dev/null 2>&1; then
+  tmp="$(mktemp "$home/shared.json.XXXXXX")"
+  jq '.layout = "work"' "$home/shared.json" >"$tmp"
+  mv "$tmp" "$home/shared.json"
+  # A running Herdr keeps its own copy: switch it too (fails quietly if closed),
+  # but only when this is the home that Herdr runs from.
+  if [ "$home" = "${HERDR_APP_HOME:-$HOME/.config/herdr-app}" ]; then
+    herdr-app do layout.switch --name work >/dev/null 2>&1 || true
+  fi
+  echo "layout: you were on sheltie, now on work"
+fi
 
 # Settings.
 if [ -f "$home/sheltie.json" ]; then
