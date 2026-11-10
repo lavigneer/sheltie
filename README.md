@@ -9,6 +9,7 @@ the parts you want.
 | **tickets** + **work** mods, **sheltie** layout | the ticket flow: a ticket from your tracker to a merged PR (below) |
 | **projects** mod | a plain project switcher (Ctrl+Shift+F) |
 | **usage** mod | what your agents cost, and your Claude plan's limits |
+| **layouts** mod | a Work \| Reviews tab strip atop the sidebar of both layouts, switching between them; Reviews shows how many PRs await you |
 | **reviews** mod, **review** layout | PRs in your repos awaiting your review, oldest request first; ✓ on a row with a review worktree tears it down (also automatic once the PR merges or closes, unless it has uncommitted changes); the review layout puts them in the sidebar with the changes panel open beside the agent (`herdr-app do layout.switch --name review`) |
 
 More are welcome; see [Adding a mod or layout](docs/development.md#adding-a-mod-or-layout).
@@ -106,6 +107,7 @@ and `herdr-demo`.
 | Alt+Shift+O | `work.open` | open the row's space |
 | Alt+Shift+P | `work.open-pr` | open the row's PR |
 | Alt+Shift+T | `work.open-ticket` | open the row's ticket |
+| Alt+Shift+R | `layout.switch:review` / `layout.switch:sheltie` | switch between the Work and Reviews layouts |
 
 Rebind them in `<Herdr app home>/keys.json`. They also work from the command
 line (`herdr-app do work.step`), as do `work.refresh`, `work.report` (writes
