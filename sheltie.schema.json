@@ -228,6 +228,11 @@
           "description": "First message for ad-hoc work (not tied to a ticket), started from the tickets popup in a new worktree on {branch}; {description} is what you typed.",
           "default": "{description}\n\nThis is ad-hoc work, not tied to a ticket: you're in a new worktree on branch {branch}. When the pull request is complete, run `hc label \"$HC_TERMINAL_ID\" pr=ready`."
         },
+        "reviewTask": {
+          "type": "string",
+          "description": "First message when starting a review from the Reviews sidebar, in the PR's review worktree. {number}, {slug}, {title}, {url} and {author} are filled in.",
+          "default": "/review-pr {number}"
+        },
         "steps": {
           "type": "object",
           "properties": {

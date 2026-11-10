@@ -1,16 +1,19 @@
 // Reviews: the PRs in your repos (localRepos) that request your review, oldest
 // request first (prs.js reviewQueue). A row: repo, #number, title, author,
-// how long it has waited, and its size. Click to open it in the browser.
+// how long it has waited, and its size. Click to start the review: the PR
+// checked out in a review worktree, in its own space with agent.reviewTask
+// (start.js prepareReview); ↗ opens it in the browser.
 // Refreshed as often as the Work sidebar's PRs (PR_MS), and with ↻.
 
 import { h_flex, v_flex } from "gpui-base";
 import { div, View } from "gpui-kit";
-import { theme } from "herdr";
+import { notify, theme } from "herdr";
 import { C, configReady } from "./config.js";
-import { localRepos } from "./git.js";
+import { localRepos, sameSlug } from "./git.js";
 import { openUrl } from "./lib.js";
 import { reviewQueue, reviewRequests } from "./prs.js";
 import { band, RAIL, resize } from "./sidebar.js";
+import { errorText, openSpaces, prepareReview } from "./start.js";
 import { Cache, serial } from "./watch.js";
 import { PR_MS, RETRY_MS } from "./work.js";
 
@@ -27,6 +30,14 @@ export function age(iso, now = Date.now()) {
 export default class Reviews extends View {
   init(_props, cx) {
     this.width = null;
+    this.repos = [];
+    // One start at a time, so a double click can't check out twice.
+    this.starting = false;
+    this.start = (cx, r) => {
+      if (this.starting) return;
+      this.starting = true;
+      cx.spawn(() => this.startReview(r));
+    };
     // One entry, "queue": the last good queue survives a failed refresh.
     this.cache = new Cache({ retryMs: RETRY_MS });
     this.refresh = serial(async (cx) => {
@@ -36,12 +47,29 @@ export default class Reviews extends View {
           localRepos(),
           reviewRequests(),
         ]);
+        this.repos = repos;
         return reviewQueue(data, repos.map((r) => r.slug).filter(Boolean));
       });
       cx.notify();
     });
     this.refresh(cx);
     cx.timer.every(PR_MS, (cx) => this.refresh(cx));
+  }
+
+  async startReview(r) {
+    try {
+      const repo = this.repos.find((x) => x.path && sameSlug(x.slug, r.slug));
+      if (!repo) throw new Error(`${r.slug} isn't checked out here`);
+      openSpaces([await prepareReview(r, repo)]);
+    } catch (e) {
+      notify({
+        title: `${r.slug}#${r.number}: couldn't start the review`,
+        body: errorText(e),
+        level: "error",
+      });
+    } finally {
+      this.starting = false;
+    }
   }
 
   render(_cx) {
@@ -63,8 +91,10 @@ export default class Reviews extends View {
         .text_size(12.5)
         .cursor_pointer()
         .hover((s) => s.bg(t.hover))
-        .tooltip(`${r.slug}#${r.number} by ${r.author}\n${r.title}`)
-        .on_click((_e, _cx) => openUrl(r.url))
+        .tooltip(
+          `${r.slug}#${r.number} by ${r.author}\n${r.title}\nClick to start reviewing`,
+        )
+        .on_click((_e, cx) => this.start(cx, r))
         .child(
           div()
             .flex_none()
@@ -95,6 +125,22 @@ export default class Reviews extends View {
             .text_size(11)
             .text_color(t.dim)
             .child(`+${r.additions} −${r.deletions}`),
+        )
+        .child(
+          div()
+            .id(`review-open-${r.slug}-${r.number}`)
+            .flex_none()
+            .px(3)
+            .rounded(4)
+            .text_size(11)
+            .text_color(t.dim)
+            .hover((s) => s.bg(t.hover).text_color(t.foreground))
+            .tooltip("Open in browser")
+            .on_click((_e, cx) => {
+              cx.stop_propagation();
+              openUrl(r.url);
+            })
+            .child("↗"),
         );
 
     const header = h_flex()

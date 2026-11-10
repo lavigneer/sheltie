@@ -203,6 +203,52 @@ export function worktreePath(repo, branch) {
   return `${repo.path}/${C.worktreeDir}/${name}`;
 }
 
+// Keeps worktrees (`path` is one) out of the main checkout's `git status`.
+async function excludeWorktrees(repo, path) {
+  const rel = path.slice(repo.path.length + 1);
+  if ((await git(repo.path, "check-ignore", "-q", rel)).code === 0) return;
+  const common = (
+    await git(
+      repo.path,
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-common-dir",
+    )
+  ).stdout.trim();
+  await exec("sh", [
+    "-c",
+    'mkdir -p "$1" && printf "%s\\n" "$2" >> "$1/exclude"',
+    "sh",
+    `${common}/info`,
+    `/${C.worktreeDir}/`,
+  ]);
+}
+
+// Where a review of PR #`number` is checked out: <repo>/<worktreeDir>/review-<number>.
+export const reviewPath = (repo, number) =>
+  `${repo.path}/${C.worktreeDir}/review-${number}`;
+
+// Checks out PR #`number` (`gh pr checkout`, so forks work too) in its review
+// worktree (reviewPath) and returns { path, existing }: an existing one is
+// left as it is.
+export async function addReviewWorktree(repo, number) {
+  const path = reviewPath(repo, number);
+  const { linked } = await listWorktrees(repo.path);
+  if (linked.some((w) => w.path === path)) return { path, existing: true };
+  await excludeWorktrees(repo, path);
+  const r = await git(repo.path, "worktree", "add", "--detach", path);
+  if (r.code !== 0)
+    throw new Error(firstLine(r.stderr) || "git worktree add failed");
+  const co = await tool("gh", ["pr", "checkout", String(number)], {
+    cwd: path,
+  });
+  if (co.code !== 0) {
+    await git(repo.path, "worktree", "remove", "--force", path);
+    throw new Error(firstLine(co.stderr) || `gh pr checkout ${number} failed`);
+  }
+  return { path, existing: false };
+}
+
 // Adds a worktree for `branch` and returns its path. Where the branch comes from:
 //   1. a local branch of that name;
 //   2. origin's branch of that name (tracked);
@@ -217,25 +263,7 @@ export async function addWorktree(
   { create = false, pr = null } = {},
 ) {
   const path = worktreePath(repo, branch);
-  // Keep worktrees out of the main checkout's `git status`.
-  const rel = path.slice(repo.path.length + 1);
-  if ((await git(repo.path, "check-ignore", "-q", rel)).code !== 0) {
-    const common = (
-      await git(
-        repo.path,
-        "rev-parse",
-        "--path-format=absolute",
-        "--git-common-dir",
-      )
-    ).stdout.trim();
-    await exec("sh", [
-      "-c",
-      'mkdir -p "$1" && printf "%s\\n" "$2" >> "$1/exclude"',
-      "sh",
-      `${common}/info`,
-      `/${C.worktreeDir}/`,
-    ]);
-  }
+  await excludeWorktrees(repo, path);
   // Best effort: offline, local branches still work and new ones start from
   // the last fetched default branch.
   await git(repo.path, "fetch", "--quiet", "origin");
