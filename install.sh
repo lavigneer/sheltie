@@ -126,7 +126,7 @@ if [ -f "$home/shared.json" ] && jq -e '.layout == "sheltie"' "$home/shared.json
   # A running Herdr keeps its own copy: switch it too (fails quietly if closed),
   # but only when this is the home that Herdr runs from.
   if [ "$home" = "${HERDR_APP_HOME:-$HOME/.config/herdr-app}" ]; then
-    herdr-app do layout.switch --name work >/dev/null 2>&1 || true
+    herdr-app "do" layout.switch --name work >/dev/null 2>&1 || true
   fi
   echo "layout: you were on sheltie, now on work"
 fi
