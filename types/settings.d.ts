@@ -112,6 +112,12 @@ export interface Settings {
      * typed.
      */
     adhocTask: string;
+    /**
+     * First message when starting a review from the Reviews sidebar, in the
+     * PR's review worktree. {number}, {slug}, {title}, {url} and {author}
+     * are filled in.
+     */
+    reviewTask: string;
     /** What each Work sidebar step sends to the agent. */
     steps: {
       "draft-pr": string;

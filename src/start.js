@@ -13,7 +13,13 @@ import {
   writeTextFile,
 } from "herdr";
 import { C } from "./config.js";
-import { addWorktree, branchFor, cloneRepo, localRepos } from "./git.js";
+import {
+  addReviewWorktree,
+  addWorktree,
+  branchFor,
+  cloneRepo,
+  localRepos,
+} from "./git.js";
 import { fill, firstLine, spaceFor } from "./lib.js";
 import {
   findRepo,
@@ -128,6 +134,32 @@ export function openSpaces(list) {
         ...(task ? { task } : {}),
       });
   }
+}
+
+// A review's space name: "Review web#12".
+export const reviewSpaceName = (review) =>
+  `Review ${review.slug.split("/")[1]}#${review.number}`;
+
+// What agent.reviewTask can say about a review.
+export const reviewValues = (review) => ({
+  number: review.number,
+  slug: review.slug,
+  title: review.title,
+  url: review.url,
+  author: review.author,
+});
+
+// Everything up to opening a review's space (see openSpaces): PR
+// `review.number` checked out in `repo`'s review worktree. No tracker calls.
+// An existing worktree is reused, its agent not told again.
+/** @param {{ slug: string, number: number, title: string, url: string, author: string }} review @param {Repo & { path: string }} repo */
+export async function prepareReview(review, repo) {
+  const { path, existing } = await addReviewWorktree(repo, review.number);
+  return {
+    name: reviewSpaceName(review),
+    folder: path,
+    task: existing ? null : fill(C.agent.reviewTask, reviewValues(review)),
+  };
 }
 
 // A request's entries: a ticket's key or label ("WEB-142", "owner/repo#12",

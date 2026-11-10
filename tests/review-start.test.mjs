@@ -1,0 +1,82 @@
+// Starting a review (start.js prepareReview): the PR checked out by `gh pr
+// checkout` in <repo>/<worktreeDir>/review-<number>, a space named after the
+// PR, agent.reviewTask as its prompt, and a second start reusing it all.
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import { after, before, test } from "node:test";
+
+const { prepareReview, reviewSpaceName } = await import("../src/start.js");
+const { reviewPath } = await import("../src/git.js");
+
+const tmp = fs.realpathSync(fs.mkdtempSync(`${os.tmpdir()}/sheltie-review-`));
+const env = {
+  GIT_AUTHOR_NAME: "t",
+  GIT_AUTHOR_EMAIL: "t@t",
+  GIT_COMMITTER_NAME: "t",
+  GIT_COMMITTER_EMAIL: "t@t",
+};
+Object.assign(process.env, env);
+const git = (cwd, ...args) =>
+  execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+const repo = { path: `${tmp}/app`, name: "app", slug: "acme/app" };
+const review = {
+  slug: "acme/app",
+  number: 42,
+  title: "Fix it",
+  url: "https://github.com/acme/app/pull/42",
+  author: "someone",
+};
+const calls = `${tmp}/gh-calls`;
+let PATH;
+
+before(() => {
+  git(tmp, "init", "--quiet", "--bare", "-b", "main", "origin.git");
+  git(tmp, "clone", "--quiet", `${tmp}/origin.git`, "app");
+  git(repo.path, "commit", "--quiet", "--allow-empty", "-m", "init");
+  git(repo.path, "push", "--quiet", "origin", "main");
+  // A stand-in gh: `gh pr checkout N` puts the worktree on branch pr-N.
+  fs.mkdirSync(`${tmp}/bin`);
+  fs.writeFileSync(
+    `${tmp}/bin/gh`,
+    `#!/bin/sh\necho "$PWD $*" >> ${calls}\n[ "$1 $2" = "pr checkout" ] && exec git checkout -q -b "pr-$3"\nexit 1\n`,
+    { mode: 0o755 },
+  );
+  PATH = process.env.PATH;
+  process.env.PATH = `${tmp}/bin:${PATH}`;
+});
+after(() => {
+  process.env.PATH = PATH;
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("a review's worktree path and space name", () => {
+  assert.equal(reviewPath(repo, 42), `${tmp}/app/.worktrees/review-42`);
+  assert.equal(reviewSpaceName(review), "Review app#42");
+});
+
+test("prepareReview checks the PR out and fills agent.reviewTask", async () => {
+  const s = await prepareReview(review, repo);
+  const path = `${tmp}/app/.worktrees/review-42`;
+  assert.deepEqual(s, {
+    name: "Review app#42",
+    folder: path,
+    task: "/review-pr 42",
+  });
+  assert.equal(git(path, "branch", "--show-current"), "pr-42");
+  assert.equal(fs.readFileSync(calls, "utf8"), `${path} pr checkout 42\n`);
+  assert.equal(git(repo.path, "status", "--porcelain"), "");
+});
+
+test("starting the same review again reuses it, untold", async () => {
+  const s = await prepareReview(review, repo);
+  assert.equal(s.task, null);
+  assert.equal(s.folder, `${tmp}/app/.worktrees/review-42`);
+  assert.equal(fs.readFileSync(calls, "utf8").split("\n").length, 2);
+});
+
+test("a failed checkout leaves no worktree behind", async () => {
+  await assert.rejects(prepareReview({ ...review, number: "x y" }, repo));
+  assert.ok(!fs.existsSync(`${tmp}/app/.worktrees/review-x y`));
+});

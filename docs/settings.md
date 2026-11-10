@@ -28,6 +28,7 @@ shows every setting with its default, and `types/settings.d.ts` documents each o
 | `agent.argv` | `["claude"]` | the agent; its first message is the last argument |
 | `agent.task`, `agent.extraBranchTask` | see example | first messages; `{key}`, `{summary}`, `{branch}`, `{viewCommand}` |
 | `agent.adhocTask` | see example | first message for ad-hoc work (no ticket); `{description}`, `{branch}` |
+| `agent.reviewTask` | `"/review-pr {number}"` | first message when starting a review from the Reviews sidebar; `{number}`, `{slug}`, `{title}`, `{url}`, `{author}` |
 | `agent.steps` | `/draft-pr` etc. (the skills in `skills/`) | what each sidebar step sends; change for agents that invoke skills differently |
 | `usage.agents` | Claude Code in `~/.claude`, Codex in `~/.codex`, opencode in `~/.local/share/opencode` | `{type: "claude-code" \| "codex" \| "opencode", home}`: whose session logs the Usage and Work sidebars' costs count |
 | `usage.prices` | LiteLLM's model price list | URL of a LiteLLM-format price list (`file://` works) |
