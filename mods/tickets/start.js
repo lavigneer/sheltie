@@ -16,11 +16,15 @@ import { C } from "./config.js";
 import {
   addReviewWorktree,
   addWorktree,
+  assertClean,
   branchFor,
   cloneRepo,
   localRepos,
+  removeWorktree,
+  reviewWorktrees,
 } from "./git.js";
-import { fill, firstLine, spaceFor } from "./lib.js";
+import { closeSpacesIn, fill, firstLine, spaceFor } from "./lib.js";
+import { prDetails } from "./prs.js";
 import {
   findRepo,
   listTickets,
@@ -160,6 +164,67 @@ export async function prepareReview(review, repo) {
     folder: path,
     task: existing ? null : fill(C.agent.reviewTask, reviewValues(review)),
   };
+}
+
+// Done reviewing: closes the review's spaces, removes its worktree
+// (`w`, from reviewWorktrees) and local branch. Refuses, touching nothing, if
+// the worktree has uncommitted changes.
+/** @param {Repo & { path: string }} repo @param {{ path: string, branch: string | null }} w */
+export async function finishReview(repo, w) {
+  await assertClean(w.path, null);
+  closeSpacesIn(w.path);
+  await removeWorktree(repo, w.path, w.branch, null);
+}
+
+// Every review worktree in `repos`: { repo, number, path, branch, slug }.
+/** @param {Repo[]} repos */
+export async function allReviewWorktrees(repos) {
+  const found = await Promise.all(
+    repos
+      .filter((r) => r.path && r.slug)
+      .map(async (repo) =>
+        (await reviewWorktrees(repo)).map((w) => ({
+          ...w,
+          repo: /** @type {Repo & { path: string }} */ (repo),
+          slug: /** @type {string} */ (repo.slug),
+        })),
+      ),
+  );
+  return found.flat();
+}
+
+// The review worktrees whose PR merged or closed are torn down (finishReview).
+// Returns the rest that aren't in `queue` (reviewed, PR still open) with the
+// PR's { title, url }, and an error per one that refused: { kept, refused }.
+// `state` looks a PR up (prDetails by default).
+/**
+ * @param {Awaited<ReturnType<typeof allReviewWorktrees>>} worktrees
+ * @param {{ slug: string, number: number }[]} queue
+ */
+export async function sweepReviews(
+  worktrees,
+  queue,
+  state = (slug, number) => prDetails(slug, number),
+) {
+  const kept = [];
+  const refused = [];
+  for (const w of worktrees) {
+    const queued = queue.some(
+      (r) =>
+        r.number === w.number && r.slug.toLowerCase() === w.slug.toLowerCase(),
+    );
+    if (queued) continue;
+    const pr = await state(w.slug, w.number);
+    if (pr && pr.state !== "OPEN") {
+      try {
+        await finishReview(w.repo, w);
+      } catch (e) {
+        refused.push({ ...w, why: errorText(e) });
+        kept.push({ ...w, title: pr.title, url: pr.url });
+      }
+    } else kept.push({ ...w, title: pr?.title ?? "", url: pr?.url ?? "" });
+  }
+  return { kept, refused };
 }
 
 // A request's entries: a ticket's key or label ("WEB-142", "owner/repo#12",

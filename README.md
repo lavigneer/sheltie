@@ -9,7 +9,7 @@ the parts you want.
 | **tickets** + **work** mods, **sheltie** layout | the ticket flow: a ticket from your tracker to a merged PR (below) |
 | **projects** mod | a plain project switcher (Ctrl+Shift+F) |
 | **usage** mod | what your agents cost, and your Claude plan's limits |
-| **reviews** mod, **review** layout | PRs in your repos awaiting your review, oldest request first; the review layout puts them in the sidebar with the changes panel open beside the agent (`herdr-app do layout.switch --name review`) |
+| **reviews** mod, **review** layout | PRs in your repos awaiting your review, oldest request first; ✓ on a row with a review worktree tears it down (also automatic once the PR merges or closes, unless it has uncommitted changes); the review layout puts them in the sidebar with the changes panel open beside the agent (`herdr-app do layout.switch --name review`) |
 
 More are welcome; see [Adding a mod or layout](docs/development.md#adding-a-mod-or-layout).
 

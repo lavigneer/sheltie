@@ -249,6 +249,16 @@ export async function addReviewWorktree(repo, number) {
   return { path, existing: false };
 }
 
+// `repo`'s review worktrees (see reviewPath): { number, path, branch }.
+export async function reviewWorktrees(repo) {
+  const prefix = `${repo.path}/${C.worktreeDir}/review-`;
+  const { linked } = await listWorktrees(repo.path);
+  return linked
+    .filter((w) => w.path.startsWith(prefix))
+    .map((w) => ({ ...w, number: Number(w.path.slice(prefix.length)) }))
+    .filter((w) => Number.isInteger(w.number) && w.number > 0);
+}
+
 // Adds a worktree for `branch` and returns its path. Where the branch comes from:
 //   1. a local branch of that name;
 //   2. origin's branch of that name (tracked);
@@ -330,14 +340,14 @@ export async function assertClean(path, prHead) {
     );
 }
 
-// Removes the worktree and deletes the local branch (after assertClean).
-// GitHub has already deleted the remote branch.
+// Removes the worktree and deletes its local branch, if any (after
+// assertClean). GitHub has already deleted the remote branch.
 export async function removeWorktree(repo, path, branch, prHead) {
   await assertClean(path, prHead);
   const rm = await git(repo.path, "worktree", "remove", path);
   if (rm.code !== 0)
     throw new Error(firstLine(rm.stderr) || "git worktree remove failed");
   // -D: a squash or rebase merge leaves the branch "unmerged" to git.
-  await git(repo.path, "branch", "-D", branch);
+  if (branch) await git(repo.path, "branch", "-D", branch);
   await git(repo.path, "fetch", "--quiet", "--prune", "origin");
 }
