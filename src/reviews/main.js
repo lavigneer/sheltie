@@ -2,7 +2,10 @@
 // request first (prs.js reviewQueue). A row: repo, #number, title, author,
 // how long it has waited, and its size. Click to start the review: the PR
 // checked out in a review worktree, in its own space with agent.reviewTask
-// (start.js prepareReview); ↗ opens it in the browser.
+// (start.js prepareReview); ↗ opens it in the browser. A row with a review
+// worktree has ✓ (Done reviewing: start.js finishReview); reviewed PRs keep a
+// row while their worktree stays, and one whose PR merged or closed is torn
+// down on the next refresh (sweepReviews).
 // Refreshed as often as the Work sidebar's PRs (PR_MS), and with ↻.
 
 import { h_flex, v_flex } from "gpui-base";
@@ -13,7 +16,14 @@ import { localRepos, sameSlug } from "./git.js";
 import { openUrl } from "./lib.js";
 import { reviewQueue, reviewRequests } from "./prs.js";
 import { band, RAIL, resize } from "./sidebar.js";
-import { errorText, openSpaces, prepareReview } from "./start.js";
+import {
+  allReviewWorktrees,
+  errorText,
+  finishReview,
+  openSpaces,
+  prepareReview,
+  sweepReviews,
+} from "./start.js";
 import { Cache, serial } from "./watch.js";
 import { PR_MS, RETRY_MS } from "./work.js";
 
@@ -31,6 +41,10 @@ export default class Reviews extends View {
   init(_props, cx) {
     this.width = null;
     this.repos = [];
+    this.worktrees = []; // allReviewWorktrees, after sweeping
+    this.reviewed = []; // worktrees of PRs no longer in the queue, still open
+    this.warned = new Set(); // paths whose automatic teardown was refused
+
     // One start at a time, so a double click can't check out twice.
     this.starting = false;
     this.start = (cx, r) => {
@@ -50,10 +64,55 @@ export default class Reviews extends View {
         this.repos = repos;
         return reviewQueue(data, repos.map((r) => r.slug).filter(Boolean));
       });
+      await this.sweep().catch(() => {});
       cx.notify();
     });
     this.refresh(cx);
     cx.timer.every(PR_MS, (cx) => this.refresh(cx));
+  }
+
+  // Tears down review worktrees whose PR merged or closed; a refusal is told
+  // once per worktree.
+  async sweep() {
+    const queue = this.cache.get("queue")?.value ?? [];
+    const all = await allReviewWorktrees(this.repos);
+    const { kept, refused } = await sweepReviews(all, queue);
+    for (const w of refused)
+      if (!this.warned.has(w.path)) {
+        this.warned.add(w.path);
+        notify({
+          title: `${w.slug}#${w.number}: review worktree kept`,
+          body: w.why,
+          level: "warning",
+        });
+      }
+    const gone = new Set(all.map((w) => w.path));
+    for (const w of kept) gone.delete(w.path);
+    this.worktrees = all.filter((w) => !gone.has(w.path));
+    const queued = (w) =>
+      queue.some((r) => r.number === w.number && sameSlug(r.slug, w.slug));
+    this.reviewed = kept.filter((w) => !queued(w));
+  }
+
+  worktreeOf(r) {
+    return this.worktrees.find(
+      (w) => w.number === r.number && sameSlug(w.slug, r.slug),
+    );
+  }
+
+  async doneReviewing(w, cx) {
+    try {
+      await finishReview(w.repo, w);
+      this.worktrees = this.worktrees.filter((x) => x.path !== w.path);
+      this.reviewed = this.reviewed.filter((x) => x.path !== w.path);
+    } catch (e) {
+      notify({
+        title: `${w.slug}#${w.number}: couldn't tear down the review`,
+        body: errorText(e),
+        level: "error",
+      });
+    }
+    cx.notify();
   }
 
   async startReview(r) {
@@ -117,14 +176,16 @@ export default class Reviews extends View {
             .flex_none()
             .text_size(11)
             .text_color(t.muted)
-            .child(age(r.requestedAt)),
+            .child(r.requestedAt ? age(r.requestedAt) : ""),
         )
         .child(
           div()
             .flex_none()
             .text_size(11)
             .text_color(t.dim)
-            .child(`+${r.additions} −${r.deletions}`),
+            .child(
+              r.additions == null ? "" : `+${r.additions} −${r.deletions}`,
+            ),
         )
         .child(
           div()
@@ -141,7 +202,37 @@ export default class Reviews extends View {
               openUrl(r.url);
             })
             .child("↗"),
+        )
+        .when(Boolean(this.worktreeOf(r)), (el) =>
+          el.child(
+            div()
+              .id(`review-done-${r.slug}-${r.number}`)
+              .flex_none()
+              .px(3)
+              .rounded(4)
+              .text_size(11)
+              .text_color(t.dim)
+              .hover((s) => s.bg(t.hover).text_color(t.foreground))
+              .tooltip("Done reviewing: close its space, remove the worktree")
+              .on_click((_e, cx) => {
+                cx.stop_propagation();
+                const w = this.worktreeOf(r);
+                if (w) cx.spawn((cx) => this.doneReviewing(w, cx));
+              })
+              .child("✓"),
+          ),
         );
+    // A reviewed PR whose worktree is still here.
+    const reviewedRow = (w) =>
+      row({
+        slug: w.slug,
+        number: w.number,
+        url: w.url || `https://github.com/${w.slug}/pull/${w.number}`,
+        title: w.title || "(reviewed)",
+        author: "reviewed",
+        requestedAt: null,
+        additions: null,
+      });
 
     const header = h_flex()
       .h(30)
@@ -186,6 +277,7 @@ export default class Reviews extends View {
         : v_flex()
             .pb(6)
             .children(queue.map(row))
+            .children(this.reviewed.map(reviewedRow))
             .when(!queue.length && !failed, (el) =>
               el.child(message("Nothing awaits your review", t.dim)),
             )

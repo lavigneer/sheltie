@@ -25,10 +25,10 @@
 //             branch (refused if anything isn't in the PR), tracker step "done"
 //             unless other work on the ticket is still open
 
-import { agents, panes, run, spaces, terminals } from "herdr";
+import { agents, panes, run, terminals } from "herdr";
 import { C, settingsOf } from "./config.js";
 import { assertClean, removeWorktree } from "./git.js";
-import { basename, inside, spaceFor, tool } from "./lib.js";
+import { basename, closeSpacesIn, spaceFor, tool } from "./lib.js";
 import { markReady, mergePr, prDetails } from "./prs.js";
 import { openWork, workName } from "./work.js";
 
@@ -448,9 +448,7 @@ async function ready(w, pr) {
 async function finish(w, pr, work, merged) {
   await assertClean(w.path, pr?.head ?? null);
   // Its spaces end with it (the agent's work is in the PR by now).
-  for (const s of spaces())
-    if (!s.machine && s.folder && inside(s.folder, w.path))
-      run("space.close", { id: s.id, confirmed: true });
+  closeSpacesIn(w.path);
   await removeWorktree(w.repo, w.path, w.branch, pr?.head ?? null);
   const notes = ["worktree removed"];
   if (merged && w.handle) {

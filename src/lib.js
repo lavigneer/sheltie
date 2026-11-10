@@ -1,7 +1,7 @@
 // Small helpers shared by every mod (scripts/build.mjs copies the shared
 // modules into each mod folder: Herdr only resolves imports inside it).
 
-import { exec, panes, spaces } from "herdr";
+import { exec, run as herdrRun, panes, spaces } from "herdr";
 import { C } from "./config.js";
 
 export const firstLine = (text) => (text || "").trim().split("\n")[0];
@@ -147,6 +147,13 @@ export function spaceFor(dir, except = []) {
     const tabs = new Set(s.tabs.map((t) => t.id));
     return live.some((p) => tabs.has(p.tab) && ok(p.cwd));
   });
+}
+
+// Closes every local space started inside `dir` (its work is done there).
+export function closeSpacesIn(dir) {
+  for (const s of spaces())
+    if (!s.machine && s.folder && inside(s.folder, dir))
+      herdrRun("space.close", { id: s.id, confirmed: true });
 }
 
 // Up/Down and Ctrl+N/Ctrl+P move a selection through `n` rows; Esc calls `close`.
