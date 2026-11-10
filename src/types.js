@@ -107,3 +107,16 @@
  */
 
 export {};
+
+/**
+ * A PR awaiting your review (prs.js reviewQueue).
+ * @typedef {object} Review
+ * @property {string} slug
+ * @property {number} number
+ * @property {string} url
+ * @property {string} title
+ * @property {string} author
+ * @property {string} requestedAt ISO time of the last request to you (or a team)
+ * @property {number} additions
+ * @property {number} deletions
+ */

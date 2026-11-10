@@ -9,6 +9,7 @@ the parts you want.
 | **tickets** + **work** mods, **sheltie** layout | the ticket flow: a ticket from your tracker to a merged PR (below) |
 | **projects** mod | a plain project switcher (Ctrl+Shift+F) |
 | **usage** mod | what your agents cost, and your Claude plan's limits |
+| **reviews** mod | PRs in your repos awaiting your review, oldest request first |
 
 More are welcome; see [Adding a mod or layout](docs/development.md#adding-a-mod-or-layout).
 

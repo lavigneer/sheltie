@@ -153,3 +153,71 @@ export async function mergePr(slug, number, { auto = false } = {}) {
     "gh pr merge",
   );
 }
+
+// --- Reviews ----------------------------------------------------------------
+
+// Open PRs requesting your review (yourself or a team you're on), with when
+// each was last requested and your latest review, from one GraphQL search.
+const REVIEW_SEARCH = `query { viewer { login }
+  search(query: "is:pr is:open archived:false review-requested:@me", type: ISSUE, first: 100) {
+    nodes { ... on PullRequest { number url title additions deletions createdAt
+      repository { nameWithOwner } author { login }
+      timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 20) { nodes {
+        ... on ReviewRequestedEvent { createdAt
+          requestedReviewer { __typename ... on User { login } } } } }
+      latestReviews(last: 100) { nodes { author { login } submittedAt } } } } } }`;
+
+// The raw search (see reviewQueue), throwing when GitHub can't be asked.
+export async function reviewRequests() {
+  const out = await must(
+    "gh",
+    ["api", "graphql", "-f", `query=${REVIEW_SEARCH}`],
+    "gh api graphql (review requests)",
+  );
+  return JSON.parse(out).data;
+}
+
+// The review queue from a reviewRequests() answer: PRs in the repos `slugs`
+// (others are left out), oldest request first. A PR you've reviewed since its
+// last request to you (or a team) drops off; a re-request brings it back.
+// Each: { slug, number, url, title, author, requestedAt, additions, deletions }.
+/** @param {any} data @param {string[]} slugs @returns {import("./types.js").Review[]} */
+export function reviewQueue(data, slugs) {
+  const me = data?.viewer?.login?.toLowerCase();
+  const known = new Set(slugs.map((s) => s.toLowerCase()));
+  return (data?.search?.nodes ?? [])
+    .filter((pr) => known.has(pr?.repository?.nameWithOwner?.toLowerCase()))
+    .map((pr) => {
+      const asked = (pr.timelineItems?.nodes ?? [])
+        .filter((e) => {
+          const r = e?.requestedReviewer;
+          return r?.__typename === "Team" || r?.login?.toLowerCase() === me;
+        })
+        .map((e) => e.createdAt)
+        .sort();
+      const reviewed = (pr.latestReviews?.nodes ?? [])
+        .filter((r) => r?.author?.login?.toLowerCase() === me)
+        .map((r) => r.submittedAt)
+        .sort();
+      return {
+        slug: pr.repository.nameWithOwner,
+        number: pr.number,
+        url: pr.url,
+        title: pr.title,
+        author: pr.author?.login ?? "ghost",
+        // No request event (e.g. a CODEOWNERS one on opening): since it opened.
+        requestedAt: asked.at(-1) ?? pr.createdAt,
+        reviewedAt: reviewed.at(-1) ?? null,
+        additions: pr.additions ?? 0,
+        deletions: pr.deletions ?? 0,
+      };
+    })
+    .filter((r) => !r.reviewedAt || r.reviewedAt < r.requestedAt)
+    .map(({ reviewedAt: _, ...r }) => r)
+    .sort(
+      (a, b) =>
+        a.requestedAt.localeCompare(b.requestedAt) ||
+        a.slug.localeCompare(b.slug) ||
+        a.number - b.number,
+    );
+}
