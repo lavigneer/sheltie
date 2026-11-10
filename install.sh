@@ -8,7 +8,8 @@
 #                       ~/.config/herdr-app). Start Herdr once first: this adds
 #                       to the keys.json it writes.
 #   --skills            also copy the agent skills (draft-pr, address-comments,
-#                       fix-ci, resolve-conflicts) into ~/.agents/skills and
+#                       fix-ci, resolve-conflicts, start-work, review-pr) into
+#                       ~/.agents/skills and
 #                       ~/.claude/skills, keeping any that you changed
 #                       (--force-skills: replace)
 #
