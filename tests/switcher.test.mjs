@@ -17,9 +17,6 @@ test("the current prop picks the active tab", () => {
 
 test("no count before the queue has loaded; zero once it has", () => {
   assert.deepEqual(view(switcherTabs("work", null)), ["*Work", "Reviews"]);
-  assert.deepEqual(view(switcherTabs("work", undefined)), [
-    "*Work",
-    "Reviews",
-  ]);
+  assert.deepEqual(view(switcherTabs("work", undefined)), ["*Work", "Reviews"]);
   assert.deepEqual(view(switcherTabs("work", 0)), ["*Work", "Reviews 0"]);
 });
