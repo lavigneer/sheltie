@@ -649,13 +649,33 @@ export default class Work extends View {
   // cx.notify(), noting why for the render's timing (renders.js).
   wake(cx, why) {
     this.why ??= why;
+    // A scan or lookup that changed what is known rebuilds the snapshot here,
+    // in async code, so the render it asks for only reads it.
+    this.store.warm();
     cx.notify();
   }
 
+  // Draws the sidebar (draw); a render that throws (Herdr interrupts one that
+  // runs too long) never reaches timed, so it's recorded here, with whether it
+  // rebuilt the snapshot, before being passed on.
   render(cx) {
     const start = Date.now();
     const trigger = this.why ?? "host";
     this.why = null;
+    const rebuilds = this.store.rebuilds;
+    try {
+      return this.draw(cx, start, trigger);
+    } catch (e) {
+      recordFailure("work", "render interrupted", e, {
+        elapsedMs: Date.now() - start,
+        trigger,
+        rebuilt: this.store.rebuilds !== rebuilds,
+      }).catch(() => {});
+      throw e;
+    }
+  }
+
+  draw(cx, start, trigger) {
     // One read of Herdr's live data for the whole render (liveData).
     const live = liveData();
     this.watchSpaces(cx, live);
