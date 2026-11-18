@@ -37,7 +37,10 @@ export async function localRepos() {
   const paths = new Set();
   for (const root of C.roots) {
     const depth = String(C.depth + 1);
+    // -H: a root that is a symlink (e.g. ~/workspace on another disk) is
+    // followed, not listed as itself.
     const r = await exec("find", [
+      "-H",
       root,
       "-mindepth",
       depth,
@@ -55,7 +58,13 @@ export async function localRepos() {
       if (line.endsWith("/.git")) paths.add(line.slice(0, -5));
   }
   const repos = await pool(
-    [...paths].map((path) => async () => {
+    [...paths].map((found) => async () => {
+      // Its real path, as git reports worktrees (and so the main checkout) by
+      // theirs: a symlink on the way would otherwise make the hub a worktree.
+      const top = await git(found, "rev-parse", "--show-toplevel").catch(
+        () => null,
+      );
+      const path = (top?.code === 0 && top.stdout.trim()) || found;
       const r = await git(path, "config", "--get", "remote.origin.url").catch(
         () => null,
       );
@@ -67,8 +76,14 @@ export async function localRepos() {
       };
     }),
   );
+  // Two roots (or a root and a symlink into it) may reach the same repo.
+  const seen = new Set();
   return repos
-    .filter((r) => r !== null)
+    .flatMap((r) => {
+      if (r === null || seen.has(r.path)) return [];
+      seen.add(r.path);
+      return [r];
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
