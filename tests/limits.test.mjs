@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 const { useConfig, DEFAULTS } = await import("../src/config.js");
-const { planLimits, windows } = await import("../src/limits.js");
+const { configDir, planLimits, windows } = await import("../src/limits.js");
 
 const USAGE = `You are currently using your subscription to power your Claude Code usage
 
@@ -92,4 +92,45 @@ test("resetsLabel leaves out today's date", async () => {
   assert.equal(resetsLabel("Nov 14, 5:59pm", now), "resets Nov 14, 5:59pm");
   assert.equal(resetsLabel("Nov 18, 1am", now), "resets Nov 18, 1am");
   assert.equal(resetsLabel(null, now), "");
+});
+
+test('windows: newer Claude Code\'s "Nov 18 at 2:30am" resets read as "Nov 18, 2:30am"', () => {
+  assert.deepEqual(
+    windows(
+      "Current session: 42% used · resets Nov 18 at 2:30am (America/Edmonton)",
+    ),
+    [{ key: "session", label: "Session", used: 42, resets: "Nov 18, 2:30am" }],
+  );
+});
+
+test("configDir: the default ~/.claude leaves CLAUDE_CONFIG_DIR unset", () => {
+  const h = os.homedir();
+  assert.equal(configDir("~/.claude"), "");
+  assert.equal(configDir(`${h}/.claude/`), "");
+  assert.equal(configDir("~/.claude-work"), `${h}/.claude-work`);
+});
+
+test("planLimits: the default home runs claude without CLAUDE_CONFIG_DIR", async () => {
+  const bin = path.join(tmp, "claude-env");
+  fs.writeFileSync(
+    bin,
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion, not a template.
+    '#!/bin/sh\nif [ -n "${CLAUDE_CONFIG_DIR+x}" ]; then echo "x: 1% used"; else echo "Current session: 7% used"; fi\n',
+  );
+  fs.chmodSync(bin, 0o755);
+  useConfig({
+    ...DEFAULTS,
+    programs: { ...DEFAULTS.programs, claude: bin },
+    usage: {
+      ...DEFAULTS.usage,
+      agents: [{ type: "claude-code", home: "~/.claude" }],
+    },
+  });
+  process.env.CLAUDE_CONFIG_DIR = path.join(os.homedir(), ".claude");
+  try {
+    const [l] = await planLimits();
+    assert.equal(l.windows[0].key, "session");
+  } finally {
+    delete process.env.CLAUDE_CONFIG_DIR;
+  }
 });

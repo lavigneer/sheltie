@@ -39,6 +39,7 @@ import { h_flex, Input, InputState, v_flex } from "gpui-base";
 import { div, svg, View } from "gpui-kit";
 import { closeOverlay, focused, notify, props, run, theme } from "herdr";
 import { C, configReady } from "./config.js";
+import { recordFailure } from "./diagnostics.js";
 import { prLabel, toneKey } from "./flow.js";
 import {
   addWorktree,
@@ -192,6 +193,7 @@ export default class Tickets extends View {
         this.setData({ ...base, phase: "ready", work }, cx);
       } catch (e) {
         if (!current()) return;
+        recordFailure("tickets", "load", e);
         this.setData(
           {
             tickets: shown ?? [],
@@ -218,6 +220,7 @@ export default class Tickets extends View {
         await f(cx);
         this.setAction({ phase: "idle" }, cx);
       } catch (e) {
+        recordFailure("tickets", message, e);
         this.setAction({ phase: "failed", error: errorText(e) }, cx);
       }
     });

@@ -32,7 +32,7 @@ jobs:
       - name: Biome (lint and format)
         run: npm run ci:lint
       - name: ShellCheck
-        run: shellcheck -x -e SC2016 -P SCRIPTDIR install.sh demo/herdr-demo demo/bin/* demo/state.sh
+        run: shellcheck -x -e SC2016 -P SCRIPTDIR install.sh diagnostics.sh demo/herdr-demo demo/bin/* demo/state.sh
       - name: Tests (against the demo's fake Jira and GitHub)
         run: |
           git config --global user.name ci

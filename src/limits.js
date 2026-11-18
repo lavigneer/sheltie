@@ -3,7 +3,9 @@
 // quotas, not by what its tokens would cost.
 //
 // Read from Claude Code itself: `claude -p /usage` (run with CLAUDE_CONFIG_DIR
-// set to the agent's home) prints what its /usage shows, without calling a
+// set to the agent's home, unless that's the default ~/.claude: on macOS a set
+// CLAUDE_CONFIG_DIR, even the default, has its own keychain login, so the
+// subscription's isn't found and no limits are shown) prints what its /usage shows, without calling a
 // model. Without claude installed, or with no claude-code agent in
 // usage.agents, nothing is run or shown. Its lines "<label>: <n>% used · resets <when>" are the windows; an
 // account billed per token (API key) prints none, and shows no limits.
@@ -24,12 +26,22 @@ export function windows(text) {
       .replace(/^Current\s+/i, "")
       .replace(/^./, (c) => c.toUpperCase()),
     used: Number(used),
-    // "Nov 8, 4:39pm (America/Edmonton)": the zone is yours, so left out.
-    resets: resets ? resets.replace(/\s*\([^)]*\)$/, "") : null,
+    // "Nov 8, 4:39pm (America/Edmonton)", or "Nov 8 at 4:39pm (...)" in newer
+    // Claude Codes: the zone is yours, so left out; "at" made ", " for both.
+    resets: resets
+      ? resets.replace(/\s*\([^)]*\)$/, "").replace(/^(\w+ \d+) at /, "$1, ")
+      : null,
   }));
 }
 
 const expandHome = (p) => p.replace(/^~(?=\/|$)/, home());
+
+// CLAUDE_CONFIG_DIR for a Claude Code home: "" (unset, even if Herdr has it)
+// for the default.
+export const configDir = (h) => {
+  const dir = expandHome(h).replace(/\/+$/, "");
+  return dir === `${home()}/.claude` ? "" : dir;
+};
 
 // Each Claude Code home's limits: [{ home, windows }], leaving out homes
 // without any (not on a subscription). A failed run throws.
@@ -41,9 +53,10 @@ export async function planLimits() {
         "/bin/sh",
         [
           "-c",
-          'CLAUDE_CONFIG_DIR="$1" exec "$2" -p --no-session-persistence /usage',
+          // 127 when claude isn't there (macOS sh's exec says 126).
+          'command -v "$2" >/dev/null || exit 127; if [ -n "$1" ]; then export CLAUDE_CONFIG_DIR="$1"; else unset CLAUDE_CONFIG_DIR; fi; exec "$2" -p --no-session-persistence /usage',
           "sh",
-          expandHome(a.home),
+          configDir(a.home),
           C.programs.claude,
         ],
         { cwd: home() },

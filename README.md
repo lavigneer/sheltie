@@ -164,6 +164,14 @@ npm run e2e:shots  # screenshots in e2e-results/shots/
 See [docs/development.md](docs/development.md) for the code layout, adding a
 tracker, the end-to-end tests and CI.
 
+## Reporting a bug
+
+The mods record each failure in `<app home>/sheltie-diagnostics/` (the newest 50).
+Run `./diagnostics.sh` to bundle them with your versions, installed mods,
+settings (secret-looking values replaced), the Work sidebar's state and the end
+of the app log into one Markdown file, and attach it to the issue. It can name
+your repos, branches and tickets: read it before you share it.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
