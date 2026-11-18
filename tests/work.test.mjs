@@ -264,3 +264,19 @@ test("WorkStore: snapshot is reused until a scan or lookup changes what is known
   f.store.snapshot(["#1"]);
   assert.equal(joins, n + 1);
 });
+
+test("WorkStore: warm rebuilds a stale snapshot so a render only reads it", async () => {
+  const f = fakeStore({ prs: { "issue-1": pr(3, "issue-1") } });
+  await f.store.scan([repo]);
+  f.store.warm();
+  const n = f.store.rebuilds;
+  assert.equal(n, 1);
+  f.store.warm();
+  f.store.snapshot(["#1"]);
+  assert.equal(f.store.rebuilds, n);
+  await f.store.refresh(f.keys);
+  f.store.warm();
+  const warmed = f.store.rebuilds;
+  assert.equal(f.store.snapshot(["#1"]).get("#1")[0].pr.number, 3);
+  assert.equal(f.store.rebuilds, warmed);
+});

@@ -143,6 +143,12 @@ export function joinWork(
 ) {
   /** @type {Map<string, WorkItem[]>} */
   const work = new Map((keys ?? []).map((k) => [k, []]));
+  // Each key's items with a branch, by repo and branch, so add finds a
+  // duplicate without walking the list.
+  /** @type {Map<string, Map<string, WorkItem>>} */
+  const byBranch = new Map();
+  /** @param {WorkItem} w */
+  const branchId = (w) => `${w.repo.slug}|${w.repo.path}|${w.branch}`;
   /** @param {string} key @param {WorkItem} item */
   const add = (key, item) => {
     let list = work.get(key);
@@ -151,25 +157,37 @@ export function joinWork(
       list = [];
       work.set(key, list);
     }
-    const same = list.find(
-      (w) =>
-        w.repo.slug === item.repo.slug &&
-        w.repo.path === item.repo.path &&
-        w.branch &&
-        w.branch === item.branch,
-    );
+    let seen = byBranch.get(key);
+    if (!seen) {
+      seen = new Map();
+      byBranch.set(key, seen);
+    }
+    const same = item.branch ? seen.get(branchId(item)) : undefined;
     if (same)
       Object.assign(
         same,
         Object.fromEntries(Object.entries(item).filter(([, v]) => v != null)),
       );
-    else list.push(item);
+    else {
+      list.push(item);
+      if (item.branch) seen.set(branchId(item), item);
+    }
   };
   for (const s of states) {
     if (!s) continue;
     const t = trackerOf(s.repo);
+    // A worktree's branch is also a local branch: ask the tracker once.
+    /** @type {Map<string | null, string[]>} */
+    const asked = new Map();
     /** @param {string | null} branch */
-    const mentioned = (branch) => t.keysIn(branch, s.repo.slug);
+    const mentioned = (branch) => {
+      let ks = asked.get(branch);
+      if (!ks) {
+        ks = t.keysIn(branch, s.repo.slug);
+        asked.set(branch, ks);
+      }
+      return ks;
+    };
     for (const w of s.worktrees)
       for (const key of mentioned(w.branch))
         add(key, {
@@ -263,6 +281,8 @@ export class WorkStore {
     this.version = 0;
     /** @type {{ at: string, all: Map<string, WorkItem[]> }} */
     this.snapshots = { at: "", all: new Map() };
+    // How many times the join ran (a render can tell whether it rebuilt).
+    this.rebuilds = 0;
   }
 
   // Git: the worktrees and branches of `repos` (those with a path).
@@ -304,9 +324,19 @@ export class WorkStore {
     // branch of every repo, so join everything once and reuse it until a scan
     // or lookup changes what is known.
     const at = `${this.version}.${this.linked.version}.${this.prs.version}`;
-    if (this.snapshots.at !== at) this.snapshots = { at, all: this.join() };
+    if (this.snapshots.at !== at) {
+      this.snapshots = { at, all: this.join() };
+      this.rebuilds++;
+    }
     const { all } = this.snapshots;
     return new Map(keys.map((k) => [k, all.get(k) ?? []]));
+  }
+
+  // Rebuilds the snapshot now if a scan or lookup made it stale, so the next
+  // render only reads it: the join is the expensive part, and off the render
+  // path it can't get the render interrupted.
+  warm() {
+    this.snapshot([]);
   }
 
   // The work on every key the repos and linked PRs mention.
