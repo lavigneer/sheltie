@@ -25,10 +25,10 @@
 //             branch (refused if anything isn't in the PR), tracker step "done"
 //             unless other work on the ticket is still open
 
-import { agents, panes, run, terminals } from "herdr";
+import { run } from "herdr";
 import { C, settingsOf } from "./config.js";
 import { assertClean, removeWorktree } from "./git.js";
-import { basename, closeSpacesIn, spaceFor, tool } from "./lib.js";
+import { basename, closeSpacesIn, liveData, spaceFor, tool } from "./lib.js";
 import { markReady, mergePr, prDetails } from "./prs.js";
 import { openWork, workName } from "./work.js";
 
@@ -347,31 +347,27 @@ export function rowSteps({
 // The agent terminal in a space: one reporting its status (Claude Code does),
 // else one running the configured agent program, else one labelled agent=…
 // (`hc label`; the demo's fake agent does that).
-export function agentIn(space) {
+/** @param {any} space @param {import("./lib.js").Live} [live] */
+export function agentIn(space, live = liveData()) {
   if (!space) return null;
-  const tabs = new Set(space.tabs.map((t) => t.id));
-  const reported = agents().find((a) => a.space === space.id);
+  const reported = live.agents.find((a) => a.space === space.id);
   if (reported) return reported.address;
   const ours = basename(C.agent.argv[0]);
-  const here = panes().filter((p) => tabs.has(p.tab) && p.terminal);
+  const here = live.panesOf(space).filter((p) => p.terminal);
   const byProgram = here.find((p) => p.program?.key === ours);
   if (byProgram) return byProgram.terminal;
-  const labelled = new Set(
-    terminals()
-      .filter((t) => t.labels?.agent)
-      .map((t) => t.address),
-  );
   return (
-    here.find((p) => p.terminal && labelled.has(p.terminal))?.terminal ?? null
+    here.find((p) => live.terminal(p.terminal)?.labels?.agent)?.terminal ?? null
   );
 }
 
 // Whether the agent terminal in a space says its PR is done: it has the
 // label pr=ready.
-export function agentSaysDone(space) {
-  const address = agentIn(space);
+/** @param {any} space @param {import("./lib.js").Live} [live] */
+export function agentSaysDone(space, live = liveData()) {
+  const address = agentIn(space, live);
   if (!address) return false;
-  return terminals().find((t) => t.address === address)?.labels?.pr === "ready";
+  return live.terminal(address)?.labels?.pr === "ready";
 }
 
 // Sends a step's message to the worktree's agent, or starts one with it.
