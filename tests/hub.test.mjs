@@ -50,6 +50,30 @@ test("parseWorktrees: the main checkout's branch and the others", () => {
   assert.deepEqual(detached.linked, []);
 });
 
+test("parseWorktrees: leaves out prunable worktrees (folder deleted outside git)", () => {
+  const out = parseWorktrees(
+    [
+      `worktree ${repo}`,
+      "HEAD 1111",
+      "branch refs/heads/main",
+      "",
+      `worktree ${wt}`,
+      "HEAD 2222",
+      "branch refs/heads/me/issue-1",
+      "prunable gitdir file points to non-existent location",
+      "",
+      `worktree ${agentWt}`,
+      "HEAD 3333",
+      "detached",
+      "prunable",
+      "",
+    ].join("\n"),
+    repo,
+  );
+  assert.equal(out.mainBranch, "main");
+  assert.deepEqual(out.linked, []);
+});
+
 test("hubExcept: the worktree folder and every listed worktree", () => {
   assert.deepEqual(except, [`${repo}/.worktrees`, wt, agentWt]);
 });

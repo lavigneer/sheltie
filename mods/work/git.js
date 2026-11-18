@@ -102,20 +102,25 @@ export async function repoRoot(dir) {
 
 // A repo's worktrees from `git worktree list --porcelain`: the main checkout's
 // branch (null when detached) and every other worktree ({ path, branch },
-// branch null when detached).
+// branch null when detached). A worktree git marks `prunable` (its folder is
+// gone) is left out: it is only a stale registration until `git worktree prune`.
 /** @param {string} porcelain @param {string} repoPath */
 export function parseWorktrees(porcelain, repoPath) {
   /** @type {{ path: string, branch: string | null }[]} */
   const all = [];
+  /** @type {Set<object>} */
+  const prunable = new Set();
   for (const line of (porcelain || "").split("\n")) {
     if (line.startsWith("worktree "))
       all.push({ path: line.slice(9), branch: null });
     else if (line.startsWith("branch refs/heads/") && all.length)
       all[all.length - 1].branch = line.slice(18);
+    else if (/^prunable( |$)/.test(line) && all.length)
+      prunable.add(all[all.length - 1]);
   }
   return {
     mainBranch: all.find((w) => w.path === repoPath)?.branch ?? null,
-    linked: all.filter((w) => w.path !== repoPath),
+    linked: all.filter((w) => w.path !== repoPath && !prunable.has(w)),
   };
 }
 
