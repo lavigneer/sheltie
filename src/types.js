@@ -46,6 +46,7 @@
  * @property {number} number
  * @property {string} url
  * @property {string} title
+ * @property {string} [body] its description (where a ticket key may be named)
  * @property {"OPEN" | "CLOSED" | "MERGED"} state
  * @property {boolean} draft
  * @property {string | null} review reviewDecision, e.g. "APPROVED"
