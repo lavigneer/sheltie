@@ -6,7 +6,7 @@
 // Tones name theme colours ("blocked", "done", "muted", "dim", "working",
 // or a space status, which falls back to "accent" when the theme has none).
 
-import { prLabel, toneKey } from "./flow.js";
+import { prLabel, stageOf, toneKey } from "./flow.js";
 import { band, RAIL } from "./sidebar.js";
 import { dollars } from "./usage.js";
 
@@ -30,6 +30,19 @@ export const fit = (width) =>
 // A repo's rail monogram: its name's first letter or digit, upper-cased.
 export const monogram = (name) =>
   (name.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
+
+// Grouped by stage, the groups in the flow's order, and the name each shows.
+export const STAGES = [
+  ["no-pr", "No PR"],
+  ["draft", "Draft"],
+  ["in-review", "In review"],
+  ["approved", "Approved"],
+  ["merged", "Merged"],
+  ["closed", "Closed"],
+];
+
+// A stage group's key in the folded set (repo groups use the repo's path).
+export const stageKey = (stage) => `stage:${stage}`;
 
 // How long a step's success note stays.
 export const NOTE_MS = 60_000;
@@ -64,7 +77,11 @@ function statusOf(space, failed, pr) {
 
 // The groups and rows shown. `input`:
 //   groups     the shown groups ([{ repo, hub, worktrees }])
-//   folded     repo paths folded (their hub stays, as the header)
+//   by         "repo" (the default) or "stage": one group per PR stage
+//              (STAGES), each row naming its repo; the hubs with a space
+//              come first, in a "Hubs" group of their own
+//   folded     group keys folded: repo paths (their hub stays, as the
+//              header) or stageKey()s
 //   width      the sidebar's, or null
 //   steps      worktree path -> the last step run ({ phase, text, at })
 //   confirm    the step waiting for its second click ({ id, byKey }) or null
@@ -72,13 +89,14 @@ function statusOf(space, failed, pr) {
 //   now        Date.now()
 //   spaceOf(w), stepsOf(w, space), prOf(w), ticketOf(w) (its cache entry),
 //   isTicket(w), costOf(w) (in $, or null)
-// Returns { span, groups: [{ repo, name, monogram, count, size, open, hub,
-// worktrees }], rows (in order: what the keys move through), at, step }.
+// Returns { span, by, groups: [{ key, repo, name, monogram, count, size,
+// open, hub, worktrees }] (by stage: repo and hub are null), rows (in order: what the keys move through), at, step }.
 export function workView(input) {
   const span = fit(input.width);
   const narrow = span === "short" || span === "glyph";
   const now = input.now ?? Date.now();
 
+  const by = input.by === "stage" ? "stage" : "repo";
   const rowOf = (w) => {
     const space = input.spaceOf(w);
     const last0 = input.steps.get(w.path) ?? null;
@@ -96,18 +114,29 @@ export function workView(input) {
     const pr = label && { ...label, tone: toneKey(label.tone), shown };
     // A branch that isn't a ticket (see isTicket) shows the branch.
     const isTicket = input.isTicket(w);
+    // By stage, a hub's row has no repo header above it: it's named for
+    // its repo, its branch below.
+    const hubStage = w.hub && by === "stage";
     const title = w.hub
-      ? (w.branch ?? "detached")
+      ? hubStage
+        ? w.repo.name
+        : (w.branch ?? "detached")
       : isTicket
         ? w.handle.label
         : w.branch;
-    const sub = ticket
+    const sub0 = ticket
       ? ticket.summary
       : isTicket
         ? entry?.state === "failed"
           ? `${w.branch} · ${w.handle.tracker.name} unreachable`
           : w.branch
         : "";
+    // By stage, rows of every repo mix: each names its own.
+    const sub = hubStage
+      ? (w.branch ?? "detached")
+      : by === "stage" && !w.hub
+        ? [w.repo.name, sub0].filter(Boolean).join(" · ")
+        : sub0;
     const extras = [
       prValue?.state === "OPEN" && prValue.autoMerge ? "auto-merge" : null,
     ].filter(Boolean);
@@ -182,24 +211,11 @@ export function workView(input) {
     };
   };
 
-  const groups = input.groups.map((g) => {
-    const open = !input.folded.has(g.repo.path);
-    const n = g.worktrees.length;
-    return {
-      repo: g.repo,
-      name: g.repo.name,
-      monogram: monogram(g.repo.name),
-      count: `hub and ${n} worktree${n === 1 ? "" : "s"}`,
-      size: String(n + 1),
-      open,
-      hub: rowOf({ ...g.hub, repo: g.repo }),
-      // Folded, the group keeps only its header (the hub's row).
-      worktrees: open
-        ? g.worktrees.map((w) => rowOf({ ...w, repo: g.repo }))
-        : [],
-    };
-  });
-  const rows = groups.flatMap((g) => [g.hub, ...g.worktrees]);
+  const groups =
+    by === "stage" ? stageGroups(input, rowOf) : repoGroups(input, rowOf);
+  const rows = groups.flatMap((g) =>
+    (g.hub ? [g.hub] : []).concat(g.worktrees),
+  );
 
   // The selected row and step: the one the keys moved to, else the focused
   // space's row, else the first.
@@ -218,5 +234,65 @@ export function workView(input) {
     rows[at].selected = true;
     if (n) rows[at].steps[step].chosen = true;
   }
-  return { span, groups, rows, at, step };
+  return { span, by, groups, rows, at, step };
+}
+
+// One group per repo, headed by its hub's row.
+function repoGroups(input, rowOf) {
+  return input.groups.map((g) => {
+    const open = !input.folded.has(g.repo.path);
+    const n = g.worktrees.length;
+    return {
+      key: g.repo.path,
+      repo: g.repo,
+      name: g.repo.name,
+      monogram: monogram(g.repo.name),
+      count: `hub and ${n} worktree${n === 1 ? "" : "s"}`,
+      size: String(n + 1),
+      open,
+      hub: rowOf({ ...g.hub, repo: g.repo }),
+      // Folded, the group keeps only its header (the hub's row).
+      worktrees: open
+        ? g.worktrees.map((w) => rowOf({ ...w, repo: g.repo }))
+        : [],
+    };
+  });
+}
+
+// One group per stage with any rows, in the flow's order (STAGES), after the
+// hubs that have a space. A stage group has no hub: its header is a label.
+function stageGroups(input, rowOf) {
+  const hubs = [];
+  /** @type {Record<string, any[]>} */
+  const by = Object.fromEntries(STAGES.map(([id]) => [id, []]));
+  for (const g of input.groups) {
+    const hub = { ...g.hub, repo: g.repo };
+    if (input.spaceOf(hub)) hubs.push(hub);
+    for (const w0 of g.worktrees) {
+      const w = { ...w0, repo: g.repo };
+      by[stageOf(input.prOf(w))].push(w);
+    }
+  }
+  const group = (key, name, ws, noun) => {
+    const open = !input.folded.has(key);
+    const n = ws.length;
+    return {
+      key,
+      repo: null,
+      name,
+      monogram: monogram(name),
+      count: `${n} ${noun}${n === 1 ? "" : "s"}`,
+      size: String(n),
+      open,
+      hub: null,
+      worktrees: open ? ws.map(rowOf) : [],
+    };
+  };
+  const out = [];
+  if (hubs.length) out.push(group(stageKey("hubs"), "Hubs", hubs, "hub"));
+  for (const [id, name] of STAGES) {
+    const ws = by[id];
+    if (ws.length) out.push(group(stageKey(id), name, ws, "worktree"));
+  }
+  return out;
 }

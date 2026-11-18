@@ -191,3 +191,54 @@ test("links: only what applies; a branch that isn't a ticket shows the branch", 
   assert.equal(plain.title, "issue-1");
   assert.equal(plain.sub, "");
 });
+
+test("by stage: a group per stage in the flow's order, each row naming its repo", () => {
+  const two = wt(2).path;
+  const v = view({
+    by: "stage",
+    prs: {
+      [one]: { ...PR, state: "MERGED" },
+      [two]: { ...PR, draft: true },
+    },
+  });
+  assert.equal(v.by, "stage");
+  assert.deepEqual(
+    v.groups.map((g) => [g.key, g.name, g.size, g.hub]),
+    [
+      ["stage:draft", "Draft", "1", null],
+      ["stage:merged", "Merged", "1", null],
+    ],
+  );
+  assert.deepEqual(
+    v.rows.map((r) => r.w.path),
+    [two, one],
+  );
+  assert.equal(v.rows[0].sub, "app · Do it");
+  assert.equal(v.rows[0].selected, true);
+});
+
+test("by stage: hubs with a space lead in their own group; folding hides rows", () => {
+  const hub = "/ws/app";
+  const v = view({
+    by: "stage",
+    spaces: { [hub]: { id: "s1", status: "idle" } },
+    folded: new Set(["stage:no-pr"]),
+  });
+  assert.deepEqual(
+    v.groups.map((g) => [g.name, g.open, g.worktrees.length]),
+    [
+      ["Hubs", true, 1],
+      ["No PR", false, 0],
+    ],
+  );
+  assert.equal(v.rows.length, 1);
+  assert.equal(v.rows[0].title, "app");
+  assert.equal(v.rows[0].sub, "main");
+});
+
+test("by repo (the default): groups keyed by the repo's path, rows unprefixed", () => {
+  const v = view();
+  assert.equal(v.by, "repo");
+  assert.equal(v.groups[0].key, "/ws/app");
+  assert.equal(v.rows[1].sub, "Do it");
+});

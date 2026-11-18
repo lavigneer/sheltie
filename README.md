@@ -112,6 +112,7 @@ and `herdr-demo`.
 | Alt+Shift+O | `work.open` | open the row's space |
 | Alt+Shift+P | `work.open-pr` | open the row's PR |
 | Alt+Shift+T | `work.open-ticket` | open the row's ticket |
+| Alt+Shift+G | `work.group` | group the Work rows by repo / by PR stage |
 | Alt+Shift+R | `layout.switch:review` / `layout.switch:work` | switch between the Work and Reviews layouts |
 
 Rebind them in `<Herdr app home>/keys.json`. They also work from the command
