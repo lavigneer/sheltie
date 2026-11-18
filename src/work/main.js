@@ -894,9 +894,11 @@ export default class Work extends View {
           .cursor_pointer()
           .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
           .hover((s) => s.bg(t.hover))
+          // Only entering a row renders: leaving one is followed by entering
+          // the next, and leaving the list is handled on "work-list".
           .on_hover((hovered, cx) => {
-            if (hovered) this.hovered = w.path;
-            else if (this.hovered === w.path) this.hovered = null;
+            if (!hovered || this.hovered === w.path) return;
+            this.hovered = w.path;
             this.wake(cx, "hover");
           })
           .on_click(() => this.open(w))
@@ -1268,6 +1270,11 @@ export default class Work extends View {
           .border_b_1()
           .border_color(t.border ?? t.dim)
           .overflow_y_scrollbar()
+          .on_hover((hovered, cx) => {
+            if (hovered || this.hovered === null) return;
+            this.hovered = null;
+            cx.notify();
+          })
           .child(body),
       );
     this.timed(start, viewed, view, trigger);
