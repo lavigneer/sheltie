@@ -87,6 +87,13 @@ export interface Settings {
   branch: string;
   /** Where ticket worktrees go, relative to the repo's main checkout. */
   worktreeDir: string;
+  /**
+   * The GitHub search that finds the Reviews sidebar's PRs (only those in your
+   * local repos are shown). The default includes requests to a team you're on;
+   * "is:pr is:open archived:false user-review-requested:@me" shows only those
+   * asking you by name.
+   */
+  reviewSearch: string;
   agent: {
     /**
      * The agent started in a ticket's space; its first message is the last

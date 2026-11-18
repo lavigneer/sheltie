@@ -156,10 +156,11 @@ export async function mergePr(slug, number, { auto = false } = {}) {
 
 // --- Reviews ----------------------------------------------------------------
 
-// Open PRs requesting your review (yourself or a team you're on), with when
-// each was last requested and your latest review, from one GraphQL search.
-const REVIEW_SEARCH = `query { viewer { login }
-  search(query: "is:pr is:open archived:false review-requested:@me", type: ISSUE, first: 100) {
+// The PRs a GitHub search (C.reviewSearch; by default those requesting your
+// review, yourself or a team you're on) finds, with when each was last
+// requested and your latest review, from one GraphQL search.
+const REVIEW_SEARCH = `query($q: String!) { viewer { login }
+  search(query: $q, type: ISSUE, first: 100) {
     nodes { ... on PullRequest { number url title additions deletions createdAt
       repository { nameWithOwner } author { login }
       timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 20) { nodes {
@@ -167,11 +168,13 @@ const REVIEW_SEARCH = `query { viewer { login }
           requestedReviewer { __typename ... on User { login } } } } }
       latestReviews(last: 100) { nodes { author { login } submittedAt } } } } } }`;
 
-// The raw search (see reviewQueue), throwing when GitHub can't be asked.
-export async function reviewRequests() {
+// The raw search for `search` (see reviewQueue), throwing when GitHub can't
+// be asked.
+/** @param {string} search */
+export async function reviewRequests(search) {
   const out = await must(
     "gh",
-    ["api", "graphql", "-f", `query=${REVIEW_SEARCH}`],
+    ["api", "graphql", "-f", `query=${REVIEW_SEARCH}`, "-f", `q=${search}`],
     "gh api graphql (review requests)",
   );
   return JSON.parse(out).data;

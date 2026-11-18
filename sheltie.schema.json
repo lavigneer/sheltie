@@ -199,6 +199,11 @@
       "description": "Where ticket worktrees go, relative to the repo's main checkout.",
       "default": ".worktrees"
     },
+    "reviewSearch": {
+      "type": "string",
+      "description": "The GitHub search that finds the Reviews sidebar's PRs (only those in your local repos are shown). The default includes requests to a team you're on; \"is:pr is:open archived:false user-review-requested:@me\" shows only those asking you by name.",
+      "default": "is:pr is:open archived:false review-requested:@me"
+    },
     "agent": {
       "type": "object",
       "properties": {
