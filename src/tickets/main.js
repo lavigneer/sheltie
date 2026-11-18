@@ -98,6 +98,12 @@ export default class Tickets extends View {
     this.input.focus();
     cx.timer.after(600, () => this.input.focus());
     this.handle = cx.focus_handle();
+    // Tab is bound by the window to "focus next", which wins over a plain
+    // key_down handler and takes the keyboard off the search box. A binding
+    // in the popup's own key context is deeper, so it wins instead.
+    cx.bind_keys([
+      { keystroke: "tab", action: "tickets::mark", context: "Tickets" },
+    ]);
     this.load(cx);
   }
 
@@ -524,13 +530,7 @@ export default class Tickets extends View {
     if (e.modifiers.control && e.key === "o" && ticket)
       this.openInBrowser(ticket, cx);
     else if (e.modifiers.control && e.key === "r") this.load(cx);
-    else if (e.key === "tab" && this.screen.name === "list") {
-      if (sel?.kind === "ticket") {
-        const k = sel.ticket.key;
-        if (!this.marked.delete(k)) this.marked.add(k);
-        cx.notify();
-      }
-    } else if (
+    else if (
       e.key === "backspace" &&
       !this.filter &&
       this.screen.name !== "list"
@@ -539,6 +539,16 @@ export default class Tickets extends View {
     else if (moveKey(e, this, rows.length, () => {})) cx.notify();
     else return false;
     return true;
+  }
+
+  // Tab on the list marks or unmarks the selected ticket.
+  mark(sel, cx) {
+    if (this.running || this.screen.name !== "list" || sel?.kind !== "ticket")
+      return;
+    const k = sel.ticket.key;
+    if (!this.marked.delete(k)) this.marked.add(k);
+    this.input.focus();
+    cx.notify();
   }
 
   // The line under the search box: [text, isError], or null for none.
@@ -718,6 +728,8 @@ export default class Tickets extends View {
     return v_flex()
       .id("tickets")
       .track_focus(this.handle)
+      .key_context("Tickets")
+      .on_action("tickets::mark", (_e, cx) => this.mark(sel, cx))
       .w_full()
       .min_h(0)
       .p(18)
