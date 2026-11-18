@@ -29,7 +29,8 @@
 // work.group switches between grouping by repo and by PR stage, like ▤
 // (C.workGroupBy sets which it opens with).
 // work.refresh refreshes everything now, like ↻. work.report writes what the
-// sidebar shows to <app home>/work-report.json, for scripts and tests.
+// sidebar shows to <app home>/work-report.json, for scripts and tests, with
+// how long its renders take (renders.js).
 // work.start starts the tickets the requests in <app home>/work-start/ name,
 // like the tickets popup (for agents and scripts; see drainRequests).
 //
@@ -77,6 +78,7 @@ import {
 import { hubExcept, localRepos, sameSlug } from "./git.js";
 import { basename, liveData, openUrl, spaceFor } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
+import { RenderStats } from "./renders.js";
 import { resize } from "./sidebar.js";
 import { drainRequests } from "./start.js";
 import { ticketOfBranch } from "./tracker.js";
@@ -137,6 +139,8 @@ export default class Work extends View {
     this.watchTimer = false;
     this.width = null; // ours, from on_size_change
     this.usage = null; // usage groups (usage.js), for each row's agent cost
+    this.renders = new RenderStats(); // render timings, for work.report
+    this.why = null; // what the next render is for (wake); null: Herdr's own
     this.refresh = serial((cx, force) => this.scan(cx, force));
     this.details = serial((cx, force) => this.lookups(cx, force));
     this.refresh(cx);
@@ -162,7 +166,7 @@ export default class Work extends View {
         return this.usage;
       });
       // Rows show each folder's cost: re-render only when one moved.
-      if (costsKey(this.usage) !== was) cx.notify();
+      if (costsKey(this.usage) !== was) this.wake(cx, "costs");
     });
     this.costs(cx);
     cx.timer.every(USAGE_MS, (cx) => this.costs(cx));
@@ -175,7 +179,7 @@ export default class Work extends View {
           console.error(`work.${c}: ${e?.message ?? e}`);
           recordFailure(`work.${c}`, "command", e);
         }
-        cx.notify();
+        this.wake(cx, "command");
       }
     });
   }
@@ -239,7 +243,7 @@ export default class Work extends View {
   // Switches between grouping by repo and by stage.
   toggleGroupBy(cx) {
     this.by = this.groupBy() === "stage" ? "repo" : "stage";
-    cx.notify();
+    this.wake(cx, "group");
   }
 
   command(cx, c) {
@@ -295,6 +299,7 @@ export default class Work extends View {
     return {
       at: Date.now(),
       loaded: this.groups !== null,
+      renders: this.renders.report(),
       rows: rows.map((r) => {
         const pr = r.prValue;
         const confirming = r.steps.find((s) => s.confirming)?.id ?? null;
@@ -388,7 +393,7 @@ export default class Work extends View {
         })),
       }));
     this.recheckWatched(cx);
-    if (changed) cx.notify();
+    if (changed) this.wake(cx, "scan");
     this.details(cx, force);
   }
 
@@ -439,7 +444,7 @@ export default class Work extends View {
       const now = versions();
       if (!cleared && now === shown) return;
       shown = now;
-      cx.notify();
+      this.wake(cx, "lookup");
     };
     await this.store.refresh(keys, {
       force,
@@ -488,7 +493,7 @@ export default class Work extends View {
       this.starting.set(f, Date.now());
     }
     // Shows its steps once it's no longer starting, even if nothing changes.
-    cx.timer.after(START_MS, (cx) => cx.notify());
+    cx.timer.after(START_MS, (cx) => this.wake(cx, "timer"));
     cx.timer.after(0, (cx) => this.refresh(cx));
   }
 
@@ -538,11 +543,11 @@ export default class Work extends View {
     const id = `${path}:${step.id}`;
     if (!this.nav.press(id, Boolean(step.confirm), byKey, Date.now())) {
       // Redraws once it expires.
-      cx.timer.after(CONFIRM_MS, (cx) => cx.notify());
-      return cx.notify();
+      cx.timer.after(CONFIRM_MS, (cx) => this.wake(cx, "timer"));
+      return this.wake(cx, "step");
     }
     this.steps.set(path, { phase: "running", text: `${step.label}…` });
-    cx.notify();
+    this.wake(cx, "step");
     const pr = this.prOf(w);
     // The ticket's work everywhere: worktrees and branches here, and the PRs
     // its tracker links (in repos with no worktree here too).
@@ -556,7 +561,7 @@ export default class Work extends View {
         const at = Date.now();
         this.steps.set(path, { phase: "done", text: note, at, staleAt: at });
         // The note fades after NOTE_MS: nothing else may re-render by then.
-        cx.timer.after(NOTE_MS + 50, (cx) => cx.notify());
+        cx.timer.after(NOTE_MS + 50, (cx) => this.wake(cx, "timer"));
         if (step.kind === "direct")
           notify({
             title: `${who}: ${step.label}`,
@@ -573,7 +578,7 @@ export default class Work extends View {
           level: "error",
         });
       }
-      cx.notify();
+      this.wake(cx, "step");
       this.refresh(cx, true);
     });
   }
@@ -639,12 +644,22 @@ export default class Work extends View {
     return w.handle?.label ?? basename(w.path);
   }
 
+  // cx.notify(), noting why for the render's timing (renders.js).
+  wake(cx, why) {
+    this.why ??= why;
+    cx.notify();
+  }
+
   render(cx) {
+    const start = Date.now();
+    const trigger = this.why ?? "host";
+    this.why = null;
     // One read of Herdr's live data for the whole render (liveData).
     const live = liveData();
     this.watchSpaces(cx, live);
     const t = theme();
     const view = this.view(live);
+    const viewed = Date.now();
     const rail = view.span === "rail";
     const tone = (name) => t[name] ?? t.accent;
     const icon = (name, label, tip, onClick) =>
@@ -760,7 +775,7 @@ export default class Work extends View {
     const linksMenu = (w, links) => {
       const close = (cx) => {
         this.linksOpen = null;
-        cx.notify();
+        this.wake(cx, "menu");
       };
       return Popover.new(`work-links-${w.path}`)
         .anchor("top_right")
@@ -768,7 +783,7 @@ export default class Work extends View {
         .on_open_change((open, cx) => {
           if (open) this.linksOpen = w.path;
           else if (this.linksOpen === w.path) this.linksOpen = null;
-          cx.notify();
+          this.wake(cx, "menu");
         })
         .trigger(
           div()
@@ -882,7 +897,7 @@ export default class Work extends View {
           .on_hover((hovered, cx) => {
             if (!hovered || this.hovered === w.path) return;
             this.hovered = w.path;
-            cx.notify();
+            this.wake(cx, "hover");
           })
           .on_click(() => this.open(w))
           .child(
@@ -1034,7 +1049,7 @@ export default class Work extends View {
           g.worktrees.map((r) => r.w.path),
           hub ? hub.w.path : null,
         );
-        cx.notify();
+        this.wake(cx, "fold");
       };
       const chevron = svg(
         `mods/workspace-chrome/chevron-${g.open ? "down" : "right"}.svg`,
@@ -1198,12 +1213,12 @@ export default class Work extends View {
               t.dim,
             );
 
-    return v_flex()
+    const el = v_flex()
       .id("work")
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        if (resize(this, size.width, fit)) cx.notify();
+        if (resize(this, size.width, fit)) this.wake(cx, "resize");
       })
       .child(header)
       .when(Boolean(problem), (el) => el.child(problem))
@@ -1223,5 +1238,22 @@ export default class Work extends View {
           })
           .child(body),
       );
+    this.timed(start, viewed, view, trigger);
+    return el;
+  }
+
+  // Records a render's timing (renders.js); a slow one as a failure too.
+  timed(start, viewed, view, trigger) {
+    const end = Date.now();
+    const r = {
+      ms: end - start,
+      viewMs: viewed - start,
+      buildMs: end - viewed,
+      rows: view.rows.length,
+      trigger,
+      at: end,
+    };
+    if (this.renders.add(r))
+      recordFailure("work", "slow render", `${r.ms} ms`, r);
   }
 }
