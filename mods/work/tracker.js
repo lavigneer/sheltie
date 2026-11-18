@@ -25,17 +25,25 @@ import * as jira from "./tracker-jira.js";
 const trackers = { jira, github };
 /** @type {Map<string, Tracker>} */
 const made = new Map();
+// The same lookup by settings object, so callers asking with the same object
+// (every trackerOf without a repo tracker) skip building the JSON key.
+/** @type {WeakMap<object, Tracker>} */
+const bySettings = new WeakMap();
 
 // The tracker for settings `s` (the global ones by default). The same
 // settings give the same tracker, so trackers can be compared to group work.
 /** @param {import("./config.js").Settings} [s] @returns {Tracker} */
 export function tracker(s = C) {
+  const known = bySettings.get(s);
+  if (known) return known;
   const t = trackers[s.tracker];
   if (!t)
     throw new Error(`unknown tracker "${s.tracker}" (use "jira" or "github")`);
   const id = JSON.stringify(s, (k, v) => (k === "problem" ? undefined : v));
   if (!made.has(id)) made.set(id, t.create(s));
-  return /** @type {Tracker} */ (made.get(id));
+  const found = /** @type {Tracker} */ (made.get(id));
+  bySettings.set(s, found);
+  return found;
 }
 
 // The tracker for a repo's tickets and branches (localRepos sets repo.tracker

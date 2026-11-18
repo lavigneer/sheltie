@@ -163,8 +163,9 @@ export function joinWork(
   };
   for (const s of states) {
     if (!s) continue;
+    const t = trackerOf(s.repo);
     /** @param {string | null} branch */
-    const mentioned = (branch) => trackerOf(s.repo).keysIn(branch, s.repo.slug);
+    const mentioned = (branch) => t.keysIn(branch, s.repo.slug);
     for (const w of s.worktrees)
       for (const key of mentioned(w.branch))
         add(key, {
@@ -241,6 +242,10 @@ export class WorkStore {
     this.tickets = new Cache({ retryMs, now });
     this.linked = new Cache({ retryMs, now });
     this.prs = new Cache({ retryMs, now });
+    // Bumped by scan; with the caches' versions, says when snapshots go stale.
+    this.version = 0;
+    /** @type {{ at: string, by: Map<string, Map<string, WorkItem[]>> }} */
+    this.snapshots = { at: "", by: new Map() };
   }
 
   // Git: the worktrees and branches of `repos` (those with a path).
@@ -257,6 +262,7 @@ export class WorkStore {
     );
     this.repos = repos;
     this.states = states;
+    this.version++;
   }
 
   // The PRs trackers link to each key, as last looked up.
@@ -273,6 +279,20 @@ export class WorkStore {
   // The work on each key, from what is known now.
   /** @param {string[]} keys @returns {Map<string, WorkItem[]>} */
   snapshot(keys) {
+    // Rendering asks once per row; the join walks every branch of every repo,
+    // so reuse it until a scan or lookup changes what is known.
+    const at = `${this.version}.${this.linked.version}.${this.prs.version}`;
+    if (this.snapshots.at !== at) this.snapshots = { at, by: new Map() };
+    const id = JSON.stringify(keys);
+    const seen = this.snapshots.by.get(id);
+    if (seen) return seen;
+    const work = this.join(keys);
+    this.snapshots.by.set(id, work);
+    return work;
+  }
+
+  /** @param {string[]} keys @returns {Map<string, WorkItem[]>} */
+  join(keys) {
     const details = new Map();
     for (const [ref, e] of this.prs.entries)
       if (e.value) details.set(ref, e.value);
