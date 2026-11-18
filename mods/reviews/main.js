@@ -63,7 +63,7 @@ export default class Reviews extends View {
       await this.cache.refresh("queue", async () => {
         const [repos, data] = await Promise.all([
           localRepos(),
-          reviewRequests(),
+          reviewRequests(C.reviewSearch),
         ]);
         this.repos = repos;
         return reviewQueue(data, repos.map((r) => r.slug).filter(Boolean));
