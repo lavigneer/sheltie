@@ -27,7 +27,9 @@ request without leaving Herdr:
    To start several tickets at once, mark them with Tab and press Enter:
    each gets its own worktree and space, in its best suggested repo.
 2. **Drive the PR from the Work sidebar.** Each worktree shows its ticket, PR
-   status and a button for the next step:
+   status and a button for the next step. A worktree made outside Sheltie,
+   on a branch that doesn't name its ticket, still finds it from its PR: a
+   ticket key in the PR's title (else its description), e.g. `Fixes #12`.
    - **Draft PR**, **Fix CI**, **Address comments**, **Resolve conflicts**:
      sent to the agent (`/draft-pr`, `/fix-ci`, `/address-comments`,
      `/resolve-conflicts`). Conflicts are fixed by merging the base, never by

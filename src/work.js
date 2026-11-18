@@ -6,7 +6,7 @@ import { C, REPO_FILE } from "./config.js";
 import { repoState, sameSlug } from "./git.js";
 import { basename, pool } from "./lib.js";
 import { prDetails } from "./prs.js";
-import { tracker, trackerOf } from "./tracker.js";
+import { keysInPR, tracker, trackerOf } from "./tracker.js";
 import { Cache } from "./watch.js";
 
 /** @typedef {import("./types.js").Ticket} Ticket */
@@ -184,6 +184,13 @@ export function joinWork(
       let ks = asked.get(branch);
       if (!ks) {
         ks = t.keysIn(branch, s.repo.slug);
+        // A branch made outside the flow may name no key: its PR may.
+        if (!ks.length && branch && s.repo.slug)
+          ks = keysInPR(
+            t,
+            details.get(prRef(s.repo.slug, branch)),
+            s.repo.slug,
+          );
         asked.set(branch, ks);
       }
       return ks;
@@ -364,11 +371,18 @@ export class WorkStore {
   // lookups; onPR(ref, was, entry, asked) follows each PR lookup.
   /**
    * @param {Map<string, import("./types.js").Tracker>} keys
-   * @param {{ force?: boolean, view?: boolean, onTicket?: (key: string) => void, onLinked?: (linked: Map<string, PRRef[]>) => void, onPR?: (ref: string, was: PR | null, entry: any, asked: number) => void }} [opts]
+   * @param {{ force?: boolean, view?: boolean, branches?: { repo: Repo, branch: string | null }[], onTicket?: (key: string) => void, onLinked?: (linked: Map<string, PRRef[]>) => void, onPR?: (ref: string, was: PR | null, entry: any, asked: number) => void }} [opts]
    */
   async refresh(
     keys,
-    { force = false, view = false, onTicket, onLinked, onPR } = {},
+    {
+      force = false,
+      view = false,
+      branches = [],
+      onTicket,
+      onLinked,
+      onPR,
+    } = {},
   ) {
     const ks = [...keys.keys()];
     const tickets = view
@@ -406,6 +420,10 @@ export class WorkStore {
       onLinked?.(this.linkedFor(ks));
       /** @type {Map<string, [string, string | number]>} */
       const lookups = new Map();
+      // Branches that name no ticket (made outside the flow): their PR may.
+      for (const { repo, branch } of branches)
+        if (repo.slug && branch)
+          lookups.set(prRef(repo.slug, branch), [repo.slug, branch]);
       for (const [key, items] of this.snapshot(ks)) {
         for (const item of items)
           if (item.repo.slug && item.branch)

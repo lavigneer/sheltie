@@ -81,7 +81,7 @@ import { CONFIRM_MS, Nav } from "./nav.js";
 import { RenderStats } from "./renders.js";
 import { resize } from "./sidebar.js";
 import { drainRequests } from "./start.js";
-import { ticketOfBranch } from "./tracker.js";
+import { ticketOfWork } from "./tracker.js";
 import { costIn, usageGroups } from "./usage.js";
 import { serial } from "./watch.js";
 import { prRef, WorkStore } from "./work.js";
@@ -391,7 +391,11 @@ export default class Work extends View {
         worktrees: s.worktrees.map((w) => ({
           ...w,
           repo: s.repo,
-          handle: ticketOfBranch(w.branch, s.repo),
+          handle: ticketOfWork(
+            w.branch,
+            s.repo,
+            this.store.prEntry(s.repo, w.branch)?.value,
+          ),
         })),
       }));
     this.recheckWatched(cx);
@@ -411,6 +415,21 @@ export default class Work extends View {
         .get(w.handle.key)
         ?.find((i) => i.worktree === w.path)?.pr ?? null
     );
+  }
+
+  // Gives worktrees whose branch names no ticket the one their PR (just
+  // looked up as `ref`) names, so a branch made outside the flow still shows
+  // and moves its ticket. True when one changed.
+  adopt(ref, pr) {
+    if (!pr || !this.groups) return false;
+    let changed = false;
+    for (const g of this.groups)
+      for (const w of g.worktrees)
+        if (!w.handle && g.repo.slug && prRef(g.repo.slug, w.branch) === ref) {
+          w.handle = ticketOfWork(w.branch, g.repo, pr);
+          changed ||= Boolean(w.handle);
+        }
+    return changed;
   }
 
   // The local repos, found again when forced, when a watched space folder is
@@ -451,10 +470,12 @@ export default class Work extends View {
     await this.store.refresh(keys, {
       force,
       view: true,
+      // Worktrees whose branch names no ticket: their PR may name one.
+      branches: all.filter((w) => !w.handle),
       onTicket: () => notifyIfChanged(),
       onPR: (ref, was, entry, asked) => {
         const pr = entry.value;
-        let cleared = false;
+        let cleared = this.adopt(ref, pr);
         for (const w of all) {
           const mine =
             (w.repo.slug && prRef(w.repo.slug, w.branch) === ref) ||

@@ -280,3 +280,49 @@ test("WorkStore: warm rebuilds a stale snapshot so a render only reads it", asyn
   assert.equal(f.store.snapshot(["#1"]).get("#1")[0].pr.number, 3);
   assert.equal(f.store.rebuilds, warmed);
 });
+
+test("joinWork: a branch naming no ticket takes the one its PR's title names", () => {
+  const p = { ...pr(4, "fix-login"), title: "Fix login (issue-3)", body: "" };
+  const work = joinWork(
+    null,
+    [state([{ path: "/wt/x", branch: "fix-login" }], ["fix-login"])],
+    new Map(),
+    new Map([["me/app#fix-login", p]]),
+    [repo],
+  );
+  assert.deepEqual(work.get("#3"), [
+    { repo, branch: "fix-login", worktree: "/wt/x", pr: p },
+  ]);
+});
+
+test("joinWork: a PR's body is asked only when its title names no ticket", () => {
+  const p = {
+    ...pr(4, "fix-login"),
+    title: "Fix issue-5 login",
+    body: "see issue-6",
+  };
+  const q = { ...pr(5, "tidy"), title: "Tidy", body: "Closes issue-6" };
+  const work = joinWork(
+    null,
+    [state([], ["fix-login", "tidy"])],
+    new Map(),
+    new Map([
+      ["me/app#fix-login", p],
+      ["me/app#tidy", q],
+    ]),
+    [repo],
+  );
+  assert.deepEqual(
+    work.get("#5").map((i) => i.branch),
+    ["fix-login"],
+  );
+  assert.deepEqual(
+    work.get("#6").map((i) => i.branch),
+    ["tidy"],
+  );
+});
+
+test("joinWork: a branch naming no ticket, with no PR known, is no one's work", () => {
+  const work = joinWork(null, [state([], ["fix-login"])]);
+  assert.equal(work.size, 0);
+});

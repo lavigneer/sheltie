@@ -16,7 +16,7 @@ const BAD = [
 const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 
 // The fields prDetails reads, for a pullRequest in GitHub's GraphQL API.
-const PR_FIELDS = `number url title state isDraft reviewDecision headRefName
+const PR_FIELDS = `number url title body state isDraft reviewDecision headRefName
   headRefOid mergeable autoMergeRequest { enabledAt }
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
     nodes { ... on CheckRun { status conclusion } ... on StatusContext { state } } } } } } }
@@ -87,6 +87,7 @@ export async function prDetails(slug, ref, previous = null) {
     number: pr.number,
     url: pr.url,
     title: pr.title,
+    body: pr.body ?? "",
     state: pr.state,
     draft: pr.isDraft,
     review: pr.reviewDecision || null,
