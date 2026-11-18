@@ -49,7 +49,15 @@ import {
   repoRoot,
   worktreePath,
 } from "./git.js";
-import { basename, fill, moveKey, openUrl, score, spaceFor } from "./lib.js";
+import {
+  basename,
+  columnWidth,
+  fill,
+  moveKey,
+  openUrl,
+  score,
+  spaceFor,
+} from "./lib.js";
 import {
   errorText,
   learnClone,
@@ -640,35 +648,70 @@ export default class Tickets extends View {
         .on_click((_e, cx) => this.choose(r, cx))
         .children(cells.filter(Boolean));
 
+    // A ticket row's cells besides its summary. The columns are as wide as
+    // their widest entry among the rows shown (the same in every row, so they
+    // line up), and one with nothing in it is left out: the summary gets the
+    // rest of the row instead of space held for empty columns.
+    const ticketCells = (r) => {
+      const where = [...new Set(r.work.map((w) => w.repo.name))];
+      return {
+        pr: r.work.map((w) => prLabel(w.pr)).find(Boolean),
+        repos: where.length > 2 ? `${where.length} repos` : where.join(", "),
+      };
+    };
+    const tickets = rows.filter((r) => r.kind === "ticket");
+    const cells = new Map(tickets.map((r) => [r, ticketCells(r)]));
+    const all = [...cells.values()];
+    const widths = {
+      label: columnWidth(
+        tickets.map((r) => r.ticket.label),
+        8,
+        100,
+      ),
+      repos: columnWidth(
+        all.map((c) => c.repos),
+        6.5,
+        130,
+      ),
+      pr: columnWidth(
+        all.map((c) => c.pr?.text),
+        6.5,
+        190,
+      ),
+      status: columnWidth(
+        tickets.map((r) => r.ticket.status),
+        6.5,
+        90,
+      ),
+    };
+    const ticketCol = (w, text, color) => (w ? col(w, text, color) : null);
+
     const row = (r, i) => {
       if (r.kind === "ticket") {
-        const pr = r.work.map((w) => prLabel(w.pr)).find(Boolean);
-        const where = [...new Set(r.work.map((w) => w.repo.name))];
+        const { pr, repos } = cells.get(r);
         return line(r, i, [
           this.marked.has(r.ticket.key)
             ? div().w(12).flex_none().text_color(t.accent).child("✓")
             : dot(r.work.some((w) => w.worktree)),
-          div()
-            .w(100)
-            .flex_none()
-            .truncate()
-            .font_semibold()
-            .text_color(t.foreground)
-            .child(r.ticket.label),
+          widths.label
+            ? div()
+                .w(widths.label)
+                .flex_none()
+                .truncate()
+                .font_semibold()
+                .text_color(t.foreground)
+                .child(r.ticket.label)
+            : null,
           div()
             .flex_1()
             .min_w(120)
             .truncate()
             .text_color(t.foreground)
             .child(r.ticket.summary),
-          // Fixed-width columns, so they line up from row to row; a long
-          // repo name is cut, never the PR's state.
-          col(
-            130,
-            where.length > 2 ? `${where.length} repos` : where.join(", "),
-          ),
-          col(190, pr?.text ?? "", tone(pr)),
-          col(90, r.ticket.status),
+          // A long repo name is cut, never the PR's state.
+          ticketCol(widths.repos, repos, t.dim),
+          ticketCol(widths.pr, pr?.text ?? "", tone(pr)),
+          ticketCol(widths.status, r.ticket.status, t.dim),
         ]);
       }
       if (r.kind === "item") {
