@@ -134,9 +134,17 @@ test("detached, locked and hand-deleted (prunable) worktrees", async () => {
   const { states, view } = await sidebar([repo]);
   const s = states[0];
   // The detached one is linked (its space isn't the hub's) but not a row.
-  assert.equal(s.linked.length, 3);
-  assert.deepEqual(s.worktrees.map((w) => w.branch).sort(), ["gone", "locked"]);
-  assert.equal(view.rows.length, 3);
+  // The hand-deleted one is listed as prunable until git prunes it, which
+  // some git builds do on their own: either way is fine, as long as it's
+  // consistent and nothing throws.
+  const gone = s.linked.includes(`${path}/.worktrees/gone`) ? 1 : 0;
+  assert.ok(s.linked.includes(`${path}/.worktrees/detached`));
+  assert.equal(s.linked.length, 2 + gone);
+  assert.deepEqual(
+    s.worktrees.map((w) => w.branch).sort(),
+    gone ? ["gone", "locked"] : ["locked"],
+  );
+  assert.equal(view.rows.length, 2 + gone);
 });
 
 test("a worktree outside the repo is no repo of its own", async () => {
