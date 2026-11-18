@@ -83,6 +83,7 @@ import { resize } from "./sidebar.js";
 import { drainRequests } from "./start.js";
 import { ticketOfBranch } from "./tracker.js";
 import { costIn, usageGroups } from "./usage.js";
+import { ViewMemo, viewKey } from "./view-key.js";
 import { serial } from "./watch.js";
 import { prRef, WorkStore } from "./work.js";
 import { fit, NOTE_MS, workView } from "./work-rows.js";
@@ -140,6 +141,7 @@ export default class Work extends View {
     this.width = null; // ours, from on_size_change
     this.usage = null; // usage groups (usage.js), for each row's agent cost
     this.renders = new RenderStats(); // render timings, for work.report
+    this.views = new ViewMemo(); // the last view, while its inputs stay (view-key.js)
     this.why = null; // what the next render is for (wake); null: Herdr's own
     this.refresh = serial((cx, force) => this.scan(cx, force));
     this.details = serial((cx, force) => this.lookups(cx, force));
@@ -212,11 +214,45 @@ export default class Work extends View {
   // focused space's row, else the first. Adds active: the focused space's id.
   // `live`: the pass's snapshot of Herdr's live data (liveData), so a render
   // reads it once rather than once per row.
+  // Reuses the last view while nothing it reads changed (viewKey).
   view(live = liveData()) {
     const active = live.local.find((s) => s.active)?.id ?? null;
     const now = Date.now();
+    const confirm = this.nav.confirming(now);
+    const picked = this.nav.picked(active); // drops a stale pick first
+    const key = viewKey({
+      versions: [
+        this.store.version,
+        this.store.tickets.version,
+        this.store.linked.version,
+        this.store.prs.version,
+      ],
+      live,
+      nav: this.nav,
+      confirm,
+      steps: this.steps,
+      starting: this.starting,
+      now,
+      noteMs: NOTE_MS,
+      startMs: START_MS,
+      rest: [
+        this.groups === null,
+        this.groupBy(),
+        this.width,
+        C.workRepoRows ?? 0,
+        C.agent?.argv?.[0] ?? null,
+        costsKey(this.usage),
+      ],
+    });
+    const view = this.views.get(key, () =>
+      this.computeView(live, now, confirm, picked),
+    );
+    return { ...view, active };
+  }
+
+  computeView(live, now, confirm, picked) {
     const spaceIn = spacesNow(live);
-    const view = workView({
+    return workView({
       groups: this.shownGroups(spaceIn),
       by: this.groupBy(),
       folded: this.nav.folded,
@@ -224,8 +260,8 @@ export default class Work extends View {
       expanded: this.nav.expanded,
       width: this.width,
       steps: this.steps,
-      confirm: this.nav.confirming(now),
-      picked: this.nav.picked(active),
+      confirm,
+      picked,
       now,
       spaceOf: spaceIn,
       stepsOf: (w, space) => this.stepsOf(w, space, live),
@@ -234,7 +270,6 @@ export default class Work extends View {
       isTicket: (w) => this.isTicket(w),
       costOf: (w) => this.costOf(w),
     });
-    return { ...view, active };
   }
 
   // How the rows are grouped: as last switched to, else as configured.
