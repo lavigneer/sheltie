@@ -82,6 +82,8 @@ function statusOf(space, failed, pr) {
 //              come first, in a "Hubs" group of their own
 //   folded     group keys folded: repo paths (their hub stays, as the
 //              header) or stageKey()s
+//   cap        by repo, the most worktrees a group shows (0 or absent: all)
+//   expanded   repo paths whose "+k more" was clicked: they show them all
 //   width      the sidebar's, or null
 //   steps      worktree path -> the last step run ({ phase, text, at })
 //   confirm    the step waiting for its second click ({ id, byKey }) or null
@@ -90,7 +92,8 @@ function statusOf(space, failed, pr) {
 //   spaceOf(w), stepsOf(w, space), prOf(w), ticketOf(w) (its cache entry),
 //   isTicket(w), costOf(w) (in $, or null)
 // Returns { span, by, groups: [{ key, repo, name, monogram, count, size,
-// open, hub, worktrees }] (by stage: repo and hub are null), rows (in order: what the keys move through), at, step }.
+// open, hub, worktrees, more, fewer }] (more: how many worktrees the cap
+// hides; fewer: expanded past the cap) (by stage: repo and hub are null), rows (in order: what the keys move through), at, step }.
 export function workView(input) {
   const span = fit(input.width);
   const narrow = span === "short" || span === "glyph";
@@ -237,11 +240,28 @@ export function workView(input) {
   return { span, by, groups, rows, at, step };
 }
 
+// The worktrees a repo group shows under a cap of `cap`: the `cap` most
+// recently changed (`at`), and any whose space is focused, in their order.
+export function capped(worktrees, cap, isActive) {
+  if (!cap || worktrees.length <= cap) return worktrees;
+  const recent = new Set(
+    [...worktrees].sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, cap),
+  );
+  return worktrees.filter((w) => recent.has(w) || isActive(w));
+}
+
 // One group per repo, headed by its hub's row.
 function repoGroups(input, rowOf) {
   return input.groups.map((g) => {
     const open = !input.folded.has(g.repo.path);
     const n = g.worktrees.length;
+    const cappedTo = capped(
+      g.worktrees,
+      input.cap ?? 0,
+      (w) => input.spaceOf({ ...w, repo: g.repo })?.active ?? false,
+    );
+    const expanded = input.expanded?.has(g.repo.path) ?? false;
+    const shown = expanded ? g.worktrees : cappedTo;
     return {
       key: g.repo.path,
       repo: g.repo,
@@ -252,9 +272,10 @@ function repoGroups(input, rowOf) {
       open,
       hub: rowOf({ ...g.hub, repo: g.repo }),
       // Folded, the group keeps only its header (the hub's row).
-      worktrees: open
-        ? g.worktrees.map((w) => rowOf({ ...w, repo: g.repo }))
-        : [],
+      worktrees: open ? shown.map((w) => rowOf({ ...w, repo: g.repo })) : [],
+      more: open ? n - shown.length : 0,
+      // Expanded past a cap that would hide some: it offers "Show fewer".
+      fewer: open && expanded && cappedTo.length < n,
     };
   });
 }
@@ -286,6 +307,8 @@ function stageGroups(input, rowOf) {
       open,
       hub: null,
       worktrees: open ? ws.map(rowOf) : [],
+      more: 0,
+      fewer: false,
     };
   };
   const out = [];

@@ -156,9 +156,13 @@ test("a worktree outside the repo is no repo of its own", async () => {
   const repos = await localRepos();
   assert.ok(!repos.some((r) => r.name === "outer-wt"));
   const { states } = await sidebar([await repoAt("outer")]);
-  assert.deepEqual(states[0].worktrees, [
+  const [w] = states[0].worktrees;
+  assert.deepEqual(
+    { path: w.path, branch: w.branch },
     { path: `${tmp}/outer-wt`, branch: "outer-wt" },
-  ]);
+  );
+  // When its branch last changed: its commit's time, for the sidebar's cap.
+  assert.ok(w.at > 0);
   assert.equal(await repoRoot(`${tmp}/outer-wt`), path);
 });
 

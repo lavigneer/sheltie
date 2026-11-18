@@ -159,7 +159,7 @@ export const hubExcept = (repoPath, linked) => [
 // linked worktree's path (linked; detached ones too).
 /**
  * @typedef {object} RepoState
- * @property {{ path: string, branch: string }[]} worktrees
+ * @property {{ path: string, branch: string, at?: number }[]} worktrees
  * @property {Map<string, { local?: boolean, remote?: boolean }>} branches
  * @property {string | null} mainBranch
  * @property {string[]} linked
@@ -171,14 +171,16 @@ export async function repoState(repo) {
     w.branch ? [{ path: w.path, branch: w.branch }] : [],
   );
   const branches = new Map(); // name -> { local, remote }
+  const changed = new Map(); // local branch -> its last commit (unix s)
   const refs = await git(
     repo.path,
     "for-each-ref",
-    "--format=%(refname)",
+    "--format=%(refname) %(committerdate:unix)",
     "refs/heads",
     "refs/remotes/origin",
   ).catch(() => null);
-  for (const ref of refs?.stdout.split("\n") ?? []) {
+  for (const line of refs?.stdout.split("\n") ?? []) {
+    const [ref, at] = line.split(" ");
     let name, kind;
     if (ref.startsWith("refs/heads/")) [name, kind] = [ref.slice(11), "local"];
     else if (
@@ -187,10 +189,13 @@ export async function repoState(repo) {
     )
       [name, kind] = [ref.slice(20), "remote"];
     else continue;
+    if (kind === "local") changed.set(name, Number(at) || 0);
     branches.set(name, { ...(branches.get(name) ?? {}), [kind]: true });
   }
   return {
-    worktrees,
+    // `at`: when its branch last changed (its last commit), for the Work
+    // sidebar's cap on a long repo group (workRepoRows).
+    worktrees: worktrees.map((w) => ({ ...w, at: changed.get(w.branch) ?? 0 })),
     branches,
     mainBranch,
     linked: linked.map((w) => w.path),

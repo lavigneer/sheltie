@@ -25,7 +25,8 @@ shows every setting with its default, and `types/settings.d.ts` documents each o
 | `repoRules` | `[]` | `{component \| label \| project, repo}`: where new work goes |
 | `branch` | `"{ref}"` | branch name; `{ref}` is `WEB-142` or `issue-12`, e.g. `"me/{ref}"` |
 | `worktreeDir` | `".worktrees"` | relative to the repo's main checkout |
-| `workGroupBy` | `"repo"` | how the Work sidebar groups rows when it opens; `"stage"`: by PR stage (no PR, draft, in review, approved, merged, closed). ▤ and `work.group` switch |
+| `workGroupBy` | `"repo"` | how the Work sidebar groups rows when it opens; `"stage"`: by PR stage (no PR, draft, in review, approved, merged, closed; Merged and Closed open folded). ▤ and `work.group` switch |
+| `workRepoRows` | `8` | grouped by repo, the most worktrees a repo shows: the most recently changed (by last commit), plus a focused space's. "+k more" shows the rest; keys and `work.report` cover only the rows shown. `0`: all |
 | `reviewSearch` | `"is:pr is:open archived:false review-requested:@me"` | GitHub search for the Reviews sidebar; `user-review-requested:@me` in place of `review-requested:@me` leaves out requests to your teams |
 | `agent.argv` | `["claude"]` | the agent; its first message is the last argument |
 | `agent.task`, `agent.extraBranchTask` | see example | first messages; `{key}`, `{summary}`, `{branch}`, `{viewCommand}` |
