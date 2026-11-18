@@ -243,14 +243,24 @@ test("openWork besides this item: the ticket stays open while other work remains
 
 test("WorkStore: snapshot is reused until a scan or lookup changes what is known", async () => {
   const f = fakeStore({ prs: { "issue-1": pr(3, "issue-1") } });
+  let joins = 0;
+  const join = f.store.join.bind(f.store);
+  f.store.join = () => {
+    joins++;
+    return join();
+  };
   await f.store.scan([repo]);
   const before = f.store.snapshot(["#1"]);
-  assert.equal(f.store.snapshot(["#1"]), before);
+  f.store.snapshot(["#1"]);
+  f.store.snapshot(["#2"]);
+  assert.equal(joins, 1);
   assert.equal(before.get("#1")[0].pr, null);
+  assert.deepEqual(f.store.snapshot(["#2"]).get("#2"), []);
   await f.store.refresh(f.keys);
   const after = f.store.snapshot(["#1"]);
-  assert.notEqual(after, before);
   assert.equal(after.get("#1")[0].pr.number, 3);
+  const n = joins;
   await f.store.scan([repo]);
-  assert.notEqual(f.store.snapshot(["#1"]), after);
+  f.store.snapshot(["#1"]);
+  assert.equal(joins, n + 1);
 });

@@ -127,7 +127,7 @@ export const workName = (i) =>
 // branch or number) to prDetails (missing = failed lookup, the item keeps pr
 // null). A linked PR not already attached becomes its own item.
 /**
- * @param {string[]} keys
+ * @param {string[] | null} keys (null: every key the work mentions)
  * @param {({ repo: Repo } & import("./git.js").RepoState | null)[]} states
  * @param {Map<string, PRRef[]>} [linked]
  * @param {Map<string, PR>} [details]
@@ -142,11 +142,15 @@ export function joinWork(
   repos = [],
 ) {
   /** @type {Map<string, WorkItem[]>} */
-  const work = new Map(keys.map((k) => [k, []]));
+  const work = new Map((keys ?? []).map((k) => [k, []]));
   /** @param {string} key @param {WorkItem} item */
   const add = (key, item) => {
-    const list = work.get(key);
-    if (!list) return;
+    let list = work.get(key);
+    if (!list) {
+      if (keys) return;
+      list = [];
+      work.set(key, list);
+    }
     const same = list.find(
       (w) =>
         w.repo.slug === item.repo.slug &&
@@ -178,6 +182,7 @@ export function joinWork(
       for (const key of mentioned(name))
         add(key, { repo: s.repo, branch: name, worktree: null, pr: null });
   }
+  if (!keys) for (const k of linked.keys()) if (!work.has(k)) work.set(k, []);
   for (const [key, items] of work) {
     for (const item of items)
       if (item.repo.slug)
@@ -244,8 +249,8 @@ export class WorkStore {
     this.prs = new Cache({ retryMs, now });
     // Bumped by scan; with the caches' versions, says when snapshots go stale.
     this.version = 0;
-    /** @type {{ at: string, by: Map<string, Map<string, WorkItem[]>> }} */
-    this.snapshots = { at: "", by: new Map() };
+    /** @type {{ at: string, all: Map<string, WorkItem[]> }} */
+    this.snapshots = { at: "", all: new Map() };
   }
 
   // Git: the worktrees and branches of `repos` (those with a path).
@@ -279,30 +284,25 @@ export class WorkStore {
   // The work on each key, from what is known now.
   /** @param {string[]} keys @returns {Map<string, WorkItem[]>} */
   snapshot(keys) {
-    // Rendering asks once per row; the join walks every branch of every repo,
-    // so reuse it until a scan or lookup changes what is known.
+    // Rendering asks once per row, each for its own key; the join walks every
+    // branch of every repo, so join everything once and reuse it until a scan
+    // or lookup changes what is known.
     const at = `${this.version}.${this.linked.version}.${this.prs.version}`;
-    if (this.snapshots.at !== at) this.snapshots = { at, by: new Map() };
-    const id = JSON.stringify(keys);
-    const seen = this.snapshots.by.get(id);
-    if (seen) return seen;
-    const work = this.join(keys);
-    this.snapshots.by.set(id, work);
-    return work;
+    if (this.snapshots.at !== at) this.snapshots = { at, all: this.join() };
+    const { all } = this.snapshots;
+    return new Map(keys.map((k) => [k, all.get(k) ?? []]));
   }
 
-  /** @param {string[]} keys @returns {Map<string, WorkItem[]>} */
-  join(keys) {
+  // The work on every key the repos and linked PRs mention.
+  /** @returns {Map<string, WorkItem[]>} */
+  join() {
     const details = new Map();
     for (const [ref, e] of this.prs.entries)
       if (e.value) details.set(ref, e.value);
-    return joinWork(
-      keys,
-      this.states,
-      this.linkedFor(keys),
-      details,
-      this.repos,
-    );
+    const linked = new Map();
+    for (const [k, e] of this.linked.entries)
+      if (e.value) linked.set(k, e.value);
+    return joinWork(null, this.states, linked, details, this.repos);
   }
 
   // The PR lookup entry for `branch` in `repo` (state "found" | "none" |
