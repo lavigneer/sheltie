@@ -16,6 +16,7 @@ const WORKTREES = 3;
 // repo.tracker) and each join.
 function workspace() {
   const counts = { tracker: 0, join: 0 };
+  const extra = []; // more branches every repo has (a test adds some)
   const tracker = {
     name: "GitHub",
     keysIn: (text) =>
@@ -37,9 +38,10 @@ function workspace() {
     sources: {
       repoState: async (repo) => {
         const r = repos.indexOf(repo);
-        const names = Array.from({ length: BRANCHES }, (_, b) =>
-          branchOf(r, b),
-        );
+        const names = [
+          ...Array.from({ length: BRANCHES }, (_, b) => branchOf(r, b)),
+          ...extra,
+        ];
         return {
           worktrees: names.slice(0, WORKTREES).map((branch) => ({
             path: `${repo.path}/.worktrees/${branch}`,
@@ -58,7 +60,7 @@ function workspace() {
     counts.join++;
     return join();
   };
-  return { store, repos, tracker, counts };
+  return { store, repos, tracker, counts, extra };
 }
 
 // Renders every row as the Work sidebar does (work/main.js view and prOf).
@@ -117,15 +119,31 @@ test("Work sidebar at scale: one join per render, one tracker lookup per repo", 
   assert.ok(ws.counts.join <= 1, `joined ${ws.counts.join} times`);
 });
 
-test("Work sidebar at scale: a scan or lookup makes the next render join again", async () => {
+test("Work sidebar at scale: a scan or lookup that changes something makes the next render join again", async () => {
   const ws = workspace();
   await ws.store.scan(ws.repos);
   render(ws);
   const joined = ws.counts.join;
+  // A scan that finds the same: nothing to join again (and nothing new for
+  // the view: the store's version stays).
+  const version = ws.store.version;
+  await ws.store.scan(ws.repos);
+  render(ws);
+  assert.equal(ws.counts.join, joined);
+  assert.equal(ws.store.version, version);
+  // A new branch is new.
+  ws.extra.push("issue-9999");
   await ws.store.scan(ws.repos);
   render(ws);
   assert.equal(ws.counts.join, joined + 1);
   // A PR lookup (prs cache) changes what is known.
+  await ws.store.prs.refresh("me/r0#issue-0", async () => ({
+    number: 1,
+    branch: "issue-0",
+  }));
+  render(ws);
+  assert.equal(ws.counts.join, joined + 2);
+  // The same PR again: nothing new.
   await ws.store.prs.refresh("me/r0#issue-0", async () => ({
     number: 1,
     branch: "issue-0",

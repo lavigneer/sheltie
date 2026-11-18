@@ -83,7 +83,7 @@ import { ticketOfBranch } from "./tracker.js";
 import { costIn, usageGroups } from "./usage.js";
 import { serial } from "./watch.js";
 import { prRef, WorkStore } from "./work.js";
-import { fit, workView } from "./work-rows.js";
+import { fit, NOTE_MS, workView } from "./work-rows.js";
 
 const GIT_MS = 30_000;
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
@@ -98,6 +98,10 @@ const LINKS_W = 18; // a row's ↗ button
 // A row's space: a hub's leaves out its worktrees' folders (see spaceFor).
 // `live`: the pass's snapshot (liveData).
 const spaceOf = (w, live) => spaceFor(w.path, w.except, live);
+
+// What the rows show of the agents' costs (usage groups): each folder's.
+const costsKey = (usage) =>
+  JSON.stringify(usage?.map((g) => [g.dir, g.cost]) ?? null);
 
 // spaceOf for one pass over the rows: one snapshot of Herdr's live data, and
 // each row's space found once (a row asks for it several times).
@@ -151,12 +155,14 @@ export default class Work extends View {
     });
     this.costs = serial(async (cx) => {
       await configReady();
+      const was = costsKey(this.usage);
       this.usage = await usageGroups().catch((e) => {
         console.error(`work: ${e?.message ?? e}`);
         recordFailure("work", "usage", e);
         return this.usage;
       });
-      cx.notify();
+      // Rows show each folder's cost: re-render only when one moved.
+      if (costsKey(this.usage) !== was) cx.notify();
     });
     this.costs(cx);
     cx.timer.every(USAGE_MS, (cx) => this.costs(cx));
@@ -359,24 +365,30 @@ export default class Work extends View {
   async scan(cx, force) {
     await configReady();
     const repos = await this.localRepos(force);
+    const was = this.store.version;
     await this.store.scan(repos);
     this.mainCheckouts = new Set(repos.map((r) => r.path));
-    this.groups = this.store.states.filter(Boolean).map((s) => ({
-      repo: s.repo,
-      hub: {
-        path: s.repo.path,
-        branch: s.mainBranch,
-        hub: true,
-        except: hubExcept(s.repo.path, s.linked),
-      },
-      worktrees: s.worktrees.map((w) => ({
-        ...w,
+    // Most scans find what the last one did (the store's version stays): keep
+    // the groups and don't re-render. Renders follow what changed, not the
+    // 30 s poll.
+    const changed = this.groups === null || this.store.version !== was;
+    if (changed)
+      this.groups = this.store.states.filter(Boolean).map((s) => ({
         repo: s.repo,
-        handle: ticketOfBranch(w.branch, s.repo),
-      })),
-    }));
+        hub: {
+          path: s.repo.path,
+          branch: s.mainBranch,
+          hub: true,
+          except: hubExcept(s.repo.path, s.linked),
+        },
+        worktrees: s.worktrees.map((w) => ({
+          ...w,
+          repo: s.repo,
+          handle: ticketOfBranch(w.branch, s.repo),
+        })),
+      }));
     this.recheckWatched(cx);
-    cx.notify();
+    if (changed) cx.notify();
     this.details(cx, force);
   }
 
@@ -418,12 +430,24 @@ export default class Work extends View {
     const keys = new Map(
       all.filter((w) => w.handle).map((w) => [w.handle.key, w.handle.tracker]),
     );
+    // Lookups mostly confirm what is shown; re-render only when one changed
+    // a cache (its version moved) or a step's stale mark cleared.
+    const versions = () =>
+      `${this.store.tickets.version}.${this.store.prs.version}`;
+    let shown = versions();
+    const notifyIfChanged = (cleared = false) => {
+      const now = versions();
+      if (!cleared && now === shown) return;
+      shown = now;
+      cx.notify();
+    };
     await this.store.refresh(keys, {
       force,
       view: true,
-      onTicket: () => cx.notify(),
+      onTicket: () => notifyIfChanged(),
       onPR: (ref, was, entry, asked) => {
         const pr = entry.value;
+        let cleared = false;
         for (const w of all) {
           const mine =
             (w.repo.slug && prRef(w.repo.slug, w.branch) === ref) ||
@@ -433,9 +457,12 @@ export default class Work extends View {
           if (!mine) continue;
           if (entry.state === "found" && was) this.tell(w, was, pr);
           const last = this.steps.get(w.path);
-          if (last?.staleAt <= asked) delete last.staleAt;
+          if (last?.staleAt <= asked) {
+            delete last.staleAt;
+            cleared = true;
+          }
         }
-        cx.notify();
+        notifyIfChanged(cleared);
       },
     });
   }
@@ -528,6 +555,8 @@ export default class Work extends View {
         const note = await runStep(step.id, w, pr, work);
         const at = Date.now();
         this.steps.set(path, { phase: "done", text: note, at, staleAt: at });
+        // The note fades after NOTE_MS: nothing else may re-render by then.
+        cx.timer.after(NOTE_MS + 50, (cx) => cx.notify());
         if (step.kind === "direct")
           notify({
             title: `${who}: ${step.label}`,
