@@ -14,7 +14,8 @@ let seq = 0;
 const logError = (m) => /** @type {any} */ (globalThis).console?.error(m);
 
 /**
- * Records a failure, and logs it as before (console.error).
+ * Records a failure. It doesn't log it: callers that logged before still do
+ * (the e2e tests treat logged errors as bugs, and a refused step isn't one).
  * @param {string} mod  the mod, or mod.command (e.g. "work.start")
  * @param {string} what what was being done ("Finish", "load tickets", ...)
  * @param {unknown} error
@@ -22,7 +23,6 @@ const logError = (m) => /** @type {any} */ (globalThis).console?.error(m);
  */
 export async function recordFailure(mod, what, error, context = {}) {
   const message = `${/** @type {any} */ (error)?.message ?? error}`;
-  logError(`${mod}: ${what}: ${message}`);
   const app = appHome();
   if (!app) return;
   try {

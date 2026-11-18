@@ -132,14 +132,16 @@ export default class Work extends View {
     // drainRequests, start.js), one run at a time.
     this.starts = serial(async (cx) => {
       await configReady();
-      await drainRequests(`${appHome()}/work-start`).catch((e) =>
-        recordFailure("work.start", "drain requests", e),
-      );
+      await drainRequests(`${appHome()}/work-start`).catch((e) => {
+        console.error(`work.start: ${e?.message ?? e}`);
+        recordFailure("work.start", "drain requests", e);
+      });
       this.refresh(cx, true);
     });
     this.costs = serial(async (cx) => {
       await configReady();
       this.usage = await usageGroups().catch((e) => {
+        console.error(`work: ${e?.message ?? e}`);
         recordFailure("work", "usage", e);
         return this.usage;
       });
@@ -153,6 +155,7 @@ export default class Work extends View {
         try {
           this.command(cx, c);
         } catch (e) {
+          console.error(`work.${c}: ${e?.message ?? e}`);
           recordFailure(`work.${c}`, "command", e);
         }
         cx.notify();
@@ -258,7 +261,10 @@ export default class Work extends View {
         .then((old) =>
           writeTextFile(file, `${JSON.stringify(out, null, 2)}\n`, old),
         )
-        .catch((e) => recordFailure("work.report", "write report", e));
+        .catch((e) => {
+          console.error(`work.report: ${e?.message ?? e}`);
+          recordFailure("work.report", "write report", e);
+        });
     });
   }
 
