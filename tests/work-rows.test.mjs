@@ -242,3 +242,40 @@ test("by repo (the default): groups keyed by the repo's path, rows unprefixed", 
   assert.equal(v.groups[0].key, "/ws/app");
   assert.equal(v.rows[1].sub, "Do it");
 });
+
+test("cap: a long repo group shows its most recently changed, plus a focused one", () => {
+  const ws = [1, 2, 3, 4, 5].map((n) => wt(n, { at: n * 10 }));
+  const groups = [
+    {
+      repo,
+      hub: { path: "/ws/app", branch: "main", hub: true },
+      worktrees: ws,
+    },
+  ];
+  const paths = (v) => v.groups[0].worktrees.map((r) => r.w.branch);
+  // The two most recent (5, 4), in their order, and the focused one (1).
+  const v = view({
+    groups,
+    cap: 2,
+    spaces: { [ws[0].path]: { id: "s1", active: true } },
+  });
+  assert.deepEqual(paths(v), ["issue-1", "issue-4", "issue-5"]);
+  assert.equal(v.groups[0].more, 2);
+  assert.equal(v.groups[0].fewer, false);
+  // Keys move only through what's shown: the hub and those three.
+  assert.equal(v.rows.length, 4);
+  // Expanded: all of them, offering "Show fewer".
+  const all = view({ groups, cap: 2, expanded: new Set([repo.path]) });
+  assert.equal(all.groups[0].worktrees.length, 5);
+  assert.equal(all.groups[0].more, 0);
+  assert.equal(all.groups[0].fewer, true);
+  // No cap, or a group within it: all, and nothing to offer.
+  for (const cap of [0, 5]) {
+    const g = view({ groups, cap }).groups[0];
+    assert.equal(g.worktrees.length, 5);
+    assert.equal(g.more + Number(g.fewer), 0);
+  }
+  // Folded: no "+k more" either.
+  const f = view({ groups, cap: 2, folded: new Set([repo.path]) }).groups[0];
+  assert.equal(f.more, 0);
+});

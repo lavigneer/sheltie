@@ -8,9 +8,14 @@ import { cycle } from "./lib.js";
 
 export const CONFIRM_MS = 4_000;
 
+// The groups folded until unfolded: grouped by stage, Merged and Closed (their
+// rows rarely need you). Stage keys as stageKey() (work-rows.js) makes them.
+export const FOLDED = ["stage:merged", "stage:closed"];
+
 export class Nav {
-  constructor() {
-    this.folded = new Set(); // group keys: repo paths or stage keys
+  constructor(folded = FOLDED) {
+    this.folded = new Set(folded); // group keys: repo paths or stage keys
+    this.expanded = new Set(); // repo paths showing past their cap ("+k more")
     this.pick = null; // { path, step, active }: see picked()
     this.pending = null; // { id, byKey, until }: see press()
   }
@@ -50,6 +55,11 @@ export class Nav {
     this.folded.add(key);
     if (this.pick && paths.includes(this.pick.path))
       this.pick = home ? { ...this.pick, path: home, step: 0 } : null;
+  }
+
+  // Shows all of repo group `key`'s worktrees past its cap, or back to the cap.
+  expand(key) {
+    if (!this.expanded.delete(key)) this.expanded.add(key);
   }
 
   // A press of step `id` (unique across rows); one that `asks` runs on its

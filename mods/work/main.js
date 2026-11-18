@@ -220,6 +220,8 @@ export default class Work extends View {
       groups: this.shownGroups(spaceIn),
       by: this.groupBy(),
       folded: this.nav.folded,
+      cap: C.workRepoRows ?? 0,
+      expanded: this.nav.expanded,
       width: this.width,
       steps: this.steps,
       confirm: this.nav.confirming(now),
@@ -1039,7 +1041,44 @@ export default class Work extends View {
     // A repo's header. In full, it is also its hub's row (the hub has no
     // ticket, PR or steps, so a row of its own would repeat in every group):
     // the chevron folds the group, the rest opens the hub like a row.
-    const group = (g) => {
+    // Below a capped repo group: "+k more" shows the rest, "Show fewer" goes
+    // back to the cap (workRepoRows). On the rail, "+k".
+    const moreRow = (g) => {
+      const label = g.more
+        ? rail
+          ? `+${g.more}`
+          : `+${g.more} more`
+        : rail
+          ? "−"
+          : "Show fewer";
+      return div()
+        .id(`work-more-${g.key}`)
+        .mx(rail ? 4 : 6)
+        .px(rail ? 6 : 24)
+        .h(20)
+        .flex()
+        .items_center()
+        .when(rail, (el) => el.justify_center())
+        .rounded(6)
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .text_size(11)
+        .text_color(t.dim)
+        .tooltip(
+          g.more
+            ? `Show ${g.more} less recently changed worktree${g.more === 1 ? "" : "s"}`
+            : "Show only the most recently changed",
+        )
+        .on_click((_e, cx) => {
+          this.nav.expand(g.key);
+          cx.notify();
+        })
+        .child(label);
+    };
+    const withMore = (el, g) => (g.more || g.fewer ? el.child(moreRow(g)) : el);
+
+    const group = (g) => withMore(groupEl(g), g);
+    const groupEl = (g) => {
       const { hub } = g;
       const fold = (cx) => {
         this.nav.fold(

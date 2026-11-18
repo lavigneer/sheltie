@@ -94,6 +94,14 @@ export interface Settings {
    */
   workGroupBy: "repo" | "stage";
   /**
+   * Grouped by repo, how many worktrees a repo shows at most: the most
+   * recently changed (by their branch's last commit), plus the row of a
+   * focused space. A "+k more" row shows the rest; the keys and work.report
+   * cover only the rows shown. 0 shows them all.
+   * @minimum 0
+   */
+  workRepoRows: number;
+  /**
    * The GitHub search that finds the Reviews sidebar's PRs (only those in your
    * local repos are shown). The default includes requests to a team you're on;
    * "is:pr is:open archived:false user-review-requested:@me" shows only those

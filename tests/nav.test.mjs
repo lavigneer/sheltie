@@ -111,3 +111,20 @@ test("fold: a group with no hub (by stage) drops a pick it hides", () => {
   assert.ok(nav.isFolded("stage:draft"));
   assert.equal(nav.picked(null), null);
 });
+
+test("Merged and Closed stage groups start folded, and unfold", () => {
+  const nav = new Nav();
+  assert.ok(nav.isFolded("stage:merged"));
+  assert.ok(nav.isFolded("stage:closed"));
+  assert.ok(!nav.isFolded("stage:draft"));
+  nav.fold("stage:merged", [], null);
+  assert.ok(!nav.isFolded("stage:merged"));
+});
+
+test("expand: toggles a repo group past its cap", () => {
+  const nav = new Nav();
+  nav.expand("/ws/app");
+  assert.ok(nav.expanded.has("/ws/app"));
+  nav.expand("/ws/app");
+  assert.ok(!nav.expanded.has("/ws/app"));
+});
