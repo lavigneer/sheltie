@@ -78,6 +78,13 @@ step buttons wrap. Narrower than 160 px (like Herdr's folded sidebar), the
 sidebar becomes a rail of row statuses, with each row's ticket, PR and next
 steps on hover. The keys still work there.
 
+Rows are grouped by repo, under each repo's hub. ▤ in the header (or
+`work.group`) groups them by PR stage instead: No PR, Draft, In review,
+Approved, Merged and Closed, in the flow's order, with each row naming its
+repo and the hubs with a space in a Hubs group first. So all the work waiting
+to be finished sits together under Merged. `workGroupBy` in `sheltie.json`
+picks the grouping the sidebar opens with.
+
 For scripts: `herdr-app do work.refresh` refreshes the sidebar now, like its
 ↻ button. `herdr-app do work.report` writes what it shows to
 `<Herdr app home>/work-report.json`: rows, hubs (marked `hub: true`), their PRs

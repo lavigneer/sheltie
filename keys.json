@@ -12,6 +12,7 @@
     "alt-shift-o": "work.open",
     "alt-shift-p": "work.open-pr",
     "alt-shift-t": "work.open-ticket",
+    "alt-shift-g": "work.group",
     "alt-shift-r": "layout.switch:review"
   },
   "layout:review": {

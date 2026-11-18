@@ -10,7 +10,7 @@ export const CONFIRM_MS = 4_000;
 
 export class Nav {
   constructor() {
-    this.folded = new Set(); // repo paths
+    this.folded = new Set(); // group keys: repo paths or stage keys
     this.pick = null; // { path, step, active }: see picked()
     this.pending = null; // { id, byKey, until }: see press()
   }
@@ -41,14 +41,15 @@ export class Nav {
     return this.folded.has(repo);
   }
 
-  // Folds or unfolds the group of repo `repo` (its hub's path), whose
+  // Folds or unfolds the group `key` (a repo's: its hub's path), whose
   // worktrees are `paths`. Folding the group the keys picked a worktree in
-  // moves the pick to its hub, which stays shown.
-  fold(repo, paths) {
-    if (this.folded.delete(repo)) return;
-    this.folded.add(repo);
+  // moves the pick to `home`, the row that stays shown (a repo's hub), or
+  // drops it when there is none (a stage group).
+  fold(key, paths, home = key) {
+    if (this.folded.delete(key)) return;
+    this.folded.add(key);
     if (this.pick && paths.includes(this.pick.path))
-      this.pick = { ...this.pick, path: repo, step: 0 };
+      this.pick = home ? { ...this.pick, path: home, step: 0 } : null;
   }
 
   // A press of step `id` (unique across rows); one that `asks` runs on its

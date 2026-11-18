@@ -26,6 +26,8 @@
 // work.open-pr / work.open-ticket open the row's PR / ticket in the browser,
 // like its ↗ menu's Open PR / Open ticket (a hub: says there's
 // nothing to open).
+// work.group switches between grouping by repo and by PR stage, like ▤
+// (C.workGroupBy sets which it opens with).
 // work.refresh refreshes everything now, like ↻. work.report writes what the
 // sidebar shows to <app home>/work-report.json, for scripts and tests.
 // work.start starts the tickets the requests in <app home>/work-start/ name,
@@ -106,6 +108,7 @@ export default class Work extends View {
     this.store = new WorkStore();
     this.tickets = this.store.tickets; // by ticket key
     this.nav = new Nav(); // folds, picked row and step, confirm (nav.js)
+    this.by = null; // "repo" | "stage"; null: C.workGroupBy (once loaded)
     this.watched = new Map(); // space folder -> tries
     // Folders of spaces that appeared while we run, and when: their agent is
     // starting until it first works (or START_MS passes), so it isn't offered
@@ -187,6 +190,7 @@ export default class Work extends View {
     const now = Date.now();
     const view = workView({
       groups: this.shownGroups(),
+      by: this.groupBy(),
       folded: this.nav.folded,
       width: this.width,
       steps: this.steps,
@@ -201,6 +205,17 @@ export default class Work extends View {
       costOf: (w) => this.costOf(w),
     });
     return { ...view, active };
+  }
+
+  // How the rows are grouped: as last switched to, else as configured.
+  groupBy() {
+    return this.by ?? C.workGroupBy ?? "repo";
+  }
+
+  // Switches between grouping by repo and by stage.
+  toggleGroupBy(cx) {
+    this.by = this.groupBy() === "stage" ? "repo" : "stage";
+    cx.notify();
   }
 
   command(cx, c) {
@@ -625,6 +640,14 @@ export default class Work extends View {
               .child("Work"),
           )
           .child(
+            icon(
+              "group",
+              "▤",
+              view.by === "stage" ? "Group by repo" : "Group by stage",
+              (cx) => this.toggleGroupBy(cx),
+            ),
+          )
+          .child(
             icon("refresh", "↻", "Refresh now", (cx) => this.refresh(cx, true)),
           )
           .child(
@@ -951,8 +974,9 @@ export default class Work extends View {
       const { hub } = g;
       const fold = (cx) => {
         this.nav.fold(
-          g.repo.path,
+          g.key,
           g.worktrees.map((r) => r.w.path),
+          hub ? hub.w.path : null,
         );
         cx.notify();
       };
@@ -966,7 +990,7 @@ export default class Work extends View {
         return v_flex()
           .child(
             h_flex()
-              .id(`work-repo-${g.repo.path}`)
+              .id(`work-repo-${g.key}`)
               .mx(4)
               .px(6)
               .h(24)
@@ -988,8 +1012,45 @@ export default class Work extends View {
                   .child(g.monogram),
               ),
           )
-          .child(dot(hub))
+          .when(Boolean(hub), (el) => el.child(dot(hub)))
           .children(g.worktrees.map(dot));
+      // By stage: a plain header (no hub), the chevron and name fold it.
+      if (!hub)
+        return v_flex()
+          .child(
+            h_flex()
+              .id(`work-group-${g.key}`)
+              .mx(6)
+              .px(6)
+              .h(24)
+              .gap(5)
+              .items_center()
+              .rounded(6)
+              .cursor_pointer()
+              .hover((s) => s.bg(t.hover))
+              .on_click((_e, cx) => fold(cx))
+              .child(chevron)
+              .child(
+                div()
+                  .flex_1()
+                  .min_w(0)
+                  .truncate()
+                  .text_size(12.5)
+                  .font_semibold()
+                  .text_color(t.muted)
+                  .child(g.name),
+              )
+              .child(
+                div()
+                  .id(`work-count-${g.key}`)
+                  .flex_none()
+                  .text_size(11)
+                  .text_color(t.muted)
+                  .tooltip(g.count)
+                  .child(g.size),
+              ),
+          )
+          .children(g.worktrees.map(row));
       return v_flex()
         .child(
           h_flex()

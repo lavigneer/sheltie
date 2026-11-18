@@ -88,6 +88,12 @@ export interface Settings {
   /** Where ticket worktrees go, relative to the repo's main checkout. */
   worktreeDir: string;
   /**
+   * How the Work sidebar groups its rows when it opens: "repo", under each
+   * repo's hub, or "stage", by where each PR stands (no PR, draft, in review,
+   * approved, merged, closed). Its ▤ button and work.group switch between them.
+   */
+  workGroupBy: "repo" | "stage";
+  /**
    * The GitHub search that finds the Reviews sidebar's PRs (only those in your
    * local repos are shown). The default includes requests to a team you're on;
    * "is:pr is:open archived:false user-review-requested:@me" shows only those

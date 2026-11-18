@@ -102,3 +102,12 @@ test("press: a confirm step runs on its second press, until CONFIRM_MS", () => {
   assert.equal(nav.press("q:merge", false, false, 21 + CONFIRM_MS), true);
   assert.equal(nav.confirming(22 + CONFIRM_MS), null);
 });
+
+test("fold: a group with no hub (by stage) drops a pick it hides", () => {
+  const nav = new Nav();
+  const rows = [row("/r/w1"), row("/x/w2")];
+  move(nav, rows, null, "next"); // /x/w2
+  nav.fold("stage:draft", ["/x/w2"], null);
+  assert.ok(nav.isFolded("stage:draft"));
+  assert.equal(nav.picked(null), null);
+});

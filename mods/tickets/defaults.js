@@ -34,6 +34,7 @@ export const DEFAULTS = {
     /** @type {{ component?: string, label?: string, project?: string, repo: string }[]} */ ([]),
   branch: "{ref}",
   worktreeDir: ".worktrees",
+  workGroupBy: /** @type {"repo" | "stage"} */ ("repo"),
   reviewSearch: "is:pr is:open archived:false review-requested:@me",
   agent: {
     argv: ["claude"],
