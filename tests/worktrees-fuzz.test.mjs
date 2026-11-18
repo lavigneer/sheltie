@@ -49,11 +49,12 @@ function gen(rand) {
     else if (branch) lines.push(`branch refs/heads/${branch}`);
     else lines.push("detached");
     if (rand() < 0.3) lines.push(rand() < 0.5 ? "locked" : `locked ${word()}`);
-    if (rand() < 0.3)
+    const prunable = !isMain && rand() < 0.3;
+    if (prunable)
       lines.push(
         rand() < 0.5 ? "prunable" : `prunable gitdir file points to ${word()}`,
       );
-    entries.push({ path, branch, isMain, lines });
+    entries.push({ path, branch, isMain, prunable, lines });
   }
   let out = entries.map((e) => `${e.lines.join("\n")}\n`).join("\n");
   if (rand() < 0.5)
@@ -74,7 +75,7 @@ test("parseWorktrees: properties hold on generated porcelain output", () => {
     }, at);
     const main = entries.find((e) => e.isMain);
     assert.equal(got.mainBranch, main?.branch ?? null, at);
-    const linked = entries.filter((e) => !e.isMain);
+    const linked = entries.filter((e) => !e.isMain && !e.prunable);
     assert.deepEqual(
       got.linked,
       linked.map((e) => ({ path: e.path, branch: e.branch })),
