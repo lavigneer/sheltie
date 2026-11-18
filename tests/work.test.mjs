@@ -240,3 +240,17 @@ test("openWork besides this item: the ticket stays open while other work remains
   for (const w of [otherRepo, otherMachine, fork])
     assert.deepEqual(openWork([here, samePr, w], self, own), [w]);
 });
+
+test("WorkStore: snapshot is reused until a scan or lookup changes what is known", async () => {
+  const f = fakeStore({ prs: { "issue-1": pr(3, "issue-1") } });
+  await f.store.scan([repo]);
+  const before = f.store.snapshot(["#1"]);
+  assert.equal(f.store.snapshot(["#1"]), before);
+  assert.equal(before.get("#1")[0].pr, null);
+  await f.store.refresh(f.keys);
+  const after = f.store.snapshot(["#1"]);
+  assert.notEqual(after, before);
+  assert.equal(after.get("#1")[0].pr.number, 3);
+  await f.store.scan([repo]);
+  assert.notEqual(f.store.snapshot(["#1"]), after);
+});

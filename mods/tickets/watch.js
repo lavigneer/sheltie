@@ -34,6 +34,7 @@ export class Cache {
     this.retryMs = retryMs;
     this.now = now;
     this.entries = new Map();
+    this.version = 0; // bumped on every change to entries
   }
 
   get(id) {
@@ -66,6 +67,7 @@ export class Cache {
         at: this.now(),
       });
     }
+    this.version++;
     return this.entries.get(id);
   }
 }
