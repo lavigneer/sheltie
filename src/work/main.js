@@ -65,6 +65,7 @@ import {
   writeTextFile,
 } from "herdr";
 import { C, configReady } from "./config.js";
+import { recordFailure } from "./diagnostics.js";
 import {
   agentIn,
   agentSaysDone,
@@ -132,14 +133,14 @@ export default class Work extends View {
     this.starts = serial(async (cx) => {
       await configReady();
       await drainRequests(`${appHome()}/work-start`).catch((e) =>
-        console.error(`work.start: ${e?.message ?? e}`),
+        recordFailure("work.start", "drain requests", e),
       );
       this.refresh(cx, true);
     });
     this.costs = serial(async (cx) => {
       await configReady();
       this.usage = await usageGroups().catch((e) => {
-        console.error(`work: ${e?.message ?? e}`);
+        recordFailure("work", "usage", e);
         return this.usage;
       });
       cx.notify();
@@ -152,7 +153,7 @@ export default class Work extends View {
         try {
           this.command(cx, c);
         } catch (e) {
-          console.error(`work.${c}: ${e?.message ?? e}`);
+          recordFailure(`work.${c}`, "command", e);
         }
         cx.notify();
       }
@@ -257,7 +258,7 @@ export default class Work extends View {
         .then((old) =>
           writeTextFile(file, `${JSON.stringify(out, null, 2)}\n`, old),
         )
-        .catch((e) => console.error(`work.report: ${e?.message ?? e}`));
+        .catch((e) => recordFailure("work.report", "write report", e));
     });
   }
 
@@ -515,6 +516,7 @@ export default class Work extends View {
       } catch (e) {
         const text = `${e?.message ?? e}`.split("\n")[0];
         this.steps.set(path, { phase: "failed", text, at: Date.now() });
+        recordFailure("work", step.label, e, { path });
         notify({
           title: `${who}: ${step.label} failed`,
           body: text,

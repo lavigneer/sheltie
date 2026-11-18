@@ -13,6 +13,7 @@ import {
   writeTextFile,
 } from "herdr";
 import { C } from "./config.js";
+import { recordFailure } from "./diagnostics.js";
 import {
   addReviewWorktree,
   addWorktree,
@@ -375,6 +376,7 @@ export async function drainRequests(dir, start = startRequested) {
       out.results = await start(JSON.parse(text));
     } catch (e) {
       out.error = `${e?.message ?? e}`;
+      recordFailure("work.start", "start", e, { request: text });
       notify({ title: "work.start failed", body: out.error, level: "error" });
     }
     await writeTextFile(

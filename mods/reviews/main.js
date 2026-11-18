@@ -13,6 +13,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { div, View } from "gpui-kit";
 import { notify, setShared, theme } from "herdr";
 import { C, configReady } from "./config.js";
+import { recordFailure } from "./diagnostics.js";
 import { localRepos, sameSlug } from "./git.js";
 import { openUrl } from "./lib.js";
 import { reviewQueue, reviewRequests } from "./prs.js";
@@ -112,6 +113,9 @@ export default class Reviews extends View {
       this.worktrees = this.worktrees.filter((x) => x.path !== w.path);
       this.reviewed = this.reviewed.filter((x) => x.path !== w.path);
     } catch (e) {
+      recordFailure("reviews", "tear down review", e, {
+        pr: `${w.slug}#${w.number}`,
+      });
       notify({
         title: `${w.slug}#${w.number}: couldn't tear down the review`,
         body: errorText(e),
@@ -127,6 +131,9 @@ export default class Reviews extends View {
       if (!repo) throw new Error(`${r.slug} isn't checked out here`);
       openSpaces([await prepareReview(r, repo)]);
     } catch (e) {
+      recordFailure("reviews", "start review", e, {
+        pr: `${r.slug}#${r.number}`,
+      });
       notify({
         title: `${r.slug}#${r.number}: couldn't start the review`,
         body: errorText(e),
