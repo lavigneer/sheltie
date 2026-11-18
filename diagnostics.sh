@@ -58,13 +58,24 @@ version() {
     echo "not found"
   fi
 }
-# Settings with secret-looking values replaced.
+# Settings with the values of secret-looking keys replaced (strings, numbers
+# and every string in arrays under them).
 redact() {
   jq 'walk(if type == "object" then
-        with_entries(if (.key | test("token|secret|password|passwd|apikey|api_key|auth|cookie|credential"; "i"))
-                       and (.value | type) == "string"
+        with_entries(if (.key | test("token|secret|password|passwd|apikey|api_key|auth|cookie|credential|bearer|private|pat$|key$"; "i"))
+                       and (.value | type) != "object"
                      then .value = "<redacted>" else . end)
       else . end)' "$1" 2>&1
+}
+# Secret-shaped text anywhere (the whole report: settings, failures, the app
+# log): GitHub/Slack/AWS tokens, JWTs, Bearer/Basic/token credentials and
+# passwords in URLs. src/diagnostics.js scrubs the same when recording.
+scrub() {
+  perl -pe '
+    s/\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|xox[abprs]-[\w-]+|AKIA[0-9A-Z]{16}|eyJ[\w-]+\.[\w-]+\.[\w-]+)/<redacted>/g;
+    s/\b((?:bearer|basic|token)\s+)[\w.~+\/=-]{8,}/$1<redacted>/gi;
+    s/(:\/\/[^\/\s:\@]+:)[^\@\s\/]+\@/$1<redacted>\@/g;
+  '
 }
 
 report() {
@@ -172,8 +183,8 @@ command -v jq >/dev/null || {
   exit 1
 }
 if [ "$out" = "-" ]; then
-  report
+  report | scrub
 else
-  report >"$out"
+  report | scrub >"$out"
   echo "Wrote $out. Read it before sharing: it can name your repos, branches, tickets and paths." >&2
 fi

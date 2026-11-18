@@ -10,6 +10,17 @@ export const KEEP = 50;
 
 let seq = 0;
 
+// Secret-shaped text (tokens, URL passwords, Authorization headers) replaced,
+// so a record is safe to attach to an issue. diagnostics.sh scrubs the same.
+const SECRETS = [
+  /\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|xox[abprs]-[\w-]+|AKIA[0-9A-Z]{16}|eyJ[\w-]+\.[\w-]+\.[\w-]+)/g,
+  /(?<=\b(?:bearer|basic|token)\s+)[\w.~+/=-]{8,}/gi,
+  /(?<=:\/\/[^/\s:@]+:)[^@\s/]+(?=@)/g,
+];
+/** @param {string} text */
+export const scrub = (text) =>
+  SECRETS.reduce((t, re) => t.replace(re, "<redacted>"), text);
+
 // console isn't in the es2022 lib the type check uses; Herdr has it.
 const logError = (m) => /** @type {any} */ (globalThis).console?.error(m);
 
@@ -29,13 +40,14 @@ export async function recordFailure(mod, what, error, context = {}) {
     const dir = `${app}/${DIAGNOSTICS_DIR}`;
     const at = new Date();
     const name = `${at.toISOString().replace(/[:.]/g, "-")}-${seq++}-${mod.replace(/[^\w.-]/g, "_")}.json`;
+    const stack = /** @type {any} */ (error)?.stack;
     const record = {
       at: at.toISOString(),
       mod,
       what,
-      message,
-      stack: /** @type {any} */ (error)?.stack ?? null,
-      context,
+      message: scrub(message),
+      stack: stack ? scrub(`${stack}`) : null,
+      context: JSON.parse(scrub(JSON.stringify(context))),
     };
     await exec("mkdir", ["-p", dir]);
     await writeTextFile(

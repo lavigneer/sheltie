@@ -132,12 +132,10 @@ export default class Work extends View {
     // drainRequests, start.js), one run at a time.
     this.starts = serial(async (cx) => {
       await configReady();
-      await drainRequests(`${appHome()}/work-start`).catch((e) =>
-        {
-          console.error(`work.start: ${e?.message ?? e}`);
-          recordFailure("work.start", "drain requests", e);
-        }
-      );
+      await drainRequests(`${appHome()}/work-start`).catch((e) => {
+        console.error(`work.start: ${e?.message ?? e}`);
+        recordFailure("work.start", "drain requests", e);
+      });
       this.refresh(cx, true);
     });
     this.costs = serial(async (cx) => {

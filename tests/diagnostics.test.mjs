@@ -4,7 +4,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { DIAGNOSTICS_DIR, KEEP, recordFailure } from "../src/diagnostics.js";
+import {
+  DIAGNOSTICS_DIR,
+  KEEP,
+  recordFailure,
+  scrub,
+} from "../src/diagnostics.js";
 
 const tmpHome = () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sheltie-diag-"));
@@ -78,5 +83,31 @@ test(
     assert.match(md, /<redacted>/);
     assert.match(md, /jira said no/);
     assert.match(md, /## Versions/);
+  }),
+);
+
+test("scrub replaces secret-shaped text and keeps the rest", () => {
+  const t = scrub(
+    "push https://me:hunter22@github.com/o/r failed; Authorization: Bearer abcdefgh12345; ghp_" +
+      "a".repeat(36),
+  );
+  assert.doesNotMatch(t, /hunter22|abcdefgh12345|ghp_a/);
+  assert.match(t, /https:\/\/me:<redacted>@github.com\/o\/r failed/);
+});
+
+test(
+  "diagnostics.sh scrubs secret-shaped text in the app log",
+  quiet(async () => {
+    const home = tmpHome();
+    fs.writeFileSync(
+      path.join(home, "app.log"),
+      `fetch https://u:pw123456@example.com token ghp_${"b".repeat(36)}\n`,
+    );
+    const md = execFileSync(
+      "bash",
+      ["diagnostics.sh", "--home", home, "--out", "-"],
+      { encoding: "utf8" },
+    );
+    assert.doesNotMatch(md, /pw123456|ghp_b/);
   }),
 );
