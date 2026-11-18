@@ -232,6 +232,18 @@ export const prMaxAge = (pr) =>
 // PR details by prRef (slug#branch or slug#number). Sources are injected:
 // `repoState(repo)` and `prDetails(slug, ref, previous)`; trackers (view,
 // linkedPRs) come with the keys asked about.
+// What a scan found, as text to compare with the last scan's.
+const statesKey = (states) =>
+  JSON.stringify(
+    states.map((s) => [
+      s.repo.path,
+      s.mainBranch,
+      s.linked,
+      s.worktrees,
+      [...(s.branches ?? [])],
+    ]),
+  );
+
 export class WorkStore {
   constructor({
     sources = { repoState, prDetails },
@@ -265,9 +277,13 @@ export class WorkStore {
         ...(await this.sources.repoState(repo)),
       })),
     );
+    // A scan that finds what the last one did changes nothing: the version
+    // (and so the join, and the view) stays.
+    const key = statesKey(states);
+    if (repos !== this.repos || key !== this.statesKey) this.version++;
     this.repos = repos;
     this.states = states;
-    this.version++;
+    this.statesKey = key;
   }
 
   // The PRs trackers link to each key, as last looked up.
