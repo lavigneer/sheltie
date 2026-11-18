@@ -133,3 +133,48 @@ test("Work sidebar at scale: a scan or lookup makes the next render join again",
   render(ws);
   assert.equal(ws.counts.join, joined + 2);
 });
+
+test("Work sidebar at scale: one read of each kind of Herdr live data per render", async () => {
+  const herdr = await import("herdr");
+  const { liveData, spaceFor } = await import("../src/lib.js");
+  const { agentSaysDone } = await import("../src/flow.js");
+  const N = REPOS * WORKTREES;
+  const paths = Array.from({ length: N }, (_, i) => `/ws/w${i}`);
+  // Every row has a space (found by a pane's cwd, not its folder) whose agent
+  // terminal is labelled; even rows say pr=ready.
+  const data = {
+    spaces: paths.map((_, i) => ({ id: `s${i}`, tabs: [{ id: `t${i}` }] })),
+    panes: paths.map((p, i) => ({ tab: `t${i}`, cwd: p, terminal: `a${i}` })),
+    agents: [],
+    terminals: paths.map((_, i) => ({
+      address: `a${i}`,
+      labels: { agent: "claude", ...(i % 2 ? {} : { pr: "ready" }) },
+    })),
+  };
+  const reads = { spaces: 0, panes: 0, agents: 0, terminals: 0 };
+  for (const k of Object.keys(reads))
+    Object.defineProperty(herdr.live, k, {
+      configurable: true,
+      get: () => {
+        reads[k]++;
+        return data[k];
+      },
+    });
+  try {
+    const live = liveData();
+    const done = paths.map((p) => agentSaysDone(spaceFor(p, [], live), live));
+    assert.deepEqual(
+      done,
+      paths.map((_, i) => i % 2 === 0),
+    );
+    for (const [k, n] of Object.entries(reads))
+      assert.ok(n <= 1, `read ${k}() ${n} times for ${N} rows`);
+  } finally {
+    for (const k of Object.keys(reads))
+      Object.defineProperty(herdr.live, k, {
+        configurable: true,
+        writable: true,
+        value: [],
+      });
+  }
+});
