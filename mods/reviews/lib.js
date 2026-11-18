@@ -174,3 +174,11 @@ export function moveKey(e, view, n, close) {
 
 // The index `delta` steps from `at` among `n` items, wrapping around.
 export const cycle = (n, at, delta) => (((at + delta) % n) + n) % n;
+
+// A column's width for the longest of `texts`, estimated at `perChar` px a
+// character (text can't be measured from a mod) and capped at `max`: 0 when
+// they're all empty, so the column can go and give its space to the rest.
+export const columnWidth = (texts, perChar, max) => {
+  const longest = Math.max(0, ...texts.map((s) => (s ?? "").length));
+  return longest ? Math.min(max, Math.ceil(longest * perChar)) : 0;
+};

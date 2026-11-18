@@ -54,3 +54,11 @@ echo ok`,
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("columnWidth sizes to the longest text, capped, 0 when empty", async () => {
+  const { columnWidth } = await import("../src/lib.js");
+  assert.equal(columnWidth(["ab", "abcd", undefined], 6.5, 100), 26);
+  assert.equal(columnWidth(["x".repeat(50)], 6.5, 100), 100);
+  assert.equal(columnWidth(["", null], 6.5, 100), 0);
+  assert.equal(columnWidth([], 6.5, 100), 0);
+});
