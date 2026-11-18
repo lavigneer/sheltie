@@ -10,6 +10,7 @@ test("an empty report has no mean", () => {
     count: 0,
     meanMs: null,
     byTrigger: {},
+    last: null,
     slowest: [],
   });
 });
@@ -30,6 +31,7 @@ test("counts renders, keeps the slowest few with what triggered them", () => {
   assert.equal(r.count, 20);
   assert.equal(typeof r.meanMs, "number");
   assert.deepEqual(r.byTrigger, { hover: 5, scan: 5, host: 5, lookup: 5 });
+  assert.equal(r.last.ms, 19);
   assert.equal(r.slowest.length, SLOWEST);
   assert.deepEqual(
     r.slowest.map((s) => s.ms),

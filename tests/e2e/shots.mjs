@@ -22,6 +22,9 @@ const LONG =
 const LONG_STEPS = ["fix-ci", "address-comments"];
 // Long enough for a frame or two at the new size, zoom or theme.
 const SETTLE_MS = 1_200;
+// The most elements a Work sidebar render may build per row, on average
+// (group headers and the header included).
+const MAX_NODES_PER_ROW = 20;
 
 const WINDOWS = {
   small: [800, 560],
@@ -106,10 +109,20 @@ else {
     await h.waitRow("the long row's steps", long(), (r) =>
       LONG_STEPS.every((id) => r.steps.some((s) => s.id === id)),
     );
+    const nodes = {}; // look -> the last render's elements, and per row
     for (const [name, win, sidebar, settings] of LOOKS) {
       await look(win, sidebar, settings);
       await shot(`work-${name}`);
       await h.assertNoErrors(`showing the sidebar ${name}`);
+      // How many elements a render builds (#229): kept with the shots, and
+      // capped, so a row growing new wrappers shows up here.
+      const last = (await h.report()).renders.last;
+      const perRow = last.nodes / Math.max(1, last.rows);
+      nodes[name] = { nodes: last.nodes, rows: last.rows, perRow };
+      assert.ok(
+        perRow <= MAX_NODES_PER_ROW,
+        `${perRow.toFixed(1)} elements per row (${name})`,
+      );
       const row = await h.row(long());
       assert.deepEqual(
         row?.steps.map((s) => s.id),
@@ -117,6 +130,11 @@ else {
         `the long row's steps (${name})`,
       );
     }
+    fs.mkdirSync(OUT, { recursive: true });
+    fs.writeFileSync(
+      path.join(OUT, "work-nodes.json"),
+      `${JSON.stringify(nodes, null, 2)}\n`,
+    );
   });
 
   test("the tickets and projects popups in a small, default and large window", {

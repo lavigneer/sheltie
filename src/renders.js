@@ -1,5 +1,6 @@
 // How long the Work sidebar's renders take (work.report's `renders`): a count,
-// the mean, and the slowest few, each with its row count, its two halves
+// the mean, the last render and the slowest few, each with its row count,
+// how many elements it built (nodes), its two halves
 // (view: workView and live data; build: the elements) and what triggered it
 // (the reason our last notify gave; "host": none, so Herdr re-rendered on its
 // own). Kept in memory only.
@@ -13,12 +14,14 @@ export class RenderStats {
     this.totalMs = 0;
     this.slowest = []; // slowest first
     this.byTrigger = {}; // trigger -> count
+    this.last = null;
   }
 
-  // Adds one render: { ms, viewMs, buildMs, rows, trigger }. True when it's
+  // Adds one render: { ms, viewMs, buildMs, rows, nodes, trigger }. True when it's
   // slower than SLOW_MS.
   add(r) {
     this.count++;
+    this.last = { ...r, at: r.at ?? Date.now() };
     this.totalMs += r.ms;
     this.byTrigger[r.trigger] = (this.byTrigger[r.trigger] ?? 0) + 1;
     if (
@@ -38,6 +41,7 @@ export class RenderStats {
       count: this.count,
       meanMs: this.count ? this.totalMs / this.count : null,
       byTrigger: { ...this.byTrigger },
+      last: this.last && { ...this.last },
       slowest: this.slowest.map((r) => ({ ...r })),
     };
   }

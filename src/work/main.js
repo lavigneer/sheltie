@@ -53,8 +53,8 @@
 // while CI runs or a merge is pending), tickets and their linked PRs every
 // 10 min (the rules live in work.js).
 
-import { h_flex, Popover, v_flex } from "gpui-base";
-import { div, svg, View } from "gpui-kit";
+import { h_flex as hFlex, Popover, v_flex as vFlex } from "gpui-base";
+import { div as divEl, svg as svgEl, View } from "gpui-kit";
 import {
   appHome,
   nextCommand,
@@ -96,6 +96,20 @@ const WATCH_TRIES = 3;
 // scans in between reuse the last list. ↻ and new space folders find now.
 const REPOS_MS = 300_000;
 const LINKS_W = 18; // a row's ↗ button
+
+// The element builders, counted: how many elements a render builds goes in
+// its timing (renders.js), so changes to a row's shape can be measured.
+let built = 0;
+const counted =
+  (make) =>
+  (...a) => {
+    built++;
+    return make(...a);
+  };
+const div = counted(divEl);
+const svg = counted(svgEl);
+const h_flex = counted(hFlex);
+const v_flex = counted(vFlex);
 
 // A row's space: a hub's leaves out its worktrees' folders (see spaceFor).
 // `live`: the pass's snapshot (liveData).
@@ -654,6 +668,7 @@ export default class Work extends View {
 
   render(cx) {
     const start = Date.now();
+    built = 0;
     const trigger = this.why ?? "host";
     this.why = null;
     // One read of Herdr's live data for the whole render (liveData).
@@ -844,7 +859,8 @@ export default class Work extends View {
       // With a space, the dot is the agent's: the PR's glyph goes by the
       // number.
       const prGlyph = Boolean(space && pr);
-      return h_flex()
+      // One column, centred both ways: the status, then the number and PR.
+      return v_flex()
         .id(`work-${w.path}`)
         .mx(4)
         .min_h(24)
@@ -859,23 +875,19 @@ export default class Work extends View {
         .hover((s) => s.bg(t.hover))
         .tooltip(r.tip)
         .on_click(() => this.open(w))
-        .child(
-          v_flex()
-            .items_center()
-            .child(status(r))
-            .when(Boolean(num) || prGlyph, (el) =>
-              el.child(
-                h_flex()
-                  .gap(2)
-                  .text_size(9)
-                  .when(Boolean(num), (e) =>
-                    e.child(div().text_color(t.dim).child(num)),
-                  )
-                  .when(prGlyph, (e) =>
-                    e.child(div().text_color(tone(pr.tone)).child(pr.glyph)),
-                  ),
+        .child(status(r))
+        .when(Boolean(num) || prGlyph, (el) =>
+          el.child(
+            h_flex()
+              .gap(2)
+              .text_size(9)
+              .when(Boolean(num), (e) =>
+                e.child(div().text_color(t.dim).child(num)),
+              )
+              .when(prGlyph, (e) =>
+                e.child(div().text_color(tone(pr.tone)).child(pr.glyph)),
               ),
-            ),
+          ),
         );
     };
 
@@ -911,17 +923,11 @@ export default class Work extends View {
                 div()
                   .flex_shrink(1)
                   .min_w(64)
-                  .flex()
-                  .child(
-                    div()
-                      .flex_shrink(1)
-                      .min_w(0)
-                      .truncate()
-                      .text_size(12.5)
-                      .text_color(t.foreground)
-                      .when(Boolean(space?.active), (d) => d.font_semibold())
-                      .child(r.title),
-                  ),
+                  .truncate()
+                  .text_size(12.5)
+                  .text_color(t.foreground)
+                  .when(Boolean(space?.active), (d) => d.font_semibold())
+                  .child(r.title),
               )
               // The rest of the line after the title (sized to its text): the
               // PR, at the right; it also pushes ↗ there.
@@ -943,20 +949,31 @@ export default class Work extends View {
                         .child(pr.head),
                     ),
                   )
-                  .when(Boolean(pr) && pr.shown === "full", (el) =>
+                  // Without a tail, the head alone (one element).
+                  .when(Boolean(pr) && pr.shown === "full" && !pr.tail, (el) =>
                     el.child(
-                      // The tail (the tone: checks, conflicts) stays whole;
-                      // the rest of the PR truncates before it.
-                      h_flex()
+                      div()
                         .min_w(0)
-                        .gap(4)
+                        .truncate()
                         .text_size(11)
                         .text_color(tone(pr.tone))
-                        .child(div().min_w(0).truncate().child(pr.head))
-                        .when(Boolean(pr.tail), (e) =>
-                          e.child(div().flex_none().child(pr.tail)),
-                        ),
+                        .child(pr.head),
                     ),
+                  )
+                  .when(
+                    Boolean(pr) && pr.shown === "full" && Boolean(pr.tail),
+                    (el) =>
+                      el.child(
+                        // The tail (the tone: checks, conflicts) stays whole;
+                        // the rest of the PR truncates before it.
+                        h_flex()
+                          .min_w(0)
+                          .gap(4)
+                          .text_size(11)
+                          .text_color(tone(pr.tone))
+                          .child(div().min_w(0).truncate().child(pr.head))
+                          .child(div().flex_none().child(pr.tail)),
+                      ),
                   ),
               )
               .when(links.length > 0, (el) =>
@@ -1152,11 +1169,9 @@ export default class Work extends View {
               )
               .child(
                 div()
-                  .id(`work-count-${g.key}`)
                   .flex_none()
                   .text_size(11)
                   .text_color(t.muted)
-                  .tooltip(g.count)
                   .child(g.size),
               ),
           )
@@ -1215,12 +1230,10 @@ export default class Work extends View {
             .when(Boolean(hub.costText), (el) => el.child(costEl(hub)))
             .child(
               div()
-                .id(`work-count-${g.repo.path}`)
                 .flex_none()
                 .text_size(11)
                 // Neutral, like the repo name: the count carries no state.
                 .text_color(t.muted)
-                .tooltip(g.count)
                 .child(g.size),
             ),
         )
@@ -1289,6 +1302,7 @@ export default class Work extends View {
       viewMs: viewed - start,
       buildMs: end - viewed,
       rows: view.rows.length,
+      nodes: built,
       trigger,
       at: end,
     };
