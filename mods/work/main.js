@@ -6,7 +6,7 @@
 // shows while it has worktrees or its hub has a space.
 // A row shows the ticket its branch names (key, summary, status), its pull
 // request (review and checks) and the agent status of its space. Click a row to
-// go to its space, or to open one there with the agent. Its ↗ button (shown on
+// go to its space, or to open one there (with the agent; a hub's opens without). Its ↗ button (shown on
 // hover, on the selected row and while its menu is open) opens a menu: Open PR,
 // Open ticket (in the browser), each only when the row has one. Its second
 // line ends with what agents working in its folder have cost (usage.js).
@@ -609,11 +609,11 @@ export default class Work extends View {
   open(w) {
     const space = spaceOf(w);
     if (space) run("space.select", { id: space.id });
+    // A hub's space is for terminals and git, so it starts without an agent.
+    else if (w.hub) run("space.new", { name: w.repo.name, folder: w.path });
     else
       run("space.new", {
-        name: w.hub
-          ? w.repo.name
-          : (w.handle?.label ?? w.branch.split("/").pop()),
+        name: w.handle?.label ?? w.branch.split("/").pop(),
         folder: w.path,
         argv: C.agent.argv,
       });
