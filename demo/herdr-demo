@@ -19,6 +19,9 @@
 #                                      until the agent resolves it)
 #   herdr-demo status                  the demo's PRs, tickets and issues
 #
+# Others' PRs (those with an author) wait for your review in the Reviews
+# sidebar: approve or comment on them the same way.
+#
 # To see how the mods cope with Jira being down: touch $HERDR_DEMO/jira-down.
 #
 # Everything lives in $HERDR_DEMO (default ~/.local/state/herdr-demo): demo
@@ -87,9 +90,24 @@ setup() {
     done
 
   # PRs from forks: only GitHub's refs/pull/<n>/head, no branch on origin.
-  jq -r '.prs[] | select(.fork) | [(.repo | split("/")[1]), .number] | @tsv' "$HERDR_DEMO_DATA" |
+  jq -r '.prs[] | select(.fork and (.author | not)) | [(.repo | split("/")[1]), .number] | @tsv' "$HERDR_DEMO_DATA" |
     while IFS=$'\t' read -r name number; do
       g -C "$HERDR_DEMO/remotes/$name.git" update-ref "refs/pull/$number/head" refs/heads/main
+    done
+
+  # PRs from others awaiting your review (they have an author): a commit of
+  # their own on the remote, as a branch or (from a fork) refs/pull/<n>/head.
+  jq -r '.prs[] | select(.author) | [(.repo | split("/")[1]), .number, .branch, .author, .title, (.fork // false)] | @tsv' "$HERDR_DEMO_DATA" |
+    while IFS=$'\t' read -r name number branch author title fork; do
+      seed="$HERDR_DEMO/seed-review"
+      rm -rf "$seed"
+      g clone --quiet "$HERDR_DEMO/remotes/$name.git" "$seed"
+      printf '%s\n\nA change by %s, for reviewing in herdr-demo.\n' "$title" "$author" >"$seed/CHANGE-$number.md"
+      g -C "$seed" add "CHANGE-$number.md"
+      g -C "$seed" commit --quiet -m "$title"
+      if [ "$fork" = true ]; then ref="refs/pull/$number/head"; else ref="refs/heads/$branch"; fi
+      g -C "$seed" push --quiet origin "HEAD:$ref"
+      rm -rf "$seed"
     done
 
   # Local clones with worktrees and branches, as if you'd been working on them.
