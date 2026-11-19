@@ -33,8 +33,10 @@ const covered = new Map();
 let file;
 for (const line of readFileSync(lcov, "utf8").split("\n")) {
   const [k, v] = line.split(":");
-  if (k === "SF") covered.set((file = relative(root, v)), {});
-  else if (file && /^(LF|LH|BRF|BRH|FNF|FNH)$/.test(k))
+  if (k === "SF") {
+    file = relative(root, v);
+    covered.set(file, {});
+  } else if (file && /^(LF|LH|BRF|BRH|FNF|FNH)$/.test(k))
     covered.get(file)[k] = Number(v);
 }
 rmSync(dir, { recursive: true, force: true });
