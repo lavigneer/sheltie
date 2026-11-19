@@ -37,7 +37,7 @@ A git repository, known by its local main checkout, its GitHub slug, or both.
 _Avoid_: Project (that's a tracker's grouping of tickets)
 
 **Hub**:
-A repo's main checkout, with its own space for longer-running agents. It has no ticket, PR or steps.
+A repo's main checkout, with its own space for terminals, git and longer-running agents; opening it starts no agent. It has no ticket, PR or steps.
 _Avoid_: Main worktree
 
 **Worktree**:
