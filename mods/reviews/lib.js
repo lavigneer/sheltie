@@ -1,7 +1,7 @@
 // Small helpers shared by every mod (scripts/build.mjs copies the shared
 // modules into each mod folder: Herdr only resolves imports inside it).
 
-import { agents, exec, run as herdrRun, panes, spaces, terminals } from "herdr";
+import { exec, run as herdrRun, spaces } from "herdr";
 import { C } from "./config.js";
 
 export const firstLine = (text) => (text || "").trim().split("\n")[0];
@@ -124,81 +124,6 @@ export function score(text, query) {
     at = next;
   }
   return 100 + gaps;
-}
-
-// The local space already working in `dir`: its start folder, else any of its
-// terminals. Folders inside `except` don't count as in `dir` (a repo's main
-// checkout holds its worktrees: see hubExcept in git.js). A space started in
-// a folder above `dir` or inside `except` belongs there, wherever its
-// terminals are: a hub's space is never one of its worktrees', nor the other
-// way round.
-// One look at Herdr's live data, for a pass that asks about many rows (a
-// render). Each of spaces(), panes(), agents() and terminals() copies the
-// app's state into the script, so asking per row makes a render cost rows x
-// that state; a snapshot reads each at most once, when first needed, and
-// indexes it. Take a new one per pass: it doesn't follow later changes.
-export function liveData() {
-  /** @type {any} */
-  const got = {};
-  const once = (k, f) => {
-    if (!(k in got)) got[k] = f();
-    return got[k];
-  };
-  const live = {
-    get local() {
-      return once("local", () => spaces().filter((s) => !s.machine));
-    },
-    get panes() {
-      return once("panes", () => panes());
-    },
-    get agents() {
-      return once("agents", () => agents());
-    },
-    get terminals() {
-      return once("terminals", () => terminals());
-    },
-    // The panes in a space's tabs.
-    panesOf(space) {
-      const byTab = once("byTab", () => {
-        const m = new Map();
-        for (const p of live.panes) {
-          if (!m.has(p.tab)) m.set(p.tab, []);
-          m.get(p.tab).push(p);
-        }
-        return m;
-      });
-      return space.tabs.flatMap((t) => byTab.get(t.id) ?? []);
-    },
-    // A terminal by address.
-    terminal(address) {
-      const by = once(
-        "byAddress",
-        () => new Map(live.terminals.map((t) => [t.address, t])),
-      );
-      return by.get(address);
-    },
-  };
-  return live;
-}
-
-/** @typedef {ReturnType<typeof liveData>} Live */
-
-// The local space for `dir`: one started in it, else one with a pane there.
-// `except`: folders inside `dir` that aren't its (a hub's worktrees).
-// `live`: a snapshot to read from (liveData), else a fresh one.
-/** @param {string} dir @param {string[]} [except] @param {Live} [live] */
-export function spaceFor(dir, except = [], live = liveData()) {
-  const ok = (p) =>
-    Boolean(p) && inside(p, dir) && !except.some((e) => inside(p, e));
-  const local = live.local;
-  const byFolder = local.find((s) => ok(s.folder));
-  if (byFolder) return byFolder;
-  const elsewhere = (f) =>
-    Boolean(f) &&
-    ((f !== dir && inside(dir, f)) || except.some((e) => inside(f, e)));
-  return local.find(
-    (s) => !elsewhere(s.folder) && live.panesOf(s).some((p) => ok(p.cwd)),
-  );
 }
 
 // Closes every local space started inside `dir` (its work is done there).

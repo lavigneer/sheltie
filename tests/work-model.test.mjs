@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 const { WorkStore } = await import("../src/work.js");
 const { WorkModel } = await import("../src/work-model.js");
+const { fixtureSpaces } = await import("../src/spaces.js");
 
 const tracker = {
   name: "GitHub",
@@ -11,7 +12,7 @@ const tracker = {
     [...(text ?? "").matchAll(/issue-(\d+)/g)].map((m) => `#${m[1]}`),
   labelOf: (k) => k,
 };
-const LIVE = { local: [], spaces: [], panes: [], agents: [], terminals: [] };
+const LIVE = fixtureSpaces({});
 
 // A model over one repo whose worktrees are `branches` (changeable).
 function model(branches) {

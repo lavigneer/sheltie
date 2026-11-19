@@ -28,8 +28,9 @@
 import { run } from "herdr";
 import { C, settingsOf } from "./config.js";
 import { assertClean, removeWorktree } from "./git.js";
-import { basename, closeSpacesIn, liveData, spaceFor, tool } from "./lib.js";
+import { basename, closeSpacesIn, tool } from "./lib.js";
 import { markReady, mergePr, prDetails } from "./prs.js";
+import { herdrSpaces } from "./spaces.js";
 import { openWork, workName } from "./work.js";
 
 // --- Stage ------------------------------------------------------------------
@@ -272,7 +273,7 @@ const STEPS = [
 // confirm }]; `short`: the label when space is short.
 // `working`: its agent is busy, so nothing is sent to it and the PR isn't
 // marked Ready or merged while the agent may still be iterating on it. `agentDone`: its
-// agent says the PR is done (see agentSaysDone), which Ready waits for with
+// agent says the PR is done (see agentDone in spaces.js), which Ready waits for with
 // readyWhen "agent". `repo`: whose workflow settings apply (settingsOf).
 export function nextSteps(
   pr,
@@ -344,37 +345,12 @@ export function rowSteps({
 
 // --- The agent --------------------------------------------------------------
 
-// The agent terminal in a space: one reporting its status (Claude Code does),
-// else one running the configured agent program, else one labelled agent=…
-// (`hc label`; the demo's fake agent does that).
-/** @param {any} space @param {import("./lib.js").Live} [live] */
-export function agentIn(space, live = liveData()) {
-  if (!space) return null;
-  const reported = live.agents.find((a) => a.space === space.id);
-  if (reported) return reported.address;
-  const ours = basename(C.agent.argv[0]);
-  const here = live.panesOf(space).filter((p) => p.terminal);
-  const byProgram = here.find((p) => p.program?.key === ours);
-  if (byProgram) return byProgram.terminal;
-  return (
-    here.find((p) => live.terminal(p.terminal)?.labels?.agent)?.terminal ?? null
-  );
-}
-
-// Whether the agent terminal in a space says its PR is done: it has the
-// label pr=ready.
-/** @param {any} space @param {import("./lib.js").Live} [live] */
-export function agentSaysDone(space, live = liveData()) {
-  const address = agentIn(space, live);
-  if (!address) return false;
-  return live.terminal(address)?.labels?.pr === "ready";
-}
-
 // Sends a step's message to the worktree's agent, or starts one with it.
 async function tellAgent(w, id) {
   const text = C.agent.steps[id];
-  const space = spaceFor(w.path);
-  const address = agentIn(space);
+  const live = herdrSpaces();
+  const space = live.spaceOf(w.path);
+  const address = live.agentIn(space);
   if (address && space) {
     // The agent has more to do: Ready waits until it says pr=ready again.
     // (Best effort: an agent that can't be labelled can't be sent to either.)

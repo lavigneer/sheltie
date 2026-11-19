@@ -6,28 +6,16 @@
 // and the store (WorkStore, work.js). The View draws view()'s rows, handles
 // keys and clicks, and schedules scans and lookups.
 
-import { agentIn, agentSaysDone, rowSteps, stillStarting } from "./flow.js";
+import { rowSteps, stillStarting } from "./flow.js";
 import { hubExcept } from "./git.js";
-import { spaceFor } from "./lib.js";
 import { trackerOf } from "./tracker.js";
 import { costIn } from "./usage.js";
 import { WorkStore } from "./work.js";
 import { workView } from "./work-rows.js";
 
-// A row's space: a hub's leaves out its worktrees' folders (see spaceFor).
-// `live`: the pass's snapshot (liveData).
-export const spaceOf = (w, live) => spaceFor(w.path, w.except, live);
-
-// spaceOf for one pass over the rows: one snapshot of Herdr's live data, and
-// each row's space found once (a row asks for it several times).
-export function spacesNow(live) {
-  const found = new Map();
-  return (w) => {
-    const key = `${w.path}\0${w.except?.join("\0") ?? ""}`;
-    if (!found.has(key)) found.set(key, spaceOf(w, live) ?? null);
-    return found.get(key);
-  };
-}
+// A row's space: a hub's leaves out its worktrees' folders (see spaceOf in
+// spaces.js). `live`: the pass's snapshot (herdrSpaces).
+export const spaceOf = (w, live) => live.spaceOf(w.path, w.except);
 
 // What the rows show of the agents' costs (usage groups): each folder's.
 export const costsKey = (usage) =>
@@ -186,15 +174,15 @@ export class WorkModel {
       last: this.steps.get(w.path),
       status: space?.status,
       bornAt: this.starting.get(w.path),
-      agentDone: agentSaysDone(space, live),
+      agentDone: live.agentDone(space),
       repo: w.repo,
     });
   }
 
   // The groups shown: repos with worktrees, or whose hub has a space.
-  shownGroups(spaceIn) {
+  shownGroups(live) {
     return (this.groups ?? []).filter(
-      (g) => g.worktrees.length || spaceIn(g.hub),
+      (g) => g.worktrees.length || spaceOf(g.hub, live),
     );
   }
 
@@ -209,24 +197,23 @@ export class WorkModel {
   // Forgets folders whose agent is no longer starting.
   settle(live, now) {
     for (const [f, born] of this.starting)
-      if (!stillStarting(born, spaceFor(f, [], live)?.status, now))
+      if (!stillStarting(born, live.spaceOf(f)?.status, now))
         this.starting.delete(f);
   }
 
   // What the sidebar shows (work-rows.js) for Herdr's live data `live`
-  // (liveData) at `now`, one pass over it; `ui` is the View's part: by,
+  // (spaces.js) at `now`, one pass over it; `ui` is the View's part: by,
   // folded, cap, expanded, width, confirm, picked. Adds active: the focused
   // space's id.
   view(live, now, ui = {}) {
-    const active = live.local?.find((s) => s.active)?.id ?? null;
-    const spaceIn = spacesNow(live);
+    const active = live.active;
     const view = workView({
       folded: new Set(),
       ...ui,
-      groups: this.shownGroups(spaceIn),
+      groups: this.shownGroups(live),
       steps: this.steps,
       now,
-      spaceOf: spaceIn,
+      spaceOf: (w) => spaceOf(w, live),
       stepsOf: (w, space) => this.stepsOf(w, space, live),
       prOf: (w) => this.prOf(w),
       ticketOf: (w) => this.tickets.get(w.handle.key),
@@ -260,8 +247,8 @@ export class WorkModel {
           glyph: r.status.glyph,
           title: r.title,
           sub: r.sub,
-          agent: agentIn(r.space, live),
-          agentDone: agentSaysDone(r.space, live),
+          agent: live.agentIn(r.space),
+          agentDone: live.agentDone(r.space),
           cost: r.cost,
           selected: r.selected,
           step: r.selected

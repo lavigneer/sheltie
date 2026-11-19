@@ -12,7 +12,8 @@ import { div, svg, View } from "gpui-kit";
 import { closeOverlay, exec, home, props, run, theme } from "herdr";
 import { C, configReady } from "./config.js";
 import { hubExcept, listWorktrees } from "./git.js";
-import { basename, moveKey, pool, score, spaceFor } from "./lib.js";
+import { basename, moveKey, pool, score } from "./lib.js";
+import { herdrSpaces } from "./spaces.js";
 
 // Repos at exactly DEPTH below a root: <root>/<repo>/.git (a dir, or a file for
 // worktrees). Returns { repos, problems }: a root that couldn't be read (missing,
@@ -89,9 +90,9 @@ export default class Projects extends View {
 
   // The space open on repo `path` (its main checkout), not one of its
   // worktrees' (they live inside it). Until its worktrees are listed, only
-  // C.worktreeDir is left out.
-  spaceAt(path) {
-    return spaceFor(path, hubExcept(path, this.linked.get(path) ?? []));
+  // C.worktreeDir is left out. `live`: the pass's snapshot (spaces.js).
+  spaceAt(path, live) {
+    return live.spaceOf(path, hubExcept(path, this.linked.get(path) ?? []));
   }
 
   // Not named close(): Herdr calls a View's close() itself when the overlay goes.
@@ -101,11 +102,12 @@ export default class Projects extends View {
 
   rows() {
     const rows = [];
+    const live = herdrSpaces();
     for (const path of this.repos ?? []) {
       const name = basename(path);
       const s = score(name, this.filter) ?? score(path, this.filter);
       if (s === null) continue;
-      rows.push({ path, name, score: s, space: this.spaceAt(path) });
+      rows.push({ path, name, score: s, space: this.spaceAt(path, live) });
     }
     // Best match first; among equals, repos with an open space, then by name.
     rows.sort(
@@ -120,7 +122,7 @@ export default class Projects extends View {
   go(r) {
     if (!r) return;
     this.dismiss();
-    const open = this.spaceAt(r.path);
+    const open = this.spaceAt(r.path, herdrSpaces());
     if (open) run("space.select", { id: open.id });
     else run("space.new", { name: r.name, folder: r.path });
   }

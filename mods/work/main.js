@@ -69,10 +69,11 @@ import { C, configReady } from "./config.js";
 import { recordFailure } from "./diagnostics.js";
 import { prEvents, runStep, START_MS } from "./flow.js";
 import { localRepos } from "./git.js";
-import { basename, liveData, openUrl } from "./lib.js";
+import { basename, openUrl } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
 import { RenderStats } from "./renders.js";
 import { resize } from "./sidebar.js";
+import { herdrSpaces } from "./spaces.js";
 import { drainRequests } from "./start.js";
 import { usageGroups } from "./usage.js";
 import { serial } from "./watch.js";
@@ -158,10 +159,10 @@ export default class Work extends View {
   // What the sidebar shows (WorkModel.view), with the selected row and step:
   // the one the keys moved to while the same space stays focused, else the
   // focused space's row, else the first. `live`: the pass's snapshot of
-  // Herdr's live data (liveData), so a render reads it once.
-  view(live = liveData()) {
+  // Herdr's live data (herdrSpaces), so a render reads it once.
+  view(live) {
     const now = Date.now();
-    const active = live.local.find((s) => s.active)?.id ?? null;
+    const active = live.active;
     return this.model.view(live, now, {
       by: this.groupBy(),
       folded: this.nav.folded,
@@ -185,7 +186,7 @@ export default class Work extends View {
   }
 
   command(cx, c) {
-    const live = liveData();
+    const live = herdrSpaces();
     const { rows, at, step, active } = this.view(live);
     const row = rows[at];
     if (["next", "prev", "step-next", "step-prev"].includes(c)) {
@@ -209,7 +210,7 @@ export default class Work extends View {
   // (WorkModel.report), with how long renders take and the ticket URLs.
   // Everything but the ticket URLs is taken now, so a row's steps and its PR
   // always agree (a lookup may finish while the URLs are awaited).
-  report(cx, rows, live = liveData()) {
+  report(cx, rows, live) {
     const out = this.model.report(rows, live, Date.now(), {
       renders: this.renders.report(),
     });
@@ -268,7 +269,7 @@ export default class Work extends View {
   // our worktrees (nor a main checkout) may be a new worktree: refresh now
   // rather than at the next poll, and recheck a few times in case it appears
   // a little later.
-  watchSpaces(cx, live = liveData()) {
+  watchSpaces(cx, live) {
     this.model.settle(live, Date.now());
     if (!this.model.groups) return;
     const known = this.model.knownFolders();
@@ -309,7 +310,7 @@ export default class Work extends View {
   // A notification when something you'd wait for changes on a PR.
   tell(w, was, pr) {
     const who = this.who(w);
-    const space = spaceOf(w, liveData());
+    const space = spaceOf(w, herdrSpaces());
     const action = space
       ? { name: "space.select", args: { id: space.id } }
       : undefined;
@@ -365,7 +366,7 @@ export default class Work extends View {
   }
 
   open(w) {
-    const space = spaceOf(w, liveData());
+    const space = spaceOf(w, herdrSpaces());
     if (space) run("space.select", { id: space.id });
     // A hub's space is for terminals and git, so it starts without an agent.
     else if (w.hub) run("space.new", { name: w.repo.name, folder: w.path });
@@ -441,8 +442,8 @@ export default class Work extends View {
   }
 
   draw(cx, start, trigger) {
-    // One read of Herdr's live data for the whole render (liveData).
-    const live = liveData();
+    // One read of Herdr's live data for the whole render (herdrSpaces).
+    const live = herdrSpaces();
     this.watchSpaces(cx, live);
     const t = theme();
     const view = this.view(live);

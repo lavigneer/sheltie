@@ -50,15 +50,8 @@ import {
   repoRoot,
   worktreePath,
 } from "./git.js";
-import {
-  basename,
-  columnWidth,
-  fill,
-  moveKey,
-  openUrl,
-  score,
-  spaceFor,
-} from "./lib.js";
+import { basename, columnWidth, fill, moveKey, openUrl, score } from "./lib.js";
+import { herdrSpaces } from "./spaces.js";
 import {
   errorText,
   learnClone,
@@ -299,7 +292,8 @@ export default class Tickets extends View {
       );
     }
     const work = d.work.get(t.key) ?? [];
-    const rows = work.map((item) => this.itemRow(t, item));
+    const live = herdrSpaces();
+    const rows = work.map((item) => this.itemRow(t, item, live));
     const used = new Set(work.map((w) => repoId(w.repo)));
     for (const s of this.suggestions(t))
       if (!used.has(repoId(s.repo))) rows.push(this.startRow(t, s.repo, s.why));
@@ -354,11 +348,12 @@ export default class Tickets extends View {
   }
 
   // What a piece of existing work shows (`tag`) and does, decided together.
-  itemRow(ticket, item) {
+  // `live`: the pass's snapshot (spaces.js).
+  itemRow(ticket, item, live) {
     const name = spaceName(ticket, item.repo, this.data.work.get(ticket.key));
     let tag, run;
     if (item.worktree) {
-      tag = spaceFor(item.worktree) ? "open" : "worktree";
+      tag = live.spaceOf(item.worktree) ? "open" : "worktree";
       run = () => this.openSpace(name, item.worktree);
     } else if (item.branch) {
       tag = item.repo.path ? "branch" : "not cloned";
