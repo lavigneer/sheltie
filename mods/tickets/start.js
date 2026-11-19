@@ -205,7 +205,8 @@ export async function allReviewWorktrees(repos) {
 export async function sweepReviews(
   worktrees,
   queue,
-  state = (slug, number) => prDetails(slug, number),
+  state = (slug, number) =>
+    prDetails(slug, number, null, { requiredOnly: C.requiredChecksOnly }),
 ) {
   const kept = [];
   const refused = [];

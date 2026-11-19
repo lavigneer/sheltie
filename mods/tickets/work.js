@@ -255,7 +255,7 @@ export const prMaxAge = (pr) =>
 // tracker-linked PRs and PR details (joinWork) and decides what is due for a
 // lookup. Holds the caches (Cache, watch.js): tickets and linked PRs by key,
 // PR details by prRef (slug#branch or slug#number). Sources are injected:
-// `repoState(repo)` and `prDetails(slug, ref, previous)`; trackers (view,
+// `repoState(repo)` and `prDetails(slug, ref, previous, { requiredOnly })`; trackers (view,
 // linkedPRs) come with the keys asked about.
 // What a scan found, as text to compare with the last scan's.
 const statesKey = (states) =>
@@ -449,7 +449,9 @@ export class WorkStore {
             const was = this.prs.get(ref)?.value ?? null;
             const asked = this.now();
             const entry = await this.prs.refresh(ref, () =>
-              this.sources.prDetails(slug, r, was),
+              this.sources.prDetails(slug, r, was, {
+                requiredOnly: C.requiredChecksOnly,
+              }),
             );
             onPR?.(ref, was, entry, asked);
           }),

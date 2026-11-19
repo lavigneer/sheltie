@@ -1,7 +1,6 @@
 // Pull requests on GitHub (gh): their state and review threads, marking ready and
 // merging.
 
-import { C } from "./config.js";
 import { firstLine, must, NOT_FOUND, tool } from "./lib.js";
 
 const OK = ["SUCCESS", "NEUTRAL", "SKIPPED", "COMPLETED"];
@@ -35,9 +34,8 @@ const BY_BRANCH = `query($owner: String!, $name: String!, $branch: String!) {
   repository(owner: $owner, name: $name) { pullRequests(headRefName: $branch,
     first: 20, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${prFields(false)} } } } }`;
 
-// Details for a PR (number or branch) in `slug`, or null when there is none,
-// from one GraphQL call. Throws when GitHub can't be asked, so callers can
-// tell "no PR" from "failed".
+// A PR's details from its pullRequest node in GitHub's GraphQL answer (see
+// prFields), or null for none. Pure: no gh, no settings.
 // `checks`: "passed" | "failed" | "pending", or null when the PR has none,
 // with `checksPassed` of `checksTotal` passed (GitHub's "3/5")
 // (CI not started, or never will: GitHub runs no pull_request CI on a PR that
@@ -47,39 +45,19 @@ const BY_BRANCH = `query($owner: String!, $name: String!, $branch: String!) {
 // had worked out, carried over from `previous` (this PR's last details) while
 // it's UNKNOWN, so a conflict is told once, not again after every push that
 // doesn't fix it. `unresolved`: the count of unresolved review threads on an
-// open PR, else null. With `requiredChecksOnly`, checks that aren't required
-// for merging are left out of `checks` and its counts.
-/** @param {string} slug @param {string | number} ref @param {import("./types.js").PR | null} [previous] @returns {Promise<import("./types.js").PR | null>} */
-export async function prDetails(slug, ref, previous = null) {
-  const [owner, name] = slug.split("/");
-  const isNumber = /^\d+$/.test(String(ref));
-  const required = Boolean(C.requiredChecksOnly);
-  const r = await tool("gh", [
-    "api",
-    "graphql",
-    "-F",
-    `owner=${owner}`,
-    "-F",
-    `name=${name}`,
-    ...(isNumber ? ["-F", `number=${ref}`] : ["-f", `branch=${ref}`]),
-    "-f",
-    `query=${isNumber ? byNumber(required) : BY_BRANCH}`,
-  ]);
-  if (r.code !== 0) {
-    const why = firstLine(r.stderr) || firstLine(r.stdout);
-    if (NOT_FOUND.test(why)) return null;
-    throw new Error(why || `gh api graphql (PR ${ref} in ${slug}) failed`);
-  }
-  const repo = JSON.parse(r.stdout).data?.repository;
-  const found = isNumber ? [repo?.pullRequest] : repo?.pullRequests?.nodes;
-  const pr =
-    found?.find((p) => p?.state === "OPEN") ?? found?.find(Boolean) ?? null;
+// open PR, else null. With `requiredOnly`, checks that aren't required for
+// merging (no isRequired on the node) are left out of `checks` and its counts.
+/** @param {string} slug @param {any} pr @param {import("./types.js").PR | null} [previous] @param {{ requiredOnly?: boolean }} [opts] @returns {import("./types.js").PR | null} */
+export function parsePR(
+  slug,
+  pr,
+  previous = null,
+  { requiredOnly = false } = {},
+) {
   if (!pr) return null;
-  // Found by branch: ask again by number, for which checks are required.
-  if (required && !isNumber) return prDetails(slug, pr.number, previous);
   const contexts = (
     pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes ?? []
-  ).filter((c) => !required || c.isRequired);
+  ).filter((c) => !requiredOnly || c.isRequired);
   const results = contexts.map(
     (c) => c.conclusion || c.state || c.status || "",
   );
@@ -121,6 +99,54 @@ export async function prDetails(slug, ref, previous = null) {
         ? (pr.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).length
         : null,
   };
+}
+
+// The pullRequest node for a PR (number or branch) in `slug`, or null when
+// there is none, from one GraphQL call (the open PR from a branch, else its
+// latest). Throws when GitHub can't be asked, so callers can tell "no PR"
+// from "failed". `required` asks each check's isRequired (by number only).
+/** @param {string} slug @param {string | number} ref @param {boolean} required */
+async function fetchPR(slug, ref, required) {
+  const [owner, name] = slug.split("/");
+  const isNumber = /^\d+$/.test(String(ref));
+  const r = await tool("gh", [
+    "api",
+    "graphql",
+    "-F",
+    `owner=${owner}`,
+    "-F",
+    `name=${name}`,
+    ...(isNumber ? ["-F", `number=${ref}`] : ["-f", `branch=${ref}`]),
+    "-f",
+    `query=${isNumber ? byNumber(required) : BY_BRANCH}`,
+  ]);
+  if (r.code !== 0) {
+    const why = firstLine(r.stderr) || firstLine(r.stdout);
+    if (NOT_FOUND.test(why)) return null;
+    throw new Error(why || `gh api graphql (PR ${ref} in ${slug}) failed`);
+  }
+  const repo = JSON.parse(r.stdout).data?.repository;
+  const found = isNumber ? [repo?.pullRequest] : repo?.pullRequests?.nodes;
+  return (
+    found?.find((p) => p?.state === "OPEN") ?? found?.find(Boolean) ?? null
+  );
+}
+
+// Details for a PR (number or branch) in `slug` (see parsePR), or null when
+// there is none; throws when GitHub can't be asked. With `requiredOnly`
+// (the requiredChecksOnly setting), only checks required for merging count.
+/** @param {string} slug @param {string | number} ref @param {import("./types.js").PR | null} [previous] @param {{ requiredOnly?: boolean }} [opts] @returns {Promise<import("./types.js").PR | null>} */
+export async function prDetails(
+  slug,
+  ref,
+  previous = null,
+  { requiredOnly = false } = {},
+) {
+  let pr = await fetchPR(slug, ref, requiredOnly);
+  // Found by branch: ask again by number, for which checks are required.
+  if (pr && requiredOnly && !/^\d+$/.test(String(ref)))
+    pr = await fetchPR(slug, pr.number, true);
+  return parsePR(slug, pr, previous, { requiredOnly });
 }
 
 export const markReady = (slug, number) =>
