@@ -18,6 +18,7 @@ export function element(kind, arg) {
           node.children.push(args[0]);
         else if (name === "children") node.children.push(...args[0]);
         else if (name === "when") return args[0] ? args[1](self) : self;
+        else if (name === "on_action") node.on[`action:${args[0]}`] = args[1];
         else if (name.startsWith("on_")) node.on[name.slice(3)] = args[0];
         else node.style[name] = args.length > 1 ? args : args[0];
         return self;
@@ -34,32 +35,27 @@ export const v_flex = () => element("v_flex");
 export const Popover = { new: (id) => element("popover").id(id) };
 export class View {}
 
-// A text input's state. Tests type into it (`type`) and press Enter
-// (`submit`), which fire the listeners the mod set with `on`.
+// A search box's state: its value, focus and "change"/"submit" handlers (a
+// test types and submits through these, as the user would).
 export const InputState = {
   new(opts = {}) {
-    let text = "";
     const on = {};
-    const cx = { notify() {}, stop_propagation() {} };
+    let value = "";
     return {
       opts,
-      focused: false,
-      value: () => text,
-      focus() {
-        this.focused = true;
-      },
-      on(event, f) {
+      on: (event, f) => {
         on[event] = f;
       },
-      type(s) {
-        text = s;
-        on.change?.({}, cx);
+      handlers: on,
+      value: () => value,
+      set_value: (v) => {
+        value = v;
       },
-      submit() {
-        on.submit?.({}, cx);
+      focused: false,
+      focus() {
+        this.focused = true;
       },
     };
   },
 };
-// The input drawn for an InputState: its `arg` is that state.
 export const Input = { new: (state) => element("input", state) };

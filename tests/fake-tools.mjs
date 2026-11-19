@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 
 // `gh`: logs each call as a JSON line to calls.log and answers from
-// state.json: { issues: { "<n>": { title, state } }, prs: { "<branch>": node } }
+// state.json: { issues: { "<n>": { title, state, repo } }, prs: { "<branch>": node } }
 // where node is a GraphQL pullRequest node (see prFields in prs.js), and
 // reviews: [searchNode] for the review-request search (see reviewNode;
 // searchFails makes it fail).
@@ -32,6 +32,12 @@ if (args[0] === "api" && args[1] === "graphql" && arg(/^q=(.*)$/s) !== undefined
   else out({ data: { repository: { pullRequest: prs.find((p) => String(p.number) === number) ?? null } } });
 } else if (args[0] === "pr" && args[1] === "checkout") {
   // Succeeds in place: the review worktree stays on its detached HEAD.
+} else if (args[0] === "search" && args[1] === "issues") {
+  const at = args.indexOf("--repo");
+  const repo = at >= 0 ? args[at + 1] : "me/app";
+  out(Object.entries(st.issues ?? {}).filter(([, i]) => (i.state ?? "OPEN") === "OPEN").map(([n, i]) => ({
+    number: Number(n), title: i.title, state: "OPEN", labels: [], repository: { nameWithOwner: i.repo ?? repo },
+  })));
 } else if (args[0] === "issue" && args[1] === "view") {
   const i = st.issues?.[args[2]];
   if (!i) { process.stderr.write("GraphQL: Could not resolve to an issue\\n"); process.exit(1); }
