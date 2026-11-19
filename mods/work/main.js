@@ -197,7 +197,8 @@ export default class Work extends View {
       if (row) this.openPR(row.w);
     } else if (c === "open-ticket") {
       if (row) this.openTicket(cx, row.w);
-    } else if (c === "refresh") this.refresh(cx, true);
+    } else if (c === "group") this.toggleGroupBy(cx);
+    else if (c === "refresh") this.refresh(cx, true);
     else if (c === "report") this.report(cx, rows, live);
     else if (c === "start") this.starts(cx);
     else console.error(`work: unknown command ${c}`);
