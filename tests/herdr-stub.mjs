@@ -27,7 +27,12 @@ export const panes = () => live.panes;
 export const spaces = () => live.spaces;
 export const agents = () => live.agents;
 export const terminals = () => live.terminals;
-export const run = () => null;
+// Every run(method, params) call, for tests to check what was asked of Herdr.
+export const runs = [];
+export const run = (method, params) => {
+  runs.push([method, params]);
+  return null;
+};
 export const notify = () => "";
 const sharedDoc = new Map();
 export const shared = (key) => sharedDoc.get(key);
