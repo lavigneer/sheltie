@@ -163,7 +163,10 @@ test("reviews: the demo's queue, and a review checked out from a fork", async ()
   );
   const api = repos.find((r) => r.slug === "partner/api");
   const { path } = await D.addReviewWorktree(api, 19);
-  assert.equal(sh("git", ["branch", "--show-current"], path).trim(), "typo-fixes");
+  assert.equal(
+    sh("git", ["branch", "--show-current"], path).trim(),
+    "typo-fixes",
+  );
   assert.ok(fs.existsSync(`${path}/CHANGE-19.md`));
   assert.equal((await D.prDetails("partner/api", 19)).state, "OPEN");
 });
