@@ -6,4 +6,4 @@ Issues are tracked in GitHub Issues on lavigneer/sheltie (via the `gh` CLI). No 
 
 ### Domain docs
 
-Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: `GLOSSARY.md` at the repo root. See `docs/agents/domain.md`.
