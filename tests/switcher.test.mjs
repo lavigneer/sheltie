@@ -11,8 +11,14 @@ const view = (tabs) =>
   );
 
 test("the current prop picks the active tab", () => {
-  assert.deepEqual(view(switcherTabs("work", 2)), ["*Work", "Reviews [2:accent]"]);
-  assert.deepEqual(view(switcherTabs("review", 2)), ["Work", "*Reviews [2:accent]"]);
+  assert.deepEqual(view(switcherTabs("work", 2)), [
+    "*Work",
+    "Reviews [2:accent]",
+  ]);
+  assert.deepEqual(view(switcherTabs("review", 2)), [
+    "Work",
+    "*Reviews [2:accent]",
+  ]);
   assert.deepEqual(
     switcherTabs("review").map((t) => t.layout),
     ["work", "review"],
