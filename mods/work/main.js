@@ -34,7 +34,8 @@
 // work.start starts the tickets the requests in <app home>/work-start/ name,
 // like the tickets popup (for agents and scripts; see drainRequests).
 //
-// State:
+// State (groups, store, steps, starting folders and costs live in WorkModel,
+// work-model.js, which tests reach without a View):
 //   git refresh, details   each runs one at a time; a request during a run
 //                          queues one more (serial(), watch.js), merging "force"
 //   store                  repo state, plus caches (WorkStore, work.js) of tickets,
@@ -66,25 +67,18 @@ import {
 } from "herdr";
 import { C, configReady } from "./config.js";
 import { recordFailure } from "./diagnostics.js";
-import {
-  prEvents,
-  rowSteps,
-  runStep,
-  START_MS,
-  stillStarting,
-} from "./flow.js";
-import { hubExcept, localRepos, sameSlug } from "./git.js";
+import { prEvents, runStep, START_MS } from "./flow.js";
+import { localRepos } from "./git.js";
 import { basename, openUrl } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
 import { RenderStats } from "./renders.js";
 import { resize } from "./sidebar.js";
 import { herdrSpaces } from "./spaces.js";
 import { drainRequests } from "./start.js";
-import { ticketOfWork } from "./tracker.js";
-import { costIn, usageGroups } from "./usage.js";
+import { usageGroups } from "./usage.js";
 import { serial } from "./watch.js";
-import { prRef, WorkStore } from "./work.js";
-import { fit, NOTE_MS, workView } from "./work-rows.js";
+import { spaceOf, WorkModel } from "./work-model.js";
+import { fit, NOTE_MS } from "./work-rows.js";
 
 const GIT_MS = 30_000;
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
@@ -96,37 +90,18 @@ const WATCH_TRIES = 3;
 const REPOS_MS = 300_000;
 const LINKS_W = 18; // a row's ↗ button
 
-// A row's space: a hub's leaves out its worktrees' folders (see spaceOf in
-// spaces.js). `live`: the pass's snapshot (herdrSpaces).
-const spaceOf = (w, live) => live.spaceOf(w.path, w.except);
-
-// What the rows show of the agents' costs (usage groups): each folder's.
-const costsKey = (usage) =>
-  JSON.stringify(usage?.map((g) => [g.dir, g.cost]) ?? null);
-
 export default class Work extends View {
   init(_props, cx) {
-    // null until the first scan; else every local repo:
-    // [{ repo, hub: { path, branch, hub: true, except }, worktrees: [{ path, branch, key }] }]
-    this.groups = null;
-    this.mainCheckouts = new Set();
-    // Repo state, tickets and PRs, and when each is due (work.js).
-    this.store = new WorkStore();
-    this.tickets = this.store.tickets; // by ticket key
+    // Groups, steps, starting folders, costs and the store (work-model.js).
+    this.model = new WorkModel();
     this.nav = new Nav(); // folds, picked row and step, confirm (nav.js)
     this.by = null; // "repo" | "stage"; null: C.workGroupBy (once loaded)
     this.watched = new Map(); // space folder -> tries
-    // Folders of spaces that appeared while we run, and when: their agent is
-    // starting until it first works (or START_MS passes), so it isn't offered
-    // Draft PR before it has begun the ticket.
-    this.starting = new Map();
     this.repos = null; // the last localRepos(), and when: { list, at }
-    this.steps = new Map(); // worktree path -> { phase, text }
     this.hovered = null; // the path of the row under the pointer
     this.linksOpen = null; // the path of the row whose ↗ menu is open
     this.watchTimer = false;
     this.width = null; // ours, from on_size_change
-    this.usage = null; // usage groups (usage.js), for each row's agent cost
     this.renders = new RenderStats(); // render timings, for work.report
     this.why = null; // what the next render is for (wake); null: Herdr's own
     this.refresh = serial((cx, force) => this.scan(cx, force));
@@ -147,14 +122,13 @@ export default class Work extends View {
     });
     this.costs = serial(async (cx) => {
       await configReady();
-      const was = costsKey(this.usage);
-      this.usage = await usageGroups().catch((e) => {
+      const usage = await usageGroups().catch((e) => {
         console.error(`work: ${e?.message ?? e}`);
         recordFailure("work", "usage", e);
-        return this.usage;
+        return this.model.usage;
       });
       // Rows show each folder's cost: re-render only when one moved.
-      if (costsKey(this.usage) !== was) this.wake(cx, "costs");
+      if (this.model.setUsage(usage)) this.wake(cx, "costs");
     });
     this.costs(cx);
     cx.timer.every(USAGE_MS, (cx) => this.costs(cx));
@@ -172,57 +146,32 @@ export default class Work extends View {
     });
   }
 
+  get store() {
+    return this.model.store;
+  }
+
+  get groups() {
+    return this.model.groups;
+  }
+
   // --- Keyboard ---------------------------------------------------------------
 
-  // The groups shown: repos with worktrees, or whose hub has a space.
-  // `live`: the pass's snapshot (herdrSpaces).
-  shownGroups(live) {
-    return (this.groups ?? []).filter(
-      (g) => g.worktrees.length || spaceOf(g.hub, live),
-    );
-  }
-
-  // A row's next steps (rowSteps).
-  stepsOf(w, space, live) {
-    return rowSteps({
-      hub: w.hub,
-      pr: this.prOf(w),
-      lookup: w.hub ? null : this.store.prEntry(w.repo, w.branch),
-      last: this.steps.get(w.path),
-      status: space?.status,
-      bornAt: this.starting.get(w.path),
-      agentDone: live.agentDone(space),
-      repo: w.repo,
-    });
-  }
-
-  // What the sidebar shows (work-rows.js), with the selected row and step:
+  // What the sidebar shows (WorkModel.view), with the selected row and step:
   // the one the keys moved to while the same space stays focused, else the
-  // focused space's row, else the first. Adds active: the focused space's id.
-  // `live`: the pass's snapshot of Herdr's live data (herdrSpaces), so a
-  // render reads it once rather than once per row.
+  // focused space's row, else the first. `live`: the pass's snapshot of
+  // Herdr's live data (herdrSpaces), so a render reads it once.
   view(live) {
-    const active = live.active;
     const now = Date.now();
-    const view = workView({
-      groups: this.shownGroups(live),
+    const active = live.active;
+    return this.model.view(live, now, {
       by: this.groupBy(),
       folded: this.nav.folded,
       cap: C.workRepoRows ?? 0,
       expanded: this.nav.expanded,
       width: this.width,
-      steps: this.steps,
       confirm: this.nav.confirming(now),
       picked: this.nav.picked(active),
-      now,
-      spaceOf: (w) => spaceOf(w, live),
-      stepsOf: (w, space) => this.stepsOf(w, space, live),
-      prOf: (w) => this.prOf(w),
-      ticketOf: (w) => this.tickets.get(w.handle.key),
-      isTicket: (w) => this.isTicket(w),
-      costOf: (w) => this.costOf(w),
     });
-    return { ...view, active };
   }
 
   // How the rows are grouped: as last switched to, else as configured.
@@ -257,18 +206,17 @@ export default class Work extends View {
     else console.error(`work: unknown command ${c}`);
   }
 
-  // What the sidebar shows, as JSON in <app home>/work-report.json: the shown
-  // rows with their space's agent (where agent steps go) and whether it says
-  // the PR is done (agentDone: its pr=ready label), PR, next steps and
-  // last step, and which row and step the keys would act on, and what
-  // work.open-pr / work.open-ticket would open (prUrl / ticketUrl).
+  // What the sidebar shows, as JSON in <app home>/work-report.json
+  // (WorkModel.report), with how long renders take and the ticket URLs.
   // Everything but the ticket URLs is taken now, so a row's steps and its PR
   // always agree (a lookup may finish while the URLs are awaited).
   report(cx, rows, live) {
-    const out = this.reportNow(rows, live);
+    const out = this.model.report(rows, live, Date.now(), {
+      renders: this.renders.report(),
+    });
     cx.spawn(async () => {
       const urls = await Promise.all(
-        rows.map((r) => this.ticketUrl(r.w).catch(() => null)),
+        rows.map((r) => this.model.ticketUrl(r.w).catch(() => null)),
       );
       for (const [i, row] of out.rows.entries()) row.ticketUrl = urls[i];
       const file = `${appHome()}/work-report.json`;
@@ -283,141 +231,16 @@ export default class Work extends View {
     });
   }
 
-  // The report of the view's rows (view()), without the ticket URLs (null
-  // until report() adds them).
-  reportNow(rows, live) {
-    return {
-      at: Date.now(),
-      loaded: this.groups !== null,
-      renders: this.renders.report(),
-      rows: rows.map((r) => {
-        const pr = r.prValue;
-        const confirming = r.steps.find((s) => s.confirming)?.id ?? null;
-        return {
-          path: r.w.path,
-          hub: r.hub,
-          branch: r.w.branch,
-          key: r.w.handle?.key ?? null,
-          repo: r.w.repo.slug ?? r.w.repo.name,
-          space: r.space?.id ?? null,
-          // The status dot: working, blocked… (null: no space).
-          status: r.space?.status ?? null,
-          // What the row's status shows (null: the working spinner).
-          glyph: r.status.glyph,
-          title: r.title,
-          sub: r.sub,
-          agent: live.agentIn(r.space),
-          agentDone: live.agentDone(r.space),
-          cost: r.cost,
-          selected: r.selected,
-          step: r.selected
-            ? Math.max(
-                0,
-                r.steps.findIndex((s) => s.chosen),
-              )
-            : null,
-          steps: r.steps.map((s) => ({
-            id: s.id,
-            label: s.label,
-            confirm: Boolean(s.confirm),
-          })),
-          confirming,
-          ticket: r.ticket,
-          ticketUrl: null,
-          prUrl: pr?.url ?? null,
-          pr: pr && {
-            number: pr.number,
-            label: r.pr?.text ?? null,
-            state: pr.state,
-            draft: pr.draft,
-            review: pr.review,
-            checks: pr.checks,
-            autoMerge: pr.autoMerge,
-            mergeable: pr.mergeable,
-            unresolved: pr.unresolved ?? null,
-          },
-          last: this.lastOf(r.w),
-        };
-      }),
-    };
-  }
-
-  // The last step run on a row (unfaded: a report keeps its note), or null.
-  lastOf(w) {
-    const last = this.steps.get(w.path);
-    return last
-      ? { phase: last.phase, text: last.text, at: last.at ?? null }
-      : null;
-  }
-
-  // What the agents started in a row's folder have cost, in $, or null.
-  costOf(w) {
-    return this.usage ? costIn(this.usage, w.path) : null;
-  }
-
   // Git only: worktrees and branches. Ticket and PR details follow separately,
   // so slow tracker/GitHub calls never hold up the next git refresh.
+  // Renders follow what changed, not the 30 s poll.
   async scan(cx, force) {
     await configReady();
     const repos = await this.localRepos(force);
-    const was = this.store.version;
-    await this.store.scan(repos);
-    this.mainCheckouts = new Set(repos.map((r) => r.path));
-    // Most scans find what the last one did (the store's version stays): keep
-    // the groups and don't re-render. Renders follow what changed, not the
-    // 30 s poll.
-    const changed = this.groups === null || this.store.version !== was;
-    if (changed)
-      this.groups = this.store.states.filter(Boolean).map((s) => ({
-        repo: s.repo,
-        hub: {
-          path: s.repo.path,
-          branch: s.mainBranch,
-          hub: true,
-          except: hubExcept(s.repo.path, s.linked),
-        },
-        worktrees: s.worktrees.map((w) => ({
-          ...w,
-          repo: s.repo,
-          handle: ticketOfWork(
-            w.branch,
-            s.repo,
-            this.store.prEntry(s.repo, w.branch)?.value,
-          ),
-        })),
-      }));
+    const changed = await this.model.scan(repos);
     this.recheckWatched(cx);
     if (changed) this.wake(cx, "scan");
     this.details(cx, force);
-  }
-
-  // A worktree's PR: the one from its branch, else one its ticket's tracker
-  // links with that branch (joinWork); null for a hub or none known.
-  prOf(w) {
-    if (w.hub) return null;
-    const own = this.store.prEntry(w.repo, w.branch)?.value;
-    if (own || !w.handle) return own ?? null;
-    return (
-      this.store
-        .snapshot([w.handle.key])
-        .get(w.handle.key)
-        ?.find((i) => i.worktree === w.path)?.pr ?? null
-    );
-  }
-
-  // Gives worktrees whose branch names no ticket the one their PR (just
-  // looked up as `ref`) names, so a branch made outside the flow still shows
-  // and moves its ticket. True when one changed.
-  adopt(ref, pr) {
-    if (!pr || !this.groups) return false;
-    let changed = false;
-    for (const g of this.groups)
-      for (const w of g.worktrees)
-        if (!w.handle && g.repo.slug && prRef(g.repo.slug, w.branch) === ref) {
-          w.handle = ticketOfWork(w.branch, g.repo, pr);
-          changed ||= Boolean(w.handle);
-        }
-    return changed;
   }
 
   // The local repos, found again when forced, when a watched space folder is
@@ -434,52 +257,11 @@ export default class Work extends View {
     return this.repos.list;
   }
 
-  // The ticket and PR lookups that are due (WorkStore.refresh).
+  // The ticket and PR lookups that are due (WorkModel.lookups).
   async lookups(cx, force) {
-    if (!this.groups) return;
-    const all = this.groups.flatMap((g) =>
-      g.worktrees.map((w) => ({ ...w, repo: g.repo })),
-    );
-    // Each key once, with the tracker of the repo it's from.
-    const keys = new Map(
-      all.filter((w) => w.handle).map((w) => [w.handle.key, w.handle.tracker]),
-    );
-    // Lookups mostly confirm what is shown; re-render only when one changed
-    // a cache (its version moved) or a step's stale mark cleared.
-    const versions = () =>
-      `${this.store.tickets.version}.${this.store.prs.version}`;
-    let shown = versions();
-    const notifyIfChanged = (cleared = false) => {
-      const now = versions();
-      if (!cleared && now === shown) return;
-      shown = now;
-      this.wake(cx, "lookup");
-    };
-    await this.store.refresh(keys, {
-      force,
-      view: true,
-      // Worktrees whose branch names no ticket: their PR may name one.
-      branches: all.filter((w) => !w.handle),
-      onTicket: () => notifyIfChanged(),
-      onPR: (ref, was, entry, asked) => {
-        const pr = entry.value;
-        let cleared = this.adopt(ref, pr);
-        for (const w of all) {
-          const mine =
-            (w.repo.slug && prRef(w.repo.slug, w.branch) === ref) ||
-            (pr &&
-              this.prOf(w)?.number === pr.number &&
-              sameSlug(this.prOf(w)?.slug, pr.slug));
-          if (!mine) continue;
-          if (entry.state === "found" && was) this.tell(w, was, pr);
-          const last = this.steps.get(w.path);
-          if (last?.staleAt <= asked) {
-            delete last.staleAt;
-            cleared = true;
-          }
-        }
-        notifyIfChanged(cleared);
-      },
+    await this.model.lookups(force, {
+      changed: () => this.wake(cx, "lookup"),
+      tell: (w, was, pr) => this.tell(w, was, pr),
     });
   }
 
@@ -488,12 +270,9 @@ export default class Work extends View {
   // rather than at the next poll, and recheck a few times in case it appears
   // a little later.
   watchSpaces(cx, live) {
-    const now = Date.now();
-    for (const [f, born] of this.starting)
-      if (!stillStarting(born, live.spaceOf(f)?.status, now))
-        this.starting.delete(f);
-    if (!this.groups) return;
-    const known = this.knownFolders();
+    this.model.settle(live, Date.now());
+    if (!this.model.groups) return;
+    const known = this.model.knownFolders();
     const fresh = live.local
       .filter((s) => s.folder)
       .map((s) => s.folder.replace(/\/+$/, ""))
@@ -501,23 +280,16 @@ export default class Work extends View {
     if (!fresh.length) return;
     for (const f of fresh) {
       this.watched.set(f, 0);
-      this.starting.set(f, Date.now());
+      this.model.starting.set(f, Date.now());
     }
     // Shows its steps once it's no longer starting, even if nothing changes.
     cx.timer.after(START_MS, (cx) => this.wake(cx, "timer"));
     cx.timer.after(0, (cx) => this.refresh(cx));
   }
 
-  knownFolders() {
-    return new Set([
-      ...this.mainCheckouts,
-      ...this.groups.flatMap((g) => g.worktrees.map((w) => w.path)),
-    ]);
-  }
-
   // After a scan: folders now listed are done; the rest get another try soon.
   recheckWatched(cx) {
-    const known = this.knownFolders();
+    const known = this.model.knownFolders();
     let again = false;
     for (const [f, tries] of this.watched) {
       if (known.has(f)) this.watched.delete(f);
@@ -550,27 +322,26 @@ export default class Work extends View {
   // second click or key press (within a few seconds).
   step(cx, w, step, byKey = false) {
     const path = w.path;
-    if (this.steps.get(path)?.phase === "running") return;
+    const steps = this.model.steps;
+    if (steps.get(path)?.phase === "running") return;
     const id = `${path}:${step.id}`;
     if (!this.nav.press(id, Boolean(step.confirm), byKey, Date.now())) {
       // Redraws once it expires.
       cx.timer.after(CONFIRM_MS, (cx) => this.wake(cx, "timer"));
       return this.wake(cx, "step");
     }
-    this.steps.set(path, { phase: "running", text: `${step.label}…` });
+    steps.set(path, { phase: "running", text: `${step.label}…` });
     this.wake(cx, "step");
-    const pr = this.prOf(w);
+    const pr = this.model.prOf(w);
     // The ticket's work everywhere: worktrees and branches here, and the PRs
     // its tracker links (in repos with no worktree here too).
-    const work = w.handle
-      ? (this.store.snapshot([w.handle.key]).get(w.handle.key) ?? [])
-      : [];
+    const work = this.model.workOf(w);
     cx.spawn(async (cx) => {
       const who = this.who(w);
       try {
         const note = await runStep(step.id, w, pr, work);
         const at = Date.now();
-        this.steps.set(path, { phase: "done", text: note, at, staleAt: at });
+        steps.set(path, { phase: "done", text: note, at, staleAt: at });
         // The note fades after NOTE_MS: nothing else may re-render by then.
         cx.timer.after(NOTE_MS + 50, (cx) => this.wake(cx, "timer"));
         if (step.kind === "direct")
@@ -581,7 +352,7 @@ export default class Work extends View {
           });
       } catch (e) {
         const text = `${e?.message ?? e}`.split("\n")[0];
-        this.steps.set(path, { phase: "failed", text, at: Date.now() });
+        steps.set(path, { phase: "failed", text, at: Date.now() });
         recordFailure("work", step.label, e, { path });
         notify({
           title: `${who}: ${step.label} failed`,
@@ -607,24 +378,10 @@ export default class Work extends View {
       });
   }
 
-  // Whether `w`'s branch names a ticket: only one the tracker says it doesn't
-  // know (e.g. "UTF-8" in "fix-utf-8") isn't. Not looked up yet, or
-  // unreachable: still a ticket.
-  isTicket(w) {
-    return (
-      Boolean(w.handle) && this.tickets.get(w.handle.key)?.state !== "none"
-    );
-  }
-
-  // Where `w`'s ticket is in the browser; null when its branch isn't a ticket.
-  async ticketUrl(w) {
-    return this.isTicket(w) ? await w.handle.url() : null;
-  }
-
   // Opens `w`'s PR in the browser; without one, says so.
   openPR(w) {
     if (w.hub) return this.nothingToOpen(w);
-    const url = this.prOf(w)?.url;
+    const url = this.model.prOf(w)?.url;
     if (url) return openUrl(url);
     notify({ title: `${this.who(w)}: no pull request`, level: "info" });
   }
@@ -642,10 +399,10 @@ export default class Work extends View {
   openTicket(cx, w) {
     if (w.hub) return this.nothingToOpen(w);
     cx.spawn(async () => {
-      const url = await this.ticketUrl(w).catch(() => null);
+      const url = await this.model.ticketUrl(w).catch(() => null);
       if (url) return openUrl(url);
       notify({
-        title: `${this.who(w)}: ${this.isTicket(w) ? `no link for ${w.handle.label}` : "not a ticket"}`,
+        title: `${this.who(w)}: ${this.model.isTicket(w) ? `no link for ${w.handle.label}` : "not a ticket"}`,
         level: "info",
       });
     });

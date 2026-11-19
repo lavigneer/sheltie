@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 const { WorkStore } = await import("../src/work.js");
-const { workView } = await import("../src/work-rows.js");
+const { WorkModel } = await import("../src/work-model.js");
+const { fixtureSpaces } = await import("../src/spaces.js");
 
 const REPOS = 50;
 const BRANCHES = 10;
@@ -60,53 +61,25 @@ function workspace() {
     counts.join++;
     return join();
   };
-  return { store, repos, tracker, counts, extra };
+  const model = new WorkModel({ store });
+  return { store, model, repos, tracker, counts, extra };
 }
 
-// Renders every row as the Work sidebar does (work/main.js view and prOf).
-function render({ store, repos, tracker }) {
-  const groups = repos.map((repo, r) => ({
-    repo,
-    hub: { path: repo.path, branch: "main", hub: true, repo },
-    worktrees: store.states[r].worktrees.map((w) => {
-      const key = tracker.keysIn(w.branch)[0];
-      return {
-        ...w,
-        repo,
-        handle: { key, label: key, tracker },
-      };
-    }),
-  }));
-  return workView({
-    groups,
-    folded: new Set(),
-    width: 400,
-    steps: new Map(),
-    confirm: null,
-    picked: null,
-    now: 0,
-    spaceOf: () => null,
-    stepsOf: () => [],
-    prOf: (w) => {
-      if (w.hub) return null;
-      const own = store.prEntry(w.repo, w.branch)?.value;
-      if (own || !w.handle) return own ?? null;
-      return (
-        store
-          .snapshot([w.handle.key])
-          .get(w.handle.key)
-          ?.find((i) => i.worktree === w.path)?.pr ?? null
-      );
-    },
-    ticketOf: () => null,
-    isTicket: (w) => Boolean(w.handle),
-    costOf: () => null,
-  });
+// Renders every row as the Work sidebar does: the real model, no spaces.
+const LIVE = fixtureSpaces({});
+function render({ model }) {
+  return model.view(LIVE, 0, { width: 400 });
 }
 
 test("Work sidebar at scale: one join per render, one tracker lookup per repo", async () => {
   const ws = workspace();
-  await ws.store.scan(ws.repos);
+  await ws.model.scan(ws.repos);
+  // The scan builds each worktree's ticket: one tracker lookup per repo.
+  assert.ok(
+    ws.counts.tracker <= REPOS,
+    `scan looked up trackers ${ws.counts.tracker} times`,
+  );
+  ws.counts.tracker = 0;
   const view = render(ws);
   assert.equal(view.rows.length, REPOS * (WORKTREES + 1));
   assert.ok(ws.counts.join <= 1, `joined ${ws.counts.join} times`);
@@ -121,19 +94,19 @@ test("Work sidebar at scale: one join per render, one tracker lookup per repo", 
 
 test("Work sidebar at scale: a scan or lookup that changes something makes the next render join again", async () => {
   const ws = workspace();
-  await ws.store.scan(ws.repos);
+  await ws.model.scan(ws.repos);
   render(ws);
   const joined = ws.counts.join;
   // A scan that finds the same: nothing to join again (and nothing new for
   // the view: the store's version stays).
   const version = ws.store.version;
-  await ws.store.scan(ws.repos);
+  await ws.model.scan(ws.repos);
   render(ws);
   assert.equal(ws.counts.join, joined);
   assert.equal(ws.store.version, version);
   // A new branch is new.
   ws.extra.push("issue-9999");
-  await ws.store.scan(ws.repos);
+  await ws.model.scan(ws.repos);
   render(ws);
   assert.equal(ws.counts.join, joined + 1);
   // A PR lookup (prs cache) changes what is known.
