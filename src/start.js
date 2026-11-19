@@ -24,7 +24,7 @@ import {
   removeWorktree,
   reviewWorktrees,
 } from "./git.js";
-import { closeSpacesIn, fill, firstLine } from "./lib.js";
+import { closeSpacesIn, errorText, fill } from "./lib.js";
 import { prDetails } from "./prs.js";
 import { herdrSpaces } from "./spaces.js";
 import {
@@ -43,8 +43,7 @@ import {
 const REMEMBER = "tickets.repo"; // shared: ticket key -> repo slug or path
 
 export const repoId = (repo) => repo.slug || repo.path;
-export const errorText = (e) =>
-  firstLine(`${e?.message ?? e}`) || "Something went wrong";
+export { errorText };
 
 // The repo last used for a ticket (a slug or path), for suggestRepos.
 export const rememberedRepo = (key) => shared(REMEMBER)?.[key];

@@ -11,24 +11,13 @@
 
 import { h_flex, v_flex } from "gpui-base";
 import { div, View } from "gpui-kit";
-import { notify, setShared, theme } from "herdr";
-import { C, configReady } from "./config.js";
-import { recordFailure } from "./diagnostics.js";
-import { localRepos, sameSlug } from "./git.js";
+import { setShared, theme } from "herdr";
 import { openUrl } from "./lib.js";
-import { reviewQueue, reviewRequests } from "./prs.js";
+import { PR_MS } from "./polling.js";
+import { ReviewsModel } from "./reviews-model.js";
 import { band, RAIL, resize } from "./sidebar.js";
-import {
-  allReviewWorktrees,
-  errorText,
-  finishReview,
-  openSpaces,
-  prepareReview,
-  sweepReviews,
-} from "./start.js";
 import { REVIEW_COUNT } from "./switcher.js";
-import { Cache, serial } from "./watch.js";
-import { PR_MS, RETRY_MS } from "./work.js";
+import { serial } from "./watch.js";
 
 // "3d", "5h", "12m": how long ago `iso` was.
 export function age(iso, now = Date.now()) {
@@ -43,113 +32,28 @@ export function age(iso, now = Date.now()) {
 export default class Reviews extends View {
   init(_props, cx) {
     this.width = null;
-    this.repos = [];
-    this.worktrees = []; // allReviewWorktrees, after sweeping
-    this.reviewed = []; // worktrees of PRs no longer in the queue, still open
-    this.warned = new Set(); // paths whose automatic teardown was refused
-
-    // One start at a time, so a double click can't check out twice.
-    this.starting = false;
-    this.start = (cx, r) => {
-      if (this.starting) return;
-      this.starting = true;
-      cx.spawn(() => this.startReview(r));
-    };
-    // One entry, "queue": the last good queue survives a failed refresh.
-    this.cache = new Cache({ retryMs: RETRY_MS });
+    this.model = new ReviewsModel(); // queue, worktrees, actions (reviews-model.js)
+    this.start = (cx, r) => cx.spawn(() => this.model.start(r));
     // The queue length for the layouts mod's Reviews tab: none until loaded.
     setShared(REVIEW_COUNT, null);
-    this.refresh = serial(async (cx) => {
-      await configReady();
-      await this.cache.refresh("queue", async () => {
-        const [repos, data] = await Promise.all([
-          localRepos(),
-          reviewRequests(C.reviewSearch),
-        ]);
-        this.repos = repos;
-        return reviewQueue(data, repos.map((r) => r.slug).filter(Boolean));
-      });
-      const queue = this.cache.get("queue")?.value;
-      if (queue) setShared(REVIEW_COUNT, queue.length);
-      await this.sweep().catch(() => {});
+    this.refresh = serial(async (cx, force) => {
+      await this.model.refresh(force);
+      if (this.model.count !== null) setShared(REVIEW_COUNT, this.model.count);
       cx.notify();
     });
     this.refresh(cx);
     cx.timer.every(PR_MS, (cx) => this.refresh(cx));
   }
 
-  // Tears down review worktrees whose PR merged or closed; a refusal is told
-  // once per worktree.
-  async sweep() {
-    const queue = this.cache.get("queue")?.value ?? [];
-    const all = await allReviewWorktrees(this.repos);
-    const { kept, refused } = await sweepReviews(all, queue);
-    for (const w of refused)
-      if (!this.warned.has(w.path)) {
-        this.warned.add(w.path);
-        notify({
-          title: `${w.slug}#${w.number}: review worktree kept`,
-          body: w.why,
-          level: "warning",
-        });
-      }
-    const gone = new Set(all.map((w) => w.path));
-    for (const w of kept) gone.delete(w.path);
-    this.worktrees = all.filter((w) => !gone.has(w.path));
-    const queued = (w) =>
-      queue.some((r) => r.number === w.number && sameSlug(r.slug, w.slug));
-    this.reviewed = kept.filter((w) => !queued(w));
-  }
-
-  worktreeOf(r) {
-    return this.worktrees.find(
-      (w) => w.number === r.number && sameSlug(w.slug, r.slug),
-    );
-  }
-
   async doneReviewing(w, cx) {
-    try {
-      await finishReview(w.repo, w);
-      this.worktrees = this.worktrees.filter((x) => x.path !== w.path);
-      this.reviewed = this.reviewed.filter((x) => x.path !== w.path);
-    } catch (e) {
-      recordFailure("reviews", "tear down review", e, {
-        pr: `${w.slug}#${w.number}`,
-      });
-      notify({
-        title: `${w.slug}#${w.number}: couldn't tear down the review`,
-        body: errorText(e),
-        level: "error",
-      });
-    }
+    await this.model.done(w);
     cx.notify();
-  }
-
-  async startReview(r) {
-    try {
-      const repo = this.repos.find((x) => x.path && sameSlug(x.slug, r.slug));
-      if (!repo) throw new Error(`${r.slug} isn't checked out here`);
-      openSpaces([await prepareReview(r, repo)]);
-    } catch (e) {
-      recordFailure("reviews", "start review", e, {
-        pr: `${r.slug}#${r.number}`,
-      });
-      notify({
-        title: `${r.slug}#${r.number}: couldn't start the review`,
-        body: errorText(e),
-        level: "error",
-      });
-    } finally {
-      this.starting = false;
-    }
   }
 
   render(_cx) {
     const t = theme();
     const rail = band(this.width, [["rail", RAIL]]) === "rail";
-    const entry = this.cache.get("queue");
-    const queue = entry?.value ?? [];
-    const failed = entry?.state === "failed";
+    const { queue, failed } = this.model;
     const message = (text, color) =>
       div().px(14).py(4).text_size(11).text_color(color).child(text);
 
@@ -216,7 +120,7 @@ export default class Reviews extends View {
             })
             .child("↗"),
         )
-        .when(Boolean(this.worktreeOf(r)), (el) =>
+        .when(Boolean(this.model.worktreeOf(r)), (el) =>
           el.child(
             div()
               .id(`review-done-${r.slug}-${r.number}`)
@@ -229,7 +133,7 @@ export default class Reviews extends View {
               .tooltip("Done reviewing: close its space, remove the worktree")
               .on_click((_e, cx) => {
                 cx.stop_propagation();
-                const w = this.worktreeOf(r);
+                const w = this.model.worktreeOf(r);
                 if (w) cx.spawn((cx) => this.doneReviewing(w, cx));
               })
               .child("✓"),
@@ -290,7 +194,7 @@ export default class Reviews extends View {
         : v_flex()
             .pb(6)
             .children(queue.map(row))
-            .children(this.reviewed.map(reviewedRow))
+            .children(this.model.reviewed.map(reviewedRow))
             .when(!queue.length && !failed, (el) =>
               el.child(message("Nothing awaits your review", t.dim)),
             )
