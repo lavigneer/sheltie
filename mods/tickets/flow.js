@@ -398,7 +398,9 @@ async function ready(w, pr) {
   // Auto-merge only waits for what the repo requires; without required
   // reviews it would merge at once, so then leave merging to the Merge step.
   if (settingsOf(w.repo).workflow.autoMerge === "when-reviews-required") {
-    const now = await prDetails(w.repo.slug, pr.number);
+    const now = await prDetails(w.repo.slug, pr.number, null, {
+      requiredOnly: settingsOf(w.repo).requiredChecksOnly,
+    });
     if (
       now?.review === "REVIEW_REQUIRED" ||
       now?.review === "CHANGES_REQUESTED"
