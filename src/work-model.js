@@ -35,6 +35,16 @@ export class WorkModel {
     // Draft PR before it has begun the ticket.
     this.starting = new Map();
     this.usage = null; // usage groups (usage.js), for each row's agent cost
+    // Bumped by what the store's versions don't cover: an adoption, a step's
+    // stale mark clearing, a cost moving.
+    this.edits = 0;
+  }
+
+  // What is shown, as one value: it moves whenever a render would differ
+  // (the store's scan, its ticket, linked-PR and PR caches, and edits).
+  get revision() {
+    const s = this.store;
+    return `${s.version}.${s.tickets.version}.${s.linked.version}.${s.prs.version}.${this.edits}`;
   }
 
   // Scans the repos' git state; true when it changed what is shown (the
@@ -43,6 +53,7 @@ export class WorkModel {
     const was = this.store.version;
     await this.store.scan(repos);
     this.mainCheckouts = new Set(repos.map((r) => r.path));
+    // The groups follow the scan only; lookups move the revision themselves.
     const changed = this.groups === null || this.store.version !== was;
     if (changed)
       this.groups = this.store.states.flatMap((s) => {
@@ -69,16 +80,18 @@ export class WorkModel {
   // looked up as `ref`) names (WorkStore.adopt). True when one changed.
   adopt(ref, pr) {
     if (!this.groups) return false;
-    return this.store.adopt(
+    const changed = this.store.adopt(
       this.groups.flatMap((g) => g.worktrees),
       ref,
       pr,
     );
+    if (changed) this.edits++;
+    return changed;
   }
 
   // The ticket and PR lookups that are due (WorkStore.refresh). `changed()`
-  // runs when one changed what is shown (a cache's version moved, or a
-  // step's stale mark cleared); `tell(w, was, pr)` when a row's PR moved.
+  // runs when one moved the revision (a ticket, linked PR or PR changed, a
+  // branch adopted a ticket, or a step's stale mark cleared); `tell(w, was, pr)` when a row's PR moved.
   /** @param {boolean} [force] @param {{ changed?: () => void, tell?: (w: any, was: any, pr: any) => void }} [on] */
   async lookups(force, { changed = () => {}, tell = () => {} } = {}) {
     if (!this.groups) return;
@@ -89,13 +102,10 @@ export class WorkModel {
     const keys = new Map(
       all.flatMap((w) => (w.handle ? [[w.handle.key, w.handle.tracker]] : [])),
     );
-    const versions = () =>
-      `${this.store.tickets.version}.${this.store.prs.version}`;
-    let shown = versions();
-    const changedIf = (cleared = false) => {
-      const now = versions();
-      if (!cleared && now === shown) return;
-      shown = now;
+    let shown = this.revision;
+    const moved = () => {
+      if (this.revision === shown) return;
+      shown = this.revision;
       changed();
     };
     await this.store.refresh(keys, {
@@ -103,20 +113,21 @@ export class WorkModel {
       view: true,
       // Worktrees whose branch names no ticket: their PR may name one.
       branches: all.filter((w) => !w.handle),
-      onTicket: () => changedIf(),
+      onTicket: moved,
+      onLinked: moved,
       onPR: (ref, was, entry, asked) => {
         const pr = entry.value;
-        let cleared = this.adopt(ref, pr);
+        this.adopt(ref, pr);
         for (const w of all) {
           if (!this.store.ownsPR(w, ref, pr)) continue;
           if (entry.state === "found" && was) tell(w, was, pr);
           const last = this.steps.get(w.path);
           if (last?.staleAt <= asked) {
             delete last.staleAt;
-            cleared = true;
+            this.edits++;
           }
         }
-        changedIf(cleared);
+        moved();
       },
     });
   }
@@ -154,7 +165,9 @@ export class WorkModel {
   setUsage(usage) {
     const was = costsKey(this.usage);
     this.usage = usage;
-    return costsKey(usage) !== was;
+    if (costsKey(usage) === was) return false;
+    this.edits++;
+    return true;
   }
 
   // The last step run on a row (unfaded: a report keeps its note), or null.
