@@ -1,6 +1,7 @@
 // Pull requests on GitHub (gh): their state and review threads, marking ready and
 // merging.
 
+import { C } from "./config.js";
 import { firstLine, must, NOT_FOUND, tool } from "./lib.js";
 
 const OK = ["SUCCESS", "NEUTRAL", "SKIPPED", "COMPLETED"];
@@ -15,18 +16,24 @@ const BAD = [
 
 const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 
-// The fields prDetails reads, for a pullRequest in GitHub's GraphQL API.
-const PR_FIELDS = `number url title body state isDraft reviewDecision headRefName
+// The fields prDetails reads, for a pullRequest in GitHub's GraphQL API. A
+// check's isRequired needs the PR's number, so it's only asked by number.
+const prFields = (
+  required,
+) => `number url title body state isDraft reviewDecision headRefName
   headRefOid mergeable autoMergeRequest { enabledAt }
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
-    nodes { ... on CheckRun { status conclusion } ... on StatusContext { state } } } } } } }
+    nodes { ... on CheckRun { status conclusion${required ? " isRequired(pullRequestNumber: $number)" : ""} }
+      ... on StatusContext { state${required ? " isRequired(pullRequestNumber: $number)" : ""} } } } } } } }
   reviewThreads(first: 100) { nodes { isResolved } }`;
-const BY_NUMBER = `query($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) { pullRequest(number: $number) { ${PR_FIELDS} } } }`;
+const byNumber = (
+  required,
+) => `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { pullRequest(number: $number) { ${prFields(required)} } } }`;
 // Like `gh pr view <branch>`: the open PR from that branch, else the latest.
 const BY_BRANCH = `query($owner: String!, $name: String!, $branch: String!) {
   repository(owner: $owner, name: $name) { pullRequests(headRefName: $branch,
-    first: 20, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${PR_FIELDS} } } } }`;
+    first: 20, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${prFields(false)} } } } }`;
 
 // Details for a PR (number or branch) in `slug`, or null when there is none,
 // from one GraphQL call. Throws when GitHub can't be asked, so callers can
@@ -40,11 +47,13 @@ const BY_BRANCH = `query($owner: String!, $name: String!, $branch: String!) {
 // had worked out, carried over from `previous` (this PR's last details) while
 // it's UNKNOWN, so a conflict is told once, not again after every push that
 // doesn't fix it. `unresolved`: the count of unresolved review threads on an
-// open PR, else null.
+// open PR, else null. With `requiredChecksOnly`, checks that aren't required
+// for merging are left out of `checks` and its counts.
 /** @param {string} slug @param {string | number} ref @param {import("./types.js").PR | null} [previous] @returns {Promise<import("./types.js").PR | null>} */
 export async function prDetails(slug, ref, previous = null) {
   const [owner, name] = slug.split("/");
-  const byNumber = /^\d+$/.test(String(ref));
+  const isNumber = /^\d+$/.test(String(ref));
+  const required = Boolean(C.requiredChecksOnly);
   const r = await tool("gh", [
     "api",
     "graphql",
@@ -52,9 +61,9 @@ export async function prDetails(slug, ref, previous = null) {
     `owner=${owner}`,
     "-F",
     `name=${name}`,
-    ...(byNumber ? ["-F", `number=${ref}`] : ["-f", `branch=${ref}`]),
+    ...(isNumber ? ["-F", `number=${ref}`] : ["-f", `branch=${ref}`]),
     "-f",
-    `query=${byNumber ? BY_NUMBER : BY_BRANCH}`,
+    `query=${isNumber ? byNumber(required) : BY_BRANCH}`,
   ]);
   if (r.code !== 0) {
     const why = firstLine(r.stderr) || firstLine(r.stdout);
@@ -62,12 +71,15 @@ export async function prDetails(slug, ref, previous = null) {
     throw new Error(why || `gh api graphql (PR ${ref} in ${slug}) failed`);
   }
   const repo = JSON.parse(r.stdout).data?.repository;
-  const found = byNumber ? [repo?.pullRequest] : repo?.pullRequests?.nodes;
+  const found = isNumber ? [repo?.pullRequest] : repo?.pullRequests?.nodes;
   const pr =
     found?.find((p) => p?.state === "OPEN") ?? found?.find(Boolean) ?? null;
   if (!pr) return null;
-  const contexts =
-    pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes ?? [];
+  // Found by branch: ask again by number, for which checks are required.
+  if (required && !isNumber) return prDetails(slug, pr.number, previous);
+  const contexts = (
+    pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes ?? []
+  ).filter((c) => !required || c.isRequired);
   const results = contexts.map(
     (c) => c.conclusion || c.state || c.status || "",
   );

@@ -398,3 +398,27 @@ test("finish leaves the ticket open while its PR in another repo is open", async
   );
   assert.ok(!fs.existsSync(wt));
 });
+
+test("prDetails: requiredChecksOnly leaves out checks merging doesn't need", async () => {
+  const s = state();
+  s.prs.find((p) => p.repo === "acme/docs" && p.number === 56).optionalChecks =
+    ["FAILURE"];
+  writeState(s);
+  const all = await D.prDetails("acme/docs", 56);
+  assert.equal(all.checks, "failed");
+  assert.equal(all.checksTotal, 2);
+  C.requiredChecksOnly = true;
+  try {
+    const required = await D.prDetails("acme/docs", 56);
+    assert.equal(required.checks, "passed");
+    assert.equal(required.checksPassed, 1);
+    assert.equal(required.checksTotal, 1);
+    const byBranch = await D.prDetails("acme/docs", required.branch);
+    assert.equal(byBranch.checks, "passed");
+  } finally {
+    C.requiredChecksOnly = false;
+    delete s.prs.find((p) => p.repo === "acme/docs" && p.number === 56)
+      .optionalChecks;
+    writeState(s);
+  }
+});
