@@ -68,9 +68,9 @@ import {
 import { C, configReady } from "./config.js";
 import { recordFailure } from "./diagnostics.js";
 import { prEvents, runStep, START_MS } from "./flow.js";
-import { localRepos } from "./git.js";
 import { basename, openUrl } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
+import { RepoCache } from "./polling.js";
 import { RenderStats } from "./renders.js";
 import { resize } from "./sidebar.js";
 import { herdrSpaces } from "./spaces.js";
@@ -85,9 +85,6 @@ const DUE_CHECK_MS = 10_000; // how often to look for due lookups
 const USAGE_MS = 120_000; // agent costs (see usage.js)
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
 const WATCH_TRIES = 3;
-// Between finds of the local repos (and reads of their settings); the git
-// scans in between reuse the last list. ↻ and new space folders find now.
-const REPOS_MS = 300_000;
 const LINKS_W = 18; // a row's ↗ button
 
 export default class Work extends View {
@@ -97,7 +94,7 @@ export default class Work extends View {
     this.nav = new Nav(); // folds, picked row and step, confirm (nav.js)
     this.by = null; // "repo" | "stage"; null: C.workGroupBy (once loaded)
     this.watched = new Map(); // space folder -> tries
-    this.repos = null; // the last localRepos(), and when: { list, at }
+    this.repos = new RepoCache(); // the local repos (polling.js)
     this.hovered = null; // the path of the row under the pointer
     this.linksOpen = null; // the path of the row whose ↗ menu is open
     this.watchTimer = false;
@@ -200,7 +197,8 @@ export default class Work extends View {
       if (row) this.openPR(row.w);
     } else if (c === "open-ticket") {
       if (row) this.openTicket(cx, row.w);
-    } else if (c === "refresh") this.refresh(cx, true);
+    } else if (c === "group") this.toggleGroupBy(cx);
+    else if (c === "refresh") this.refresh(cx, true);
     else if (c === "report") this.report(cx, rows, live);
     else if (c === "start") this.starts(cx);
     else console.error(`work: unknown command ${c}`);
@@ -245,16 +243,9 @@ export default class Work extends View {
 
   // The local repos, found again when forced, when a watched space folder is
   // still unknown (it may be a new clone), or every REPOS_MS.
-  async localRepos(force) {
+  localRepos(force) {
     const pending = [...this.watched.values()].some((t) => t < WATCH_TRIES);
-    if (
-      force ||
-      pending ||
-      !this.repos ||
-      Date.now() - this.repos.at >= REPOS_MS
-    )
-      this.repos = { list: await localRepos(), at: Date.now() };
-    return this.repos.list;
+    return this.repos.get(force || pending);
   }
 
   // The ticket and PR lookups that are due (WorkModel.lookups).

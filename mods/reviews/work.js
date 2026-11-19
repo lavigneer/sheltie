@@ -5,6 +5,7 @@
 import { C, REPO_FILE } from "./config.js";
 import { repoState, sameSlug } from "./git.js";
 import { basename, pool } from "./lib.js";
+import { PR_MS, RETRY_MS } from "./polling.js";
 import { prDetails } from "./prs.js";
 import { handleOf, ticketOfBranch, tracker, trackerOf } from "./tracker.js";
 import { Cache } from "./watch.js";
@@ -251,11 +252,11 @@ export function joinWork(
 
 // How often each source is asked again (WorkStore.refresh): PRs every 2 min,
 // 20 s while CI runs, a merge is pending or it may conflict; tickets and the
-// PRs their tracker links every 10 min; a failed lookup after a minute.
-export const PR_MS = 120_000;
+// PRs their tracker links every 10 min; a failed lookup after a minute
+// (PR_MS and RETRY_MS: polling.js).
+export { PR_MS, RETRY_MS };
 export const ACTIVE_PR_MS = 20_000;
 export const TICKET_MS = 600_000;
-export const RETRY_MS = 60_000;
 
 // How long a PR's details stay fresh: shorter while something you'd wait for
 // may change soon (conflicts, or not known yet: CI starts soon after a fix).

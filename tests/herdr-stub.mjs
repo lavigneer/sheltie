@@ -27,13 +27,25 @@ export const panes = () => live.panes;
 export const spaces = () => live.spaces;
 export const agents = () => live.agents;
 export const terminals = () => live.terminals;
-// Every run(method, params) call, for tests to check what was asked of Herdr.
-export const runs = [];
-export const run = (method, params) => {
-  runs.push([method, params]);
+// What the mod asked Herdr to do: run(name, args) and notify(note) calls.
+export const calls = { run: [], notify: [] };
+export const run = (name, args) => {
+  calls.run.push({ name, args });
   return null;
 };
-export const notify = () => "";
+export const notify = (note) => {
+  calls.notify.push(note);
+  return "";
+};
+// Every theme colour is its own name, so tests can tell which one was used.
+export const theme = () =>
+  new Proxy({}, { get: (_t, k) => (typeof k === "string" ? k : undefined) });
+// Commands (keys) for nextCommand(): a test sets where they come from.
+let commands = () => new Promise(() => {});
+export const nextCommand = () => commands();
+export const useCommands = (next) => {
+  commands = next;
+};
 const sharedDoc = new Map();
 export const shared = (key) => sharedDoc.get(key);
 export const setShared = (key, value) => {

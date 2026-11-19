@@ -159,6 +159,7 @@ demo/herdr-demo --stop             # --reset to start over
 ```sh
 npm run build      # src/ -> mods/ (commit the result)
 npm test           # unit tests against throwaway demos
+npm run coverage   # unit tests with coverage of every file in src
 npm run e2e        # drive real Herdr on the demo (Linux, Xvfb)
 npm run e2e:shots  # screenshots in e2e-results/shots/
 ```

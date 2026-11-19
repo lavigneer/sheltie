@@ -159,3 +159,7 @@ export const columnWidth = (texts, perChar, max) => {
   const longest = Math.max(0, ...texts.map((s) => (s ?? "").length));
   return longest ? Math.min(max, Math.ceil(longest * perChar)) : 0;
 };
+
+// An error's first line, for a notification.
+export const errorText = (e) =>
+  firstLine(`${e?.message ?? e}`) || "Something went wrong";

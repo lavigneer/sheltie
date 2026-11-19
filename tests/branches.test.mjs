@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, afterEach, test } from "node:test";
-import { live, runs } from "herdr";
+import { calls, live } from "herdr";
 import { C, useConfig } from "../src/config.js";
 import { runStep } from "../src/flow.js";
 import { moveKey, openUrl, pool } from "../src/lib.js";
@@ -40,9 +40,12 @@ const reply = (name, snippet) =>
 
 afterEach(() => {
   Object.assign(live, { panes: [], spaces: [], agents: [], terminals: [] });
-  runs.length = 0;
+  calls.run.length = 0;
   useConfig({});
 });
+
+// What was asked of Herdr, as [name, args] pairs.
+const runs = () => calls.run.map(({ name, args }) => [name, args]);
 
 const rejects = async (p) => {
   try {
@@ -149,7 +152,7 @@ test("an agent step the agent can't take: the send's error, no space selected", 
     await rejects(runStep("fix-ci", w, pr)),
     "couldn't reach the agent: no such terminal",
   );
-  assert.deepEqual(runs, []);
+  assert.deepEqual(runs(), []);
 });
 
 test("an agent step sent: selects the agent's space", async () => {
@@ -159,25 +162,25 @@ test("an agent step sent: selects the agent's space", async () => {
     agents: [{ space: "s1", address: "t7" }],
   });
   await runStep("fix-ci", w, pr);
-  assert.deepEqual(runs, [["space.select", { id: "s1" }]]);
+  assert.deepEqual(runs(), [["space.select", { id: "s1" }]]);
 });
 
 test("an agent step with no agent: a new tab in its space, else a new space", async () => {
   live.spaces = [{ id: "s1", folder: "/w", tabs: [] }];
   assert.equal(await runStep("fix-ci", w, pr), "sent /fix-ci");
-  assert.deepEqual(runs, [
+  assert.deepEqual(runs(), [
     [
       "tab.new",
       { space: "s1", folder: "/w", argv: C.agent.argv, task: "/fix-ci" },
     ],
   ]);
 
-  runs.length = 0;
+  calls.run.length = 0;
   live.spaces = [];
   await runStep("fix-ci", w, pr);
   await runStep("fix-ci", { ...w, path: "/x/y", handle: null }, pr);
   assert.deepEqual(
-    runs.map(([m, p]) => [m, p.name, p.folder]),
+    runs().map(([m, p]) => [m, p.name, p.folder]),
     [
       ["space.new", "#7", "/w"],
       ["space.new", "y", "/x/y"],
@@ -194,7 +197,7 @@ test("openSpaces: selects an open space, else starts one (with its task, if any)
     { name: "B", folder: "/b", task: "do b" },
     { name: "C", folder: "/c", task: null },
   ]);
-  assert.deepEqual(runs, [
+  assert.deepEqual(runs(), [
     ["space.select", { id: "s1" }],
     [
       "space.new",

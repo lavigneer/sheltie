@@ -130,3 +130,48 @@ test("WorkModel.setUsage: true only when a folder's cost moved", () => {
   assert.equal(m.setUsage([{ dir: "/wt/a", cost: 1 }]), false);
   assert.equal(m.setUsage([{ dir: "/wt/a", cost: 2 }]), true);
 });
+
+test("WorkModel.lookups: a linked PR found wakes before its lookup lands", async () => {
+  const { m, repo } = model(["issue-1"]);
+  tracker.linkedPRs = async () =>
+    new Map([["#1", [{ slug: "me/lib", number: 5 }]]]);
+  let land;
+  const landed = new Promise((r) => (land = r));
+  m.store.sources.prDetails = async () => {
+    await landed;
+    return null;
+  };
+  await m.scan([repo]);
+  // The ticket is known already: only the linked PR is new.
+  await m.store.tickets.refresh("#1", async () => ({ title: "One" }));
+  const was = m.revision;
+  let changes = 0;
+  const done = m.lookups(false, { changed: () => changes++ });
+  while (!m.store.linked.get("#1")) await new Promise((r) => setTimeout(r));
+  await new Promise((r) => setTimeout(r));
+  assert.equal(changes, 1);
+  assert.notEqual(m.revision, was);
+  land();
+  await done;
+  delete tracker.linkedPRs;
+});
+
+test("WorkModel.revision: moves with a scan, an adoption or a cost", async () => {
+  const { m, repos, state } = model(["spike"]);
+  await m.scan(repos);
+  let was = m.revision;
+  await m.scan(repos);
+  assert.equal(m.revision, was);
+  state.branches = ["spike", "issue-2"];
+  await m.scan(repos);
+  assert.notEqual(m.revision, was);
+  was = m.revision;
+  m.adopt("me/app#spike", { number: 3, title: "Fixes issue-7" });
+  assert.notEqual(m.revision, was);
+  was = m.revision;
+  m.setUsage([{ dir: "/wt/spike", cost: 1 }]);
+  assert.notEqual(m.revision, was);
+  was = m.revision;
+  m.setUsage([{ dir: "/wt/spike", cost: 1 }]);
+  assert.equal(m.revision, was);
+});
