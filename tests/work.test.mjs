@@ -326,3 +326,51 @@ test("joinWork: a branch naming no ticket, with no PR known, is no one's work", 
   const work = joinWork(null, [state([], ["fix-login"])]);
   assert.equal(work.size, 0);
 });
+
+// WorkStore.rowFor: a worktree's ticket, PR and work, resolved in one place.
+const named = { ...repo, tracker: { ...tracker, labelOf: (k) => k } };
+
+test("WorkStore.rowFor: a worktree takes its ticket's linked PR when its branch has none", async () => {
+  const linkedPr = pr(9, "issue-1");
+  const f = fakeStore({
+    prs: { 9: linkedPr },
+    linked: { "#1": [{ slug: "me/app", number: 9 }] },
+  });
+  await f.store.scan([named]);
+  await f.store.refresh(f.keys);
+  const w = { path: "/wt/1", repo: named, branch: "issue-1" };
+  const row = f.store.rowFor(w);
+  assert.equal(row.handle?.key, "#1");
+  assert.equal(row.pr, linkedPr);
+  assert.deepEqual(
+    row.items.map((i) => i.worktree),
+    ["/wt/1"],
+  );
+  assert.ok(f.store.ownsPR(w, "me/app#9", linkedPr));
+  assert.ok(!f.store.ownsPR(w, "me/app#8", pr(8, "other")));
+});
+
+test("WorkStore.adopt: a branch naming no ticket takes the one its PR names", async () => {
+  const p = { ...pr(4, "fix-login"), title: "Fix login (issue-3)" };
+  const store = new WorkStore({
+    sources: {
+      repoState: async () => ({
+        worktrees: [{ path: "/wt/x", branch: "fix-login" }],
+        branches: new Map([["fix-login", { local: true }]]),
+        mainBranch: "main",
+        linked: [],
+      }),
+      prDetails: async () => p,
+    },
+  });
+  await store.scan([named]);
+  const rows = [
+    { path: "/wt/x", repo: named, branch: "fix-login", handle: null },
+  ];
+  assert.equal(store.rowFor(rows[0]).handle, null);
+  await store.refresh(new Map(), { branches: rows });
+  assert.ok(!store.adopt(rows, "me/app#other"));
+  assert.ok(store.adopt(rows, "me/app#fix-login"));
+  assert.equal(rows[0].handle?.key, "#3");
+  assert.equal(store.rowFor(rows[0]).pr, p);
+});

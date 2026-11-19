@@ -75,16 +75,15 @@ import {
   START_MS,
   stillStarting,
 } from "./flow.js";
-import { hubExcept, localRepos, sameSlug } from "./git.js";
+import { hubExcept, localRepos } from "./git.js";
 import { basename, liveData, openUrl, spaceFor } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
 import { RenderStats } from "./renders.js";
 import { resize } from "./sidebar.js";
 import { drainRequests } from "./start.js";
-import { ticketOfWork } from "./tracker.js";
 import { costIn, usageGroups } from "./usage.js";
 import { serial } from "./watch.js";
-import { prRef, WorkStore } from "./work.js";
+import { WorkStore } from "./work.js";
 import { fit, NOTE_MS, workView } from "./work-rows.js";
 
 const GIT_MS = 30_000;
@@ -388,48 +387,19 @@ export default class Work extends View {
           hub: true,
           except: hubExcept(s.repo.path, s.linked),
         },
-        worktrees: s.worktrees.map((w) => ({
-          ...w,
-          repo: s.repo,
-          handle: ticketOfWork(
-            w.branch,
-            s.repo,
-            this.store.prEntry(s.repo, w.branch)?.value,
-          ),
-        })),
+        worktrees: s.worktrees.map((w) => {
+          const row = { ...w, repo: s.repo };
+          return { ...row, handle: this.store.rowFor(row).handle };
+        }),
       }));
     this.recheckWatched(cx);
     if (changed) this.wake(cx, "scan");
     this.details(cx, force);
   }
 
-  // A worktree's PR: the one from its branch, else one its ticket's tracker
-  // links with that branch (joinWork); null for a hub or none known.
+  // A worktree's PR (WorkStore.rowFor); null for a hub or none known.
   prOf(w) {
-    if (w.hub) return null;
-    const own = this.store.prEntry(w.repo, w.branch)?.value;
-    if (own || !w.handle) return own ?? null;
-    return (
-      this.store
-        .snapshot([w.handle.key])
-        .get(w.handle.key)
-        ?.find((i) => i.worktree === w.path)?.pr ?? null
-    );
-  }
-
-  // Gives worktrees whose branch names no ticket the one their PR (just
-  // looked up as `ref`) names, so a branch made outside the flow still shows
-  // and moves its ticket. True when one changed.
-  adopt(ref, pr) {
-    if (!pr || !this.groups) return false;
-    let changed = false;
-    for (const g of this.groups)
-      for (const w of g.worktrees)
-        if (!w.handle && g.repo.slug && prRef(g.repo.slug, w.branch) === ref) {
-          w.handle = ticketOfWork(w.branch, g.repo, pr);
-          changed ||= Boolean(w.handle);
-        }
-    return changed;
+    return w.hub ? null : this.store.rowFor(w).pr;
   }
 
   // The local repos, found again when forced, when a watched space folder is
@@ -475,14 +445,11 @@ export default class Work extends View {
       onTicket: () => notifyIfChanged(),
       onPR: (ref, was, entry, asked) => {
         const pr = entry.value;
-        let cleared = this.adopt(ref, pr);
+        let cleared =
+          Boolean(pr) &&
+          this.store.adopt(this.groups?.flatMap((g) => g.worktrees) ?? [], ref);
         for (const w of all) {
-          const mine =
-            (w.repo.slug && prRef(w.repo.slug, w.branch) === ref) ||
-            (pr &&
-              this.prOf(w)?.number === pr.number &&
-              sameSlug(this.prOf(w)?.slug, pr.slug));
-          if (!mine) continue;
+          if (!this.store.ownsPR(w, ref, pr)) continue;
           if (entry.state === "found" && was) this.tell(w, was, pr);
           const last = this.steps.get(w.path);
           if (last?.staleAt <= asked) {
@@ -574,9 +541,7 @@ export default class Work extends View {
     const pr = this.prOf(w);
     // The ticket's work everywhere: worktrees and branches here, and the PRs
     // its tracker links (in repos with no worktree here too).
-    const work = w.handle
-      ? (this.store.snapshot([w.handle.key]).get(w.handle.key) ?? [])
-      : [];
+    const work = w.handle ? this.store.rowFor(w).items : [];
     cx.spawn(async (cx) => {
       const who = this.who(w);
       try {

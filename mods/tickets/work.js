@@ -6,7 +6,7 @@ import { C, REPO_FILE } from "./config.js";
 import { repoState, sameSlug } from "./git.js";
 import { basename, pool } from "./lib.js";
 import { prDetails } from "./prs.js";
-import { keysInPR, tracker, trackerOf } from "./tracker.js";
+import { handleOf, ticketOfBranch, tracker, trackerOf } from "./tracker.js";
 import { Cache } from "./watch.js";
 
 /** @typedef {import("./types.js").Ticket} Ticket */
@@ -79,6 +79,25 @@ export function findRepo(target, repos) {
       slug: target,
     }
   );
+}
+
+// The keys a PR's text names, for a branch whose name names none (work made
+// outside the flow): those in its title, else those in its body.
+/** @param {import("./types.js").Tracker} t @param {{ title?: string, body?: string } | null | undefined} pr @param {string | null} slug @returns {string[]} */
+function keysInPR(t, pr, slug) {
+  if (!pr) return [];
+  const inTitle = t.keysIn(pr.title ?? "", slug);
+  return inTitle.length ? inTitle : t.keysIn(pr.body ?? "", slug);
+}
+
+// A ticket the branch in `repo` names, else one its PR `pr` names.
+/** @param {string | null} branch @param {Repo} repo @param {{ title?: string, body?: string } | null | undefined} pr @returns {import("./types.js").TicketHandle | null} */
+function ticketOfWork(branch, repo, pr) {
+  const own = ticketOfBranch(branch, repo);
+  if (own) return own;
+  const t = trackerOf(repo);
+  const key = keysInPR(t, pr, repo.slug ?? null)[0];
+  return key ? handleOf(t, key) : null;
 }
 
 // Where a PR lookup's result lives in joinWork's `details`: by branch or number.
@@ -363,6 +382,49 @@ export class WorkStore {
   /** @param {Repo} repo @param {string | null} branch */
   prEntry(repo, branch) {
     return repo.slug ? this.prs.get(prRef(repo.slug, branch)) : undefined;
+  }
+
+  // A worktree `w` ({ path, repo, branch }) resolved against what is known:
+  // `handle`, the ticket its branch names, else the one its PR names; `pr`,
+  // its branch's PR, else one its ticket's tracker links with that branch;
+  // `items`, all its ticket's work (empty without a ticket).
+  /**
+   * @param {{ path: string, repo: Repo, branch: string | null }} w
+   * @returns {{ handle: import("./types.js").TicketHandle | null, pr: PR | null, items: WorkItem[] }}
+   */
+  rowFor(w) {
+    const own = this.prEntry(w.repo, w.branch)?.value ?? null;
+    const handle = ticketOfWork(w.branch, w.repo, own);
+    const items = handle
+      ? (this.snapshot([handle.key]).get(handle.key) ?? [])
+      : [];
+    const pr = own ?? items.find((i) => i.worktree === w.path)?.pr ?? null;
+    return { handle, pr, items };
+  }
+
+  // Gives `rows` (worktrees with a `handle`) whose branch names no ticket the
+  // one their PR, just looked up as `ref`, names: a branch made outside the
+  // flow still shows and moves its ticket. True when one changed.
+  /** @param {{ path: string, repo: Repo, branch: string | null, handle: any }[]} rows @param {string} ref */
+  adopt(rows, ref) {
+    let changed = false;
+    for (const w of rows)
+      if (!w.handle && w.repo.slug && prRef(w.repo.slug, w.branch) === ref) {
+        w.handle = this.rowFor(w).handle;
+        changed ||= Boolean(w.handle);
+      }
+    return changed;
+  }
+
+  // Whether the PR lookup `ref` (which found `pr`) is worktree `w`'s PR: by
+  // its branch, or as the PR its row resolves to.
+  /** @param {{ path: string, repo: Repo, branch: string | null }} w @param {string} ref @param {PR | null | undefined} pr */
+  ownsPR(w, ref, pr) {
+    if (w.repo.slug && prRef(w.repo.slug, w.branch) === ref) return true;
+    const mine = pr && this.rowFor(w).pr;
+    return Boolean(
+      mine && mine.number === pr.number && sameSlug(mine.slug, pr.slug),
+    );
   }
 
   // Looks up what is due (everything, when forced) for `keys` (key ->
