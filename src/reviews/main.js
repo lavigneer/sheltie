@@ -12,6 +12,7 @@
 import { h_flex, v_flex } from "gpui-base";
 import { div, View } from "gpui-kit";
 import { setShared, theme } from "herdr";
+import { C } from "./config.js";
 import { openUrl } from "./lib.js";
 import { PR_MS } from "./polling.js";
 import { ReviewsModel } from "./reviews-model.js";
@@ -53,7 +54,7 @@ export default class Reviews extends View {
   render(_cx) {
     const t = theme();
     const rail = band(this.width, [["rail", RAIL]]) === "rail";
-    const { queue, failed } = this.model;
+    const { queue, failed, entry } = this.model;
     const message = (text, color) =>
       div().px(14).py(4).text_size(11).text_color(color).child(text);
 
