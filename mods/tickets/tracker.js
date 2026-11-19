@@ -60,24 +60,6 @@ export function ticketOfBranch(branch, repo, t = trackerOf(repo)) {
   return key ? handleOf(t, key) : null;
 }
 
-// The keys a PR's text names, for a branch whose name names none (work made
-// outside the flow): those in its title, else those in its body.
-/** @param {Tracker} t @param {{ title?: string, body?: string } | null | undefined} pr @param {string | null} slug @returns {string[]} */
-export function keysInPR(t, pr, slug) {
-  if (!pr) return [];
-  const inTitle = t.keysIn(pr.title ?? "", slug);
-  return inTitle.length ? inTitle : t.keysIn(pr.body ?? "", slug);
-}
-
-// A ticket the branch in `repo` names, else one its PR `pr` names.
-/** @param {string | null} branch @param {import("./types.js").Repo | null | undefined} repo @param {{ title?: string, body?: string } | null} [pr] @param {Tracker} [t] @returns {import("./types.js").TicketHandle | null} */
-export function ticketOfWork(branch, repo, pr = null, t = trackerOf(repo)) {
-  const own = ticketOfBranch(branch, repo, t);
-  if (own) return own;
-  const key = keysInPR(t, pr, repo?.slug ?? null)[0];
-  return key ? handleOf(t, key) : null;
-}
-
 // The handle for ticket `key` in tracker `t`.
 /** @param {Tracker} t @param {string} key @returns {import("./types.js").TicketHandle} */
 export const handleOf = (t, key) => ({
