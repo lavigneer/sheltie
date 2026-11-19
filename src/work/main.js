@@ -67,8 +67,6 @@ import {
 import { C, configReady } from "./config.js";
 import { recordFailure } from "./diagnostics.js";
 import {
-  agentIn,
-  agentSaysDone,
   prEvents,
   rowSteps,
   runStep,
@@ -76,10 +74,11 @@ import {
   stillStarting,
 } from "./flow.js";
 import { hubExcept, localRepos, sameSlug } from "./git.js";
-import { basename, liveData, openUrl, spaceFor } from "./lib.js";
+import { basename, openUrl } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
 import { RenderStats } from "./renders.js";
 import { resize } from "./sidebar.js";
+import { herdrSpaces } from "./spaces.js";
 import { drainRequests } from "./start.js";
 import { ticketOfWork } from "./tracker.js";
 import { costIn, usageGroups } from "./usage.js";
@@ -97,24 +96,13 @@ const WATCH_TRIES = 3;
 const REPOS_MS = 300_000;
 const LINKS_W = 18; // a row's ↗ button
 
-// A row's space: a hub's leaves out its worktrees' folders (see spaceFor).
-// `live`: the pass's snapshot (liveData).
-const spaceOf = (w, live) => spaceFor(w.path, w.except, live);
+// A row's space: a hub's leaves out its worktrees' folders (see spaceOf in
+// spaces.js). `live`: the pass's snapshot (herdrSpaces).
+const spaceOf = (w, live) => live.spaceOf(w.path, w.except);
 
 // What the rows show of the agents' costs (usage groups): each folder's.
 const costsKey = (usage) =>
   JSON.stringify(usage?.map((g) => [g.dir, g.cost]) ?? null);
-
-// spaceOf for one pass over the rows: one snapshot of Herdr's live data, and
-// each row's space found once (a row asks for it several times).
-function spacesNow(live = liveData()) {
-  const found = new Map();
-  return (w) => {
-    const key = `${w.path}\0${w.except?.join("\0") ?? ""}`;
-    if (!found.has(key)) found.set(key, spaceOf(w, live) ?? null);
-    return found.get(key);
-  };
-}
 
 export default class Work extends View {
   init(_props, cx) {
@@ -187,14 +175,15 @@ export default class Work extends View {
   // --- Keyboard ---------------------------------------------------------------
 
   // The groups shown: repos with worktrees, or whose hub has a space.
-  shownGroups(spaceIn = spacesNow()) {
+  // `live`: the pass's snapshot (herdrSpaces).
+  shownGroups(live) {
     return (this.groups ?? []).filter(
-      (g) => g.worktrees.length || spaceIn(g.hub),
+      (g) => g.worktrees.length || spaceOf(g.hub, live),
     );
   }
 
   // A row's next steps (rowSteps).
-  stepsOf(w, space, live = liveData()) {
+  stepsOf(w, space, live) {
     return rowSteps({
       hub: w.hub,
       pr: this.prOf(w),
@@ -202,7 +191,7 @@ export default class Work extends View {
       last: this.steps.get(w.path),
       status: space?.status,
       bornAt: this.starting.get(w.path),
-      agentDone: agentSaysDone(space, live),
+      agentDone: live.agentDone(space),
       repo: w.repo,
     });
   }
@@ -210,14 +199,13 @@ export default class Work extends View {
   // What the sidebar shows (work-rows.js), with the selected row and step:
   // the one the keys moved to while the same space stays focused, else the
   // focused space's row, else the first. Adds active: the focused space's id.
-  // `live`: the pass's snapshot of Herdr's live data (liveData), so a render
-  // reads it once rather than once per row.
-  view(live = liveData()) {
-    const active = live.local.find((s) => s.active)?.id ?? null;
+  // `live`: the pass's snapshot of Herdr's live data (herdrSpaces), so a
+  // render reads it once rather than once per row.
+  view(live) {
+    const active = live.active;
     const now = Date.now();
-    const spaceIn = spacesNow(live);
     const view = workView({
-      groups: this.shownGroups(spaceIn),
+      groups: this.shownGroups(live),
       by: this.groupBy(),
       folded: this.nav.folded,
       cap: C.workRepoRows ?? 0,
@@ -227,7 +215,7 @@ export default class Work extends View {
       confirm: this.nav.confirming(now),
       picked: this.nav.picked(active),
       now,
-      spaceOf: spaceIn,
+      spaceOf: (w) => spaceOf(w, live),
       stepsOf: (w, space) => this.stepsOf(w, space, live),
       prOf: (w) => this.prOf(w),
       ticketOf: (w) => this.tickets.get(w.handle.key),
@@ -249,7 +237,7 @@ export default class Work extends View {
   }
 
   command(cx, c) {
-    const live = liveData();
+    const live = herdrSpaces();
     const { rows, at, step, active } = this.view(live);
     const row = rows[at];
     if (["next", "prev", "step-next", "step-prev"].includes(c)) {
@@ -276,7 +264,7 @@ export default class Work extends View {
   // work.open-pr / work.open-ticket would open (prUrl / ticketUrl).
   // Everything but the ticket URLs is taken now, so a row's steps and its PR
   // always agree (a lookup may finish while the URLs are awaited).
-  report(cx, rows, live = liveData()) {
+  report(cx, rows, live) {
     const out = this.reportNow(rows, live);
     cx.spawn(async () => {
       const urls = await Promise.all(
@@ -297,7 +285,7 @@ export default class Work extends View {
 
   // The report of the view's rows (view()), without the ticket URLs (null
   // until report() adds them).
-  reportNow(rows, live = liveData()) {
+  reportNow(rows, live) {
     return {
       at: Date.now(),
       loaded: this.groups !== null,
@@ -318,8 +306,8 @@ export default class Work extends View {
           glyph: r.status.glyph,
           title: r.title,
           sub: r.sub,
-          agent: agentIn(r.space, live),
-          agentDone: agentSaysDone(r.space, live),
+          agent: live.agentIn(r.space),
+          agentDone: live.agentDone(r.space),
           cost: r.cost,
           selected: r.selected,
           step: r.selected
@@ -499,10 +487,10 @@ export default class Work extends View {
   // our worktrees (nor a main checkout) may be a new worktree: refresh now
   // rather than at the next poll, and recheck a few times in case it appears
   // a little later.
-  watchSpaces(cx, live = liveData()) {
+  watchSpaces(cx, live) {
     const now = Date.now();
     for (const [f, born] of this.starting)
-      if (!stillStarting(born, spaceFor(f, [], live)?.status, now))
+      if (!stillStarting(born, live.spaceOf(f)?.status, now))
         this.starting.delete(f);
     if (!this.groups) return;
     const known = this.knownFolders();
@@ -550,7 +538,7 @@ export default class Work extends View {
   // A notification when something you'd wait for changes on a PR.
   tell(w, was, pr) {
     const who = this.who(w);
-    const space = spaceOf(w);
+    const space = spaceOf(w, herdrSpaces());
     const action = space
       ? { name: "space.select", args: { id: space.id } }
       : undefined;
@@ -607,7 +595,7 @@ export default class Work extends View {
   }
 
   open(w) {
-    const space = spaceOf(w);
+    const space = spaceOf(w, herdrSpaces());
     if (space) run("space.select", { id: space.id });
     // A hub's space is for terminals and git, so it starts without an agent.
     else if (w.hub) run("space.new", { name: w.repo.name, folder: w.path });
@@ -697,8 +685,8 @@ export default class Work extends View {
   }
 
   draw(cx, start, trigger) {
-    // One read of Herdr's live data for the whole render (liveData).
-    const live = liveData();
+    // One read of Herdr's live data for the whole render (herdrSpaces).
+    const live = herdrSpaces();
     this.watchSpaces(cx, live);
     const t = theme();
     const view = this.view(live);

@@ -154,8 +154,7 @@ test("Work sidebar at scale: a scan or lookup that changes something makes the n
 
 test("Work sidebar at scale: one read of each kind of Herdr live data per render", async () => {
   const herdr = await import("herdr");
-  const { liveData, spaceFor } = await import("../src/lib.js");
-  const { agentSaysDone } = await import("../src/flow.js");
+  const { herdrSpaces } = await import("../src/spaces.js");
   const N = REPOS * WORKTREES;
   const paths = Array.from({ length: N }, (_, i) => `/ws/w${i}`);
   // Every row has a space (found by a pane's cwd, not its folder) whose agent
@@ -179,8 +178,8 @@ test("Work sidebar at scale: one read of each kind of Herdr live data per render
       },
     });
   try {
-    const live = liveData();
-    const done = paths.map((p) => agentSaysDone(spaceFor(p, [], live), live));
+    const live = herdrSpaces();
+    const done = paths.map((p) => live.agentDone(live.spaceOf(p)));
     assert.deepEqual(
       done,
       paths.map((_, i) => i % 2 === 0),

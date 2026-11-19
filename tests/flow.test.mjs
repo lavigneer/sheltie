@@ -8,7 +8,6 @@ import { afterEach, test } from "node:test";
 import { live } from "herdr";
 import { C, useConfig } from "../src/config.js";
 import {
-  agentSaysDone,
   nextSteps,
   prEvents,
   prLabel,
@@ -17,6 +16,7 @@ import {
   START_MS,
   toneKey,
 } from "../src/flow.js";
+import { fixtureSpaces } from "../src/spaces.js";
 
 const draft = {
   number: 7,
@@ -30,14 +30,22 @@ const draft = {
 const approved = { ...draft, draft: false, review: "APPROVED" };
 const ids = (pr, opts) => nextSteps(pr, opts).map((s) => s.id);
 
-// A space at /w whose agent (Claude Code, reporting its status) is t7, with
-// the given labels on its terminal.
-function agentAt(labels) {
-  live.spaces = [{ id: "s1", folder: "/w", tabs: [{ id: "tab1" }] }];
-  live.agents = [{ space: "s1", address: "t7" }];
-  live.terminals = [{ address: "t7", labels }];
-  return live.spaces[0];
-}
+// Herdr's data for a space at /w whose agent (Claude Code, reporting its
+// status) is t7, with the given labels on its terminal.
+const agentData = (labels) => ({
+  spaces: [{ id: "s1", folder: "/w", tabs: [{ id: "tab1" }] }],
+  agents: [{ space: "s1", address: "t7" }],
+  terminals: [{ address: "t7", labels }],
+});
+// The same, as the app's live data (for steps, which read Herdr themselves).
+const agentAt = (labels) => Object.assign(live, agentData(labels));
+// Whether the agent at /w says it's done, given its labels (and `extra`).
+const doneWith = (labels, extra = []) => {
+  const data = agentData(labels);
+  data.terminals.push(...extra);
+  const s = fixtureSpaces(data);
+  return s.agentDone(s.spaceOf("/w"));
+};
 
 afterEach(() => {
   Object.assign(live, { panes: [], spaces: [], agents: [], terminals: [] });
@@ -71,15 +79,16 @@ test('readyWhen "agent": Ready only once the agent says the PR is done', () => {
   assert.deepEqual(ids(approved), ["merge"]);
 });
 
-test("agentSaysDone: the space's agent terminal has pr=ready", () => {
-  assert.equal(agentSaysDone(null), false);
-  assert.equal(agentSaysDone(agentAt({})), false);
-  assert.equal(agentSaysDone(agentAt({ pr: "" })), false);
-  assert.equal(agentSaysDone(agentAt({ pr: "ready" })), true);
+test("agentDone: the space's agent terminal has pr=ready", () => {
+  assert.equal(fixtureSpaces({}).agentDone(null), false);
+  assert.equal(doneWith({}), false);
+  assert.equal(doneWith({ pr: "" }), false);
+  assert.equal(doneWith({ pr: "ready" }), true);
   // Another terminal's label doesn't count.
-  const space = agentAt({});
-  live.terminals.push({ address: "t8", labels: { pr: "ready" } });
-  assert.equal(agentSaysDone(space), false);
+  assert.equal(
+    doneWith({}, [{ address: "t8", labels: { pr: "ready" } }]),
+    false,
+  );
 });
 
 test("an agent step clears pr=ready before it's sent", async () => {

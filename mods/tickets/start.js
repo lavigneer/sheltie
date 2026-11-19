@@ -24,8 +24,9 @@ import {
   removeWorktree,
   reviewWorktrees,
 } from "./git.js";
-import { closeSpacesIn, fill, firstLine, spaceFor } from "./lib.js";
+import { closeSpacesIn, fill, firstLine } from "./lib.js";
 import { prDetails } from "./prs.js";
+import { herdrSpaces } from "./spaces.js";
 import {
   findRepo,
   listTickets,
@@ -128,8 +129,9 @@ export async function prepareStart(
 // with the agent (and its task, if any).
 /** @param {{ name: string, folder: string, task?: string | null }[]} list */
 export function openSpaces(list) {
+  const live = herdrSpaces();
   for (const { name, folder, task } of list) {
-    const open = spaceFor(folder);
+    const open = live.spaceOf(folder);
     if (open) run("space.select", { id: open.id });
     else
       run("space.new", {
