@@ -28,9 +28,16 @@ export const spaces = () => live.spaces;
 export const agents = () => live.agents;
 export const terminals = () => live.terminals;
 // What the mod asked Herdr to do: run(name, args) and notify(note) calls.
-export const calls = { run: [], notify: [] };
+export const calls = { run: [], notify: [], closed: [] };
 export const run = (name, args) => {
   calls.run.push({ name, args });
+  return null;
+};
+// The focused pane (live.focused), the mod's props and closing its overlay.
+export const focused = () => live.focused ?? null;
+export const props = () => ({ overlay: "overlay-1" });
+export const closeOverlay = (id) => {
+  calls.closed.push(id);
   return null;
 };
 export const notify = (note) => {

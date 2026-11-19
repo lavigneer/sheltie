@@ -23,6 +23,17 @@ export function find(node, id) {
   return null;
 }
 
+// The first element of `kind` in a tree (its recorded data), or null.
+export function findKind(node, kind) {
+  if (!node || typeof node !== "object") return null;
+  if (node.$.kind === kind) return node.$;
+  for (const c of node.$.children) {
+    const hit = findKind(c, kind);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 // Every element in a tree whose id starts with `prefix`.
 export function findAll(node, prefix, out = []) {
   if (!node || typeof node !== "object") return out;
@@ -38,6 +49,7 @@ export function findAll(node, prefix, out = []) {
 export function mount(ViewClass, props = {}) {
   calls.run.length = 0;
   calls.notify.length = 0;
+  calls.closed.length = 0;
   const queue = [];
   let waiting = null; // the mod's pending nextCommand()
   let asked = null; // resolves when the mod next asks for a command
@@ -55,6 +67,8 @@ export function mount(ViewClass, props = {}) {
       cx.notifies++;
     },
     stop_propagation() {},
+    focus_handle: () => ({}),
+    bind_keys() {},
     timer: {
       every() {},
       after(ms, f) {
@@ -88,6 +102,33 @@ export function mount(ViewClass, props = {}) {
         w(c);
       } else queue.push(c);
       return done;
+    },
+    // Types `value` into the mod's search box (the Input in a fresh render),
+    // replacing what was there, as its "change" event does.
+    type(value) {
+      const state = findKind(render(), "input")?.arg;
+      if (!state) throw new Error("no search box");
+      state.set_value(value);
+      state.handlers.change?.({}, cx);
+    },
+    // Enter in the search box.
+    submit() {
+      findKind(render(), "input").arg.handlers.submit?.({}, cx);
+    },
+    // A key down on the element with `id` (the root by default): key is
+    // gpui's name ("down", "backspace", "o"), with `modifiers`.
+    key(key, modifiers = {}, id = null) {
+      const tree = render();
+      const el = id ? find(tree, id) : tree.$;
+      el.on.key_down({ key, modifiers: { control: false, ...modifiers } }, cx);
+    },
+    // Runs the element's on_action(`name`) handler (a key binding's action).
+    action(name, id = null) {
+      const tree = render();
+      const el = id ? find(tree, id) : tree.$;
+      const f = el.on[`action:${name}`];
+      if (!f) throw new Error(`no action ${name}`);
+      f({}, cx);
     },
     // Clicks the element with `id` in a fresh render.
     click(id, handler = "click") {

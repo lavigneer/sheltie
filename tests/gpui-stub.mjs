@@ -18,6 +18,7 @@ export function element(kind, arg) {
           node.children.push(args[0]);
         else if (name === "children") node.children.push(...args[0]);
         else if (name === "when") return args[0] ? args[1](self) : self;
+        else if (name === "on_action") node.on[`action:${args[0]}`] = args[1];
         else if (name.startsWith("on_")) node.on[name.slice(3)] = args[0];
         else node.style[name] = args.length > 1 ? args : args[0];
         return self;
@@ -33,3 +34,28 @@ export const h_flex = () => element("h_flex");
 export const v_flex = () => element("v_flex");
 export const Popover = { new: (id) => element("popover").id(id) };
 export class View {}
+
+// A search box's state: its value, focus and "change"/"submit" handlers (a
+// test types and submits through these, as the user would).
+export const InputState = {
+  new(opts = {}) {
+    const on = {};
+    let value = "";
+    return {
+      opts,
+      on: (event, f) => {
+        on[event] = f;
+      },
+      handlers: on,
+      value: () => value,
+      set_value: (v) => {
+        value = v;
+      },
+      focused: false,
+      focus() {
+        this.focused = true;
+      },
+    };
+  },
+};
+export const Input = { new: (state) => element("input", state) };
