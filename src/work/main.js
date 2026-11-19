@@ -783,10 +783,13 @@ export default class Work extends View {
       ).child(st.glyph);
     };
 
-    // A step button: filled and accent-coloured, so it reads as clickable
-    // next to plain labels; outlined only while picked or confirming.
-    const button = (r, s) =>
-      div()
+    // A step button. The row's next step (primary) is the one solid thing in
+    // the sidebar: accent fill, background-coloured text. Later steps are
+    // quiet accent text. Picked: an accent outline; confirming: blocked.
+    const button = (r, s) => {
+      const solid = s.primary && !s.confirming;
+      const ink = s.confirming ? t.blocked : solid ? t.background : t.accent;
+      return div()
         .id(`work-step-${r.w.path}-${s.id}`)
         .flex_none()
         .h(18)
@@ -794,20 +797,30 @@ export default class Work extends View {
         .flex()
         .items_center()
         .rounded(5)
-        .bg(t.hover)
+        .bg(solid ? t.accent : s.confirming ? t.hover : "#00000000")
         .border_1()
         .border_color(
-          s.confirming ? t.blocked : s.chosen ? t.accent : "#00000000",
+          s.confirming
+            ? t.blocked
+            : s.chosen
+              ? solid
+                ? t.foreground
+                : t.accent
+              : "#00000000",
         )
         .text_size(11)
-        .text_color(s.confirming ? t.blocked : t.accent)
+        .when(solid, (el) => el.font_semibold())
+        .text_color(ink)
         .cursor_pointer()
-        .hover((st) => st.text_color(s.confirming ? t.blocked : t.foreground))
+        .hover((st) =>
+          solid ? st.bg(t.foreground) : st.bg(t.hover).text_color(ink),
+        )
         .on_click((_e, cx) => {
           cx.stop_propagation();
           this.step(cx, r.w, s);
         })
         .child(s.text);
+    };
 
     // What a link in a row's ↗ menu does.
     const follow = (w, id, cx) =>

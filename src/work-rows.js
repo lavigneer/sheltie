@@ -151,7 +151,7 @@ export function workView(input) {
         : null;
     const steps = running
       ? []
-      : input.stepsOf(w, space).map((s) => {
+      : input.stepsOf(w, space).map((s, i) => {
           const confirming = input.confirm?.id === `${w.path}:${s.id}`;
           // A step button's label is never cut: narrow, it takes its short
           // label (and the buttons wrap).
@@ -159,6 +159,9 @@ export function workView(input) {
           return {
             ...s,
             confirming,
+            // Steps come most pressing first (nextSteps): the first is the
+            // row's next step, drawn solid; the rest are quiet.
+            primary: i === 0,
             chosen: false,
             text: confirming
               ? `${name}? ${input.confirm.byKey ? "Press" : "Click"} again`
