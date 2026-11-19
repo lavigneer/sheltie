@@ -18,13 +18,17 @@ const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 
 // The fields prDetails reads, for a pullRequest in GitHub's GraphQL API. A
 // check's isRequired needs the PR's number, so it's only asked by number.
-const prFields = (required) => `number url title body state isDraft reviewDecision headRefName
+const prFields = (
+  required,
+) => `number url title body state isDraft reviewDecision headRefName
   headRefOid mergeable autoMergeRequest { enabledAt }
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
     nodes { ... on CheckRun { status conclusion${required ? " isRequired(pullRequestNumber: $number)" : ""} }
       ... on StatusContext { state${required ? " isRequired(pullRequestNumber: $number)" : ""} } } } } } } }
   reviewThreads(first: 100) { nodes { isResolved } }`;
-const byNumber = (required) => `query($owner: String!, $name: String!, $number: Int!) {
+const byNumber = (
+  required,
+) => `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { pullRequest(number: $number) { ${prFields(required)} } } }`;
 // Like `gh pr view <branch>`: the open PR from that branch, else the latest.
 const BY_BRANCH = `query($owner: String!, $name: String!, $branch: String!) {
