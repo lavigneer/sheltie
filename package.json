@@ -13,7 +13,8 @@
     "e2e:shots": "node --test tests/e2e/shots.mjs",
     "lint": "biome lint src scripts tests",
     "format": "biome check --write src scripts tests",
-    "ci:lint": "biome ci src scripts tests"
+    "ci:lint": "biome ci src scripts tests",
+    "coverage": "node scripts/coverage.mjs"
   },
   "engines": {
     "node": ">=22"
