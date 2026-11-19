@@ -11,6 +11,23 @@ import { REVIEW_COUNT, switcherTabs } from "./switcher.js";
 export default class Layouts extends View {
   render(_cx) {
     const t = theme();
+    // The count pill: tinted ink on the hover fill, so it reads on both the
+    // active tab (whose fill is also t.hover, hence the border) and the idle one.
+    const badge = (b) =>
+      div()
+        .flex_none()
+        .px(5)
+        .h(16)
+        .flex()
+        .items_center()
+        .rounded_full()
+        .border_1()
+        .border_color(t.border ?? t.dim)
+        .bg(t.background)
+        .text_size(10)
+        .font_semibold()
+        .text_color(t[b.tone] ?? t.dim)
+        .child(b.text);
     const tab = (x) =>
       div()
         .id(`layout-${x.layout}`)
@@ -20,8 +37,8 @@ export default class Layouts extends View {
         .flex()
         .items_center()
         .justify_center()
+        .gap(5)
         .rounded(5)
-        .truncate()
         .text_size(12)
         .text_color(x.active ? t.foreground : t.dim)
         .when(x.active, (el) => el.bg(t.hover).font_semibold())
@@ -30,7 +47,8 @@ export default class Layouts extends View {
         .on_click(() => {
           if (!x.active) run("layout.switch", { name: x.layout });
         })
-        .child(x.label);
+        .child(div().min_w(0).truncate().child(x.label))
+        .when(Boolean(x.badge), (el) => el.child(badge(x.badge)));
     return h_flex()
       .id("layouts")
       .size_full()

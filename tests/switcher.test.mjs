@@ -4,11 +4,21 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { switcherTabs } from "../src/switcher.js";
 
-const view = (tabs) => tabs.map((t) => `${t.active ? "*" : ""}${t.label}`);
+const view = (tabs) =>
+  tabs.map(
+    (t) =>
+      `${t.active ? "*" : ""}${t.label}${t.badge ? ` [${t.badge.text}:${t.badge.tone}]` : ""}`,
+  );
 
 test("the current prop picks the active tab", () => {
-  assert.deepEqual(view(switcherTabs("work", 2)), ["*Work", "Reviews 2"]);
-  assert.deepEqual(view(switcherTabs("review", 2)), ["Work", "*Reviews 2"]);
+  assert.deepEqual(view(switcherTabs("work", 2)), [
+    "*Work",
+    "Reviews [2:accent]",
+  ]);
+  assert.deepEqual(view(switcherTabs("review", 2)), [
+    "Work",
+    "*Reviews [2:accent]",
+  ]);
   assert.deepEqual(
     switcherTabs("review").map((t) => t.layout),
     ["work", "review"],
@@ -18,5 +28,5 @@ test("the current prop picks the active tab", () => {
 test("no count before the queue has loaded; zero once it has", () => {
   assert.deepEqual(view(switcherTabs("work", null)), ["*Work", "Reviews"]);
   assert.deepEqual(view(switcherTabs("work", undefined)), ["*Work", "Reviews"]);
-  assert.deepEqual(view(switcherTabs("work", 0)), ["*Work", "Reviews 0"]);
+  assert.deepEqual(view(switcherTabs("work", 0)), ["*Work", "Reviews [0:dim]"]);
 });
