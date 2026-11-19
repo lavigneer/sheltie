@@ -33,3 +33,33 @@ export const h_flex = () => element("h_flex");
 export const v_flex = () => element("v_flex");
 export const Popover = { new: (id) => element("popover").id(id) };
 export class View {}
+
+// A text input's state. Tests type into it (`type`) and press Enter
+// (`submit`), which fire the listeners the mod set with `on`.
+export const InputState = {
+  new(opts = {}) {
+    let text = "";
+    const on = {};
+    const cx = { notify() {}, stop_propagation() {} };
+    return {
+      opts,
+      focused: false,
+      value: () => text,
+      focus() {
+        this.focused = true;
+      },
+      on(event, f) {
+        on[event] = f;
+      },
+      type(s) {
+        text = s;
+        on.change?.({}, cx);
+      },
+      submit() {
+        on.submit?.({}, cx);
+      },
+    };
+  },
+};
+// The input drawn for an InputState: its `arg` is that state.
+export const Input = { new: (state) => element("input", state) };

@@ -27,10 +27,17 @@ export const panes = () => live.panes;
 export const spaces = () => live.spaces;
 export const agents = () => live.agents;
 export const terminals = () => live.terminals;
-// What the mod asked Herdr to do: run(name, args) and notify(note) calls.
-export const calls = { run: [], notify: [] };
+// What the mod asked Herdr to do: run(name, args), notify(note) and
+// closeOverlay(id) calls.
+export const calls = { run: [], notify: [], closeOverlay: [] };
 export const run = (name, args) => {
   calls.run.push({ name, args });
+  return null;
+};
+// The overlay the mod was opened in, and the ones it closed.
+export const props = () => ({ overlay: "overlay-1" });
+export const closeOverlay = (id) => {
+  calls.closeOverlay.push(id);
   return null;
 };
 export const notify = (note) => {

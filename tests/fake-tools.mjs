@@ -10,7 +10,9 @@ import path from "node:path";
 
 // `gh`: logs each call as a JSON line to calls.log and answers from
 // state.json: { issues: { "<n>": { title, state } }, prs: { "<branch>": node } }
-// where node is a GraphQL pullRequest node (see prFields in prs.js).
+// where node is a GraphQL pullRequest node (see prFields in prs.js), and
+// reviews: [searchNode] for the review-request search (see reviewNode;
+// searchFails makes it fail).
 const GH = `#!/usr/bin/env node
 const fs = require("node:fs");
 const dir = ${"__DIR__"};
@@ -19,12 +21,17 @@ fs.appendFileSync(dir + "/calls.log", JSON.stringify(args) + "\\n");
 const st = JSON.parse(fs.readFileSync(dir + "/state.json", "utf8"));
 const arg = (p) => args.map((a) => a.match(p)).find(Boolean)?.[1];
 const out = (v) => process.stdout.write(JSON.stringify(v));
-if (args[0] === "api" && args[1] === "graphql") {
+if (args[0] === "api" && args[1] === "graphql" && arg(/^q=(.*)$/s) !== undefined) {
+  if (st.searchFails) { process.stderr.write("HTTP 502\\n"); process.exit(1); }
+  out({ data: { viewer: { login: "me" }, search: { nodes: st.reviews ?? [] } } });
+} else if (args[0] === "api" && args[1] === "graphql") {
   const branch = arg(/^branch=(.*)$/s), number = arg(/^number=(\\d+)$/);
   const prs = Object.values(st.prs ?? {});
   if (branch !== undefined)
     out({ data: { repository: { pullRequests: { nodes: st.prs?.[branch] ? [st.prs[branch]] : [] } } } });
   else out({ data: { repository: { pullRequest: prs.find((p) => String(p.number) === number) ?? null } } });
+} else if (args[0] === "pr" && args[1] === "checkout") {
+  // Succeeds in place: the review worktree stays on its detached HEAD.
 } else if (args[0] === "issue" && args[1] === "view") {
   const i = st.issues?.[args[2]];
   if (!i) { process.stderr.write("GraphQL: Could not resolve to an issue\\n"); process.exit(1); }
@@ -116,5 +123,21 @@ export const prNode = (number, branch, over = {}) => ({
   autoMergeRequest: null,
   commits: { nodes: [] },
   reviewThreads: { nodes: [] },
+  ...over,
+});
+
+// A review-request search node for fake gh's state.reviews (see reviewQueue in
+// prs.js): asked of "me" at `requestedAt`.
+export const reviewNode = (slug, number, over = {}) => ({
+  number,
+  url: `https://github.com/${slug}/pull/${number}`,
+  title: `PR ${number}`,
+  author: { login: "alice" },
+  createdAt: "2026-01-01T00:00:00Z",
+  additions: 10,
+  deletions: 2,
+  repository: { nameWithOwner: slug },
+  timelineItems: { nodes: [] },
+  latestReviews: { nodes: [] },
   ...over,
 });

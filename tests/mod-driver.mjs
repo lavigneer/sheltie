@@ -38,6 +38,7 @@ export function findAll(node, prefix, out = []) {
 export function mount(ViewClass, props = {}) {
   calls.run.length = 0;
   calls.notify.length = 0;
+  calls.closeOverlay.length = 0;
   const queue = [];
   let waiting = null; // the mod's pending nextCommand()
   let asked = null; // resolves when the mod next asks for a command
@@ -55,6 +56,7 @@ export function mount(ViewClass, props = {}) {
       cx.notifies++;
     },
     stop_propagation() {},
+    focus_handle: () => ({}),
     timer: {
       every() {},
       after(ms, f) {
@@ -95,6 +97,28 @@ export function mount(ViewClass, props = {}) {
       if (!el) throw new Error(`nothing to click: ${id}`);
       if (!el.on[handler]) throw new Error(`${id} has no on_${handler}`);
       el.on[handler]({}, cx);
+    },
+    // The state of the first text input it draws (gpui-stub.mjs InputState).
+    input() {
+      const walk = (n) => {
+        if (!n || typeof n !== "object") return null;
+        if (n.$.kind === "input") return n.$.arg;
+        for (const c of n.$.children) {
+          const hit = walk(c);
+          if (hit) return hit;
+        }
+        return null;
+      };
+      const state = walk(render());
+      if (!state) throw new Error("no text input drawn");
+      return state;
+    },
+    // Sends key `key` (e.g. "down", or "n" with { control: true }) to the
+    // element with `id`'s on_key_down.
+    key(id, key, modifiers = {}) {
+      const el = find(render(), id);
+      if (!el?.on.key_down) throw new Error(`${id} has no on_key_down`);
+      el.on.key_down({ key, modifiers }, cx);
     },
     // Waits until `test(d)` holds (rendering each try), else fails with `what`.
     async until(test, what = "condition") {
