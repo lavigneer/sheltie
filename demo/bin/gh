@@ -134,9 +134,12 @@ case "${1:-} ${2:-}" in
      autoMergeRequest: (if .autoMerge then {enabledAt: "now"} else null end),
      mergeable: (.mergeable // "MERGEABLE"),
      commits: {nodes: [{commit: {statusCheckRollup:
-       (if .checks == null then null
-        elif .checks == "IN_PROGRESS" then {contexts: {nodes: [{status: .checks, conclusion: null}]}}
-        else {contexts: {nodes: [{conclusion: .checks}]}} end)}}]},
+       # .optionalChecks: conclusions of checks not required for merging.
+       ((if .checks == null then []
+         elif .checks == "IN_PROGRESS" then [{status: .checks, conclusion: null, isRequired: true}]
+         else [{conclusion: .checks, isRequired: true}] end)
+        + ((.optionalChecks // []) | map({conclusion: ., isRequired: false}))
+        | if length == 0 then null else {contexts: {nodes: .}} end)}}]},
      reviewThreads: {nodes: ([range(.unresolved // 0)] | map({isResolved: false}))}} end) as $pr
     | {data: {repository: (if $by == "number" then {pullRequest: $pr}
                            else {pullRequests: {nodes: [$pr // empty]}} end)}}

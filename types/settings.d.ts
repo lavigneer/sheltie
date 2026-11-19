@@ -108,6 +108,12 @@ export interface Settings {
    * asking you by name.
    */
   reviewSearch: string;
+  /**
+   * A PR's checks (in the Work and Reviews sidebars, and for Ready and
+   * Merge) count only those required for merging by the base branch's
+   * protection rules, so a failing optional check doesn't hold it up.
+   */
+  requiredChecksOnly: boolean;
   agent: {
     /**
      * The agent started in a ticket's space; its first message is the last

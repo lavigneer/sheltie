@@ -219,6 +219,11 @@
       "description": "The GitHub search that finds the Reviews sidebar's PRs (only those in your local repos are shown). The default includes requests to a team you're on; \"is:pr is:open archived:false user-review-requested:@me\" shows only those asking you by name.",
       "default": "is:pr is:open archived:false review-requested:@me"
     },
+    "requiredChecksOnly": {
+      "type": "boolean",
+      "description": "A PR's checks (in the Work and Reviews sidebars, and for Ready and Merge) count only those required for merging by the base branch's protection rules, so a failing optional check doesn't hold it up.",
+      "default": false
+    },
     "agent": {
       "type": "object",
       "properties": {
