@@ -91,11 +91,10 @@ function keysInPR(t, pr, slug) {
 }
 
 // A ticket the branch in `repo` names, else one its PR `pr` names.
-/** @param {string | null} branch @param {Repo} repo @param {{ title?: string, body?: string } | null | undefined} pr @returns {import("./types.js").TicketHandle | null} */
-function ticketOfWork(branch, repo, pr) {
-  const own = ticketOfBranch(branch, repo);
+/** @param {string | null} branch @param {Repo} repo @param {{ title?: string, body?: string } | null | undefined} pr @param {import("./types.js").Tracker} [t] @returns {import("./types.js").TicketHandle | null} */
+function ticketOfWork(branch, repo, pr, t = trackerOf(repo)) {
+  const own = ticketOfBranch(branch, repo, t);
   if (own) return own;
-  const t = trackerOf(repo);
   const key = keysInPR(t, pr, repo.slug ?? null)[0];
   return key ? handleOf(t, key) : null;
 }
@@ -387,30 +386,48 @@ export class WorkStore {
   // A worktree `w` ({ path, repo, branch }) resolved against what is known:
   // `handle`, the ticket its branch names, else the one its PR names; `pr`,
   // its branch's PR, else one its ticket's tracker links with that branch;
-  // `items`, all its ticket's work (empty without a ticket).
+  // `items`, all its ticket's work (empty without a ticket); `pr` and
+  // `items` are worked out when read. A row that
+  // carries a `handle` (resolved by a scan, or adopt) keeps it, so a render
+  // doesn't ask the tracker again. `t`: the repo's tracker, when the caller
+  // already has it (a scan asks once per repo).
   /**
-   * @param {{ path: string, repo: Repo, branch: string | null }} w
+   * @param {{ path: string, repo: Repo, branch: string | null, handle?: import("./types.js").TicketHandle | null }} w
+   * @param {import("./types.js").Tracker} [t]
    * @returns {{ handle: import("./types.js").TicketHandle | null, pr: PR | null, items: WorkItem[] }}
    */
-  rowFor(w) {
+  rowFor(w, t) {
     const own = this.prEntry(w.repo, w.branch)?.value ?? null;
-    const handle = ticketOfWork(w.branch, w.repo, own);
-    const items = handle
-      ? (this.snapshot([handle.key]).get(handle.key) ?? [])
-      : [];
-    const pr = own ?? items.find((i) => i.worktree === w.path)?.pr ?? null;
-    return { handle, pr, items };
+    const handle =
+      w.handle !== undefined
+        ? w.handle
+        : ticketOfWork(w.branch, w.repo, own, t);
+    // `pr` and `items` read the join (snapshot) only when asked: a scan
+    // wants just the handle.
+    const store = this;
+    return {
+      handle,
+      get items() {
+        return handle
+          ? (store.snapshot([handle.key]).get(handle.key) ?? [])
+          : [];
+      },
+      get pr() {
+        return own ?? this.items.find((i) => i.worktree === w.path)?.pr ?? null;
+      },
+    };
   }
 
   // Gives `rows` (worktrees with a `handle`) whose branch names no ticket the
-  // one their PR, just looked up as `ref`, names: a branch made outside the
+  // one PR `pr`, just looked up as `ref`, names: a branch made outside the
   // flow still shows and moves its ticket. True when one changed.
-  /** @param {{ path: string, repo: Repo, branch: string | null, handle: any }[]} rows @param {string} ref */
-  adopt(rows, ref) {
+  /** @param {{ path: string, repo: Repo, branch: string | null, handle: any }[]} rows @param {string} ref @param {PR | null | undefined} pr */
+  adopt(rows, ref, pr) {
+    if (!pr) return false;
     let changed = false;
     for (const w of rows)
       if (!w.handle && w.repo.slug && prRef(w.repo.slug, w.branch) === ref) {
-        w.handle = this.rowFor(w).handle;
+        w.handle = ticketOfWork(w.branch, w.repo, pr);
         changed ||= Boolean(w.handle);
       }
     return changed;

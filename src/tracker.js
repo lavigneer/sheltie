@@ -53,9 +53,9 @@ export const trackerOf = (repo) => repo?.tracker ?? tracker();
 
 // A ticket a branch in `repo` names, resolved once: its key and display label
 // with the tracker's url/move bound to it. Null when the branch names none.
-/** @param {string | null} branch @param {import("./types.js").Repo | null | undefined} repo @returns {import("./types.js").TicketHandle | null} */
-export function ticketOfBranch(branch, repo) {
-  const t = trackerOf(repo);
+// `t`: the repo's tracker, when already known (a scan resolves it once per repo).
+/** @param {string | null} branch @param {import("./types.js").Repo | null | undefined} repo @param {Tracker} [t] @returns {import("./types.js").TicketHandle | null} */
+export function ticketOfBranch(branch, repo, t = trackerOf(repo)) {
   const key = t.keysIn(branch, repo?.slug ?? null)[0];
   return key ? handleOf(t, key) : null;
 }

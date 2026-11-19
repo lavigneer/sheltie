@@ -369,8 +369,9 @@ test("WorkStore.adopt: a branch naming no ticket takes the one its PR names", as
   ];
   assert.equal(store.rowFor(rows[0]).handle, null);
   await store.refresh(new Map(), { branches: rows });
-  assert.ok(!store.adopt(rows, "me/app#other"));
-  assert.ok(store.adopt(rows, "me/app#fix-login"));
+  assert.ok(!store.adopt(rows, "me/app#other", p));
+  assert.ok(!store.adopt(rows, "me/app#fix-login", null));
+  assert.ok(store.adopt(rows, "me/app#fix-login", p));
   assert.equal(rows[0].handle?.key, "#3");
   assert.equal(store.rowFor(rows[0]).pr, p);
 });
