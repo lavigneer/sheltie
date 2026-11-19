@@ -108,22 +108,22 @@ export default class Usage extends View {
     const amount = (s) =>
       s.unpriced && !s.cost ? "no price" : dollars(s.cost);
 
-    const line = (id, label, s, strong = false, tip = null) =>
+    // Today leads: its cost large, in the foreground, so it reads first.
+    const lead = (s) =>
       h_flex()
-        .id(id)
-        .when(Boolean(tip), (el) => el.tooltip(tip))
+        .id("usage-today")
         .px(14)
-        .h(20)
+        .pt(4)
         .gap(8)
-        .items_center()
-        .text_size(12.5)
+        .items_end()
         .child(
           div()
             .flex_1()
             .min_w(0)
             .truncate()
-            .text_color(strong ? t.foreground : t.muted)
-            .child(label),
+            .text_size(12.5)
+            .text_color(t.muted)
+            .child("Today"),
         )
         .child(
           div()
@@ -134,12 +134,40 @@ export default class Usage extends View {
         )
         .child(
           div()
+            .flex_none()
+            .text_size(18)
+            .font_semibold()
+            .text_color(t.foreground)
+            .child(amount(s)),
+        );
+
+    // 7 and 30 days sit under Today as quieter context.
+    const line = (id, label, s, tip = null) =>
+      h_flex()
+        .id(id)
+        .when(Boolean(tip), (el) => el.tooltip(tip))
+        .px(14)
+        .h(18)
+        .gap(8)
+        .items_center()
+        .text_size(11.5)
+        .child(
+          div().flex_1().min_w(0).truncate().text_color(t.dim).child(label),
+        )
+        .child(
+          div()
+            .flex_none()
+            .text_size(10.5)
+            .text_color(t.dim)
+            .child(tokenCount(s.tokens)),
+        )
+        .child(
+          div()
             .w(52)
             .flex_none()
             .flex()
             .justify_end()
-            .text_color(t.foreground)
-            .when(strong, (d) => d.font_semibold())
+            .text_color(t.muted)
             .child(amount(s)),
         );
 
@@ -323,7 +351,7 @@ export default class Usage extends View {
                     ),
                   ),
               )
-              .child(line("usage-today", "Today", today, true))
+              .child(lead(today))
               .child(line("usage-7", "7 days", total(since(dayAgo(6)))))
               // The breakdown by agent and model is the 30 days' tooltip,
               // so the block fits the sidebar.
@@ -332,7 +360,6 @@ export default class Usage extends View {
                   "usage-30",
                   "30 days",
                   total(recent),
-                  false,
                   topModels.length
                     ? `By model:\n${topModels.join("\n")}`
                     : null,
