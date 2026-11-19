@@ -178,6 +178,15 @@ test("selection: the focused space's row, picked steps clamp, confirming", () =>
   assert.equal(c.steps[1].text, "Finish? Press again");
 });
 
+test("steps: only the first, the most pressing, is primary", () => {
+  const steps = view().rows[1].steps;
+  assert.ok(steps.length > 1);
+  assert.deepEqual(
+    steps.map((s) => s.primary),
+    steps.map((_s, i) => i === 0),
+  );
+});
+
 test("links: only what applies; a branch that isn't a ticket shows the branch", () => {
   const r = view({ prs: { [one]: PR } }).rows[1];
   assert.deepEqual(
