@@ -1,6 +1,7 @@
 // Reviews: the PRs in your repos (localRepos) that request your review, oldest
 // request first (prs.js reviewQueue). A row: repo, #number, title, author,
-// how long it has waited, and its size. Click to start the review: the PR
+// how long it has waited (the row's loud element, toned by the wait), and
+// its size; reviews-rows.js decides what a row shows. Click to start the review: the PR
 // checked out in a review worktree, in its own space with agent.reviewTask
 // (start.js prepareReview); ↗ opens it in the browser. A row with a review
 // worktree has ✓ (Done reviewing: start.js finishReview); reviewed PRs keep a
@@ -16,19 +17,12 @@ import { C } from "./config.js";
 import { openUrl } from "./lib.js";
 import { PR_MS } from "./polling.js";
 import { ReviewsModel } from "./reviews-model.js";
-import { band, RAIL, resize } from "./sidebar.js";
+import { fit, reviewsView } from "./reviews-rows.js";
+import { resize } from "./sidebar.js";
 import { REVIEW_COUNT } from "./switcher.js";
 import { serial } from "./watch.js";
 
-// "3d", "5h", "12m": how long ago `iso` was.
-export function age(iso, now = Date.now()) {
-  const m = Math.max(0, Math.floor((now - Date.parse(iso)) / 60_000));
-  return m >= 1440
-    ? `${Math.floor(m / 1440)}d`
-    : m >= 60
-      ? `${Math.floor(m / 60)}h`
-      : `${m}m`;
-}
+export { age } from "./reviews-rows.js";
 
 export default class Reviews extends View {
   init(_props, cx) {
@@ -53,104 +47,101 @@ export default class Reviews extends View {
 
   render(_cx) {
     const t = theme();
-    const rail = band(this.width, [["rail", RAIL]]) === "rail";
     const { queue, failed, entry } = this.model;
+    const view = reviewsView({
+      queue,
+      reviewed: this.model.reviewed,
+      worktreeOf: (r) => this.model.worktreeOf(r),
+      width: this.width,
+    });
+    const rail = view.span === "rail";
+    const tone = (name) => t[name] ?? t.accent;
     const message = (text, color) =>
       div().px(14).py(4).text_size(11).text_color(color).child(text);
+    const button = (id, tip, glyph, onClick) =>
+      div()
+        .id(id)
+        .flex_none()
+        .px(3)
+        .rounded(4)
+        .text_size(11)
+        .text_color(t.dim)
+        .hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .tooltip(tip)
+        .on_click((_e, cx) => {
+          cx.stop_propagation();
+          onClick(cx);
+        })
+        .child(glyph);
 
-    const row = (r) =>
-      h_flex()
-        .id(`review-${r.slug}-${r.number}`)
+    // Two lines: the title and its age; then the dim sub-line and the buttons.
+    const row = (v) => {
+      const r = v.pr;
+      return v_flex()
+        .id(`review-${v.key}`)
         .px(14)
-        .h(20)
-        .gap(6)
-        .items_center()
-        .text_size(12.5)
+        .py(3)
         .cursor_pointer()
         .hover((s) => s.bg(t.hover))
-        .tooltip(
-          `${r.slug}#${r.number} by ${r.author}\n${r.title}\nClick to start reviewing`,
-        )
+        .tooltip(v.tip)
         .on_click((_e, cx) => this.start(cx, r))
         .child(
-          div()
-            .flex_none()
-            .text_color(t.dim)
-            .child(`${r.slug.split("/")[1]} #${r.number}`),
-        )
-        .child(
-          div()
-            .flex_1()
-            .min_w(0)
-            .truncate()
-            .text_color(t.foreground)
-            .child(r.title),
-        )
-        .child(
-          div().flex_none().text_size(11).text_color(t.dim).child(r.author),
-        )
-        .child(
-          div()
-            .flex_none()
-            .text_size(11)
-            .text_color(t.muted)
-            .child(r.requestedAt ? age(r.requestedAt) : ""),
-        )
-        .child(
-          div()
-            .flex_none()
-            .text_size(11)
-            .text_color(t.dim)
+          h_flex()
+            .gap(6)
+            .items_center()
             .child(
-              r.additions == null ? "" : `+${r.additions} −${r.deletions}`,
+              div()
+                .flex_1()
+                .min_w(0)
+                .truncate()
+                .text_size(12.5)
+                .text_color(v.reviewed ? t.dim : t.foreground)
+                .child(v.title),
+            )
+            .child(
+              div()
+                .flex_none()
+                .text_size(11)
+                .text_color(tone(v.ageTone))
+                .when(!v.reviewed && v.ageTone !== "dim", (d) =>
+                  d.font_semibold(),
+                )
+                .child(v.age),
             ),
         )
         .child(
-          div()
-            .id(`review-open-${r.slug}-${r.number}`)
-            .flex_none()
-            .px(3)
-            .rounded(4)
-            .text_size(11)
-            .text_color(t.dim)
-            .hover((s) => s.bg(t.hover).text_color(t.foreground))
-            .tooltip("Open in browser")
-            .on_click((_e, cx) => {
-              cx.stop_propagation();
-              openUrl(r.url);
-            })
-            .child("↗"),
-        )
-        .when(Boolean(this.model.worktreeOf(r)), (el) =>
-          el.child(
-            div()
-              .id(`review-done-${r.slug}-${r.number}`)
-              .flex_none()
-              .px(3)
-              .rounded(4)
-              .text_size(11)
-              .text_color(t.dim)
-              .hover((s) => s.bg(t.hover).text_color(t.foreground))
-              .tooltip("Done reviewing: close its space, remove the worktree")
-              .on_click((_e, cx) => {
-                cx.stop_propagation();
-                const w = this.model.worktreeOf(r);
-                if (w) cx.spawn((cx) => this.doneReviewing(w, cx));
-              })
-              .child("✓"),
-          ),
+          h_flex()
+            .gap(6)
+            .items_center()
+            .child(
+              div()
+                .flex_1()
+                .min_w(0)
+                .truncate()
+                .text_size(11)
+                .text_color(t.dim)
+                .child(v.sub),
+            )
+            .child(
+              button(`review-open-${v.key}`, "Open in browser", "↗", () =>
+                openUrl(r.url),
+              ),
+            )
+            .when(v.done, (el) =>
+              el.child(
+                button(
+                  `review-done-${v.key}`,
+                  "Done reviewing: close its space, remove the worktree",
+                  "✓",
+                  (cx) => {
+                    const w = this.model.worktreeOf(r);
+                    if (w) cx.spawn((cx) => this.doneReviewing(w, cx));
+                  },
+                ),
+              ),
+            ),
         );
-    // A reviewed PR whose worktree is still here.
-    const reviewedRow = (w) =>
-      row({
-        slug: w.slug,
-        number: w.number,
-        url: w.url || `https://github.com/${w.slug}/pull/${w.number}`,
-        title: w.title || "(reviewed)",
-        author: "reviewed",
-        requestedAt: null,
-        additions: null,
-      });
+    };
 
     const header = h_flex()
       .h(30)
@@ -194,8 +185,7 @@ export default class Reviews extends View {
         ? message("Looking for review requests…", t.dim)
         : v_flex()
             .pb(6)
-            .children(queue.map(row))
-            .children(this.model.reviewed.map(reviewedRow))
+            .children(view.rows.map(row))
             .when(!queue.length && !failed, (el) =>
               el.child(message("Nothing awaits your review", t.dim)),
             )
@@ -208,8 +198,7 @@ export default class Reviews extends View {
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        if (resize(this, size.width, (w) => band(w, [["rail", RAIL]])))
-          cx.notify();
+        if (resize(this, size.width, fit)) cx.notify();
       })
       .child(
         rail

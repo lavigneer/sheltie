@@ -47,7 +47,7 @@ test("Reviews: lists the PRs awaiting your review in repos here, oldest request 
   const rows = findAll(d.render(), "review-me/app-").map((r) => r.id);
   assert.deepEqual(rows, ["review-me/app-5", "review-me/app-7"]);
   assert.match(d.text(), /Reviews \(2\)/);
-  assert.match(d.text(), /app #5 Fix the typo bob/);
+  assert.match(d.text(), /Fix the typo \d+d app #5 · bob · \+1 −1/);
   assert.match(d.text(), /\+1 −1/);
   assert.doesNotMatch(d.text(), /Elsewhere/);
   // Published once the refresh (and its sweep) is done.
