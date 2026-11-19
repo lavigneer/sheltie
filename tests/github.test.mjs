@@ -149,3 +149,21 @@ test("Finish closes an issue merging didn't", async () => {
   assert.ok(!fs.existsSync(wt));
   demoCmd("status");
 });
+
+test("reviews: the demo's queue, and a review checked out from a fork", async () => {
+  const repos = await D.localRepos();
+  const queue = D.reviewQueue(
+    await D.reviewRequests(C.reviewSearch),
+    repos.map((r) => r.slug).filter(Boolean),
+  );
+  // #14 was reviewed since its request; #38 was re-requested after a review.
+  assert.deepEqual(
+    queue.map((r) => `${r.slug}#${r.number}`),
+    ["acme/web-app#41", "partner/api#19", "acme/storage#15", "acme/web-app#38"],
+  );
+  const api = repos.find((r) => r.slug === "partner/api");
+  const { path } = await D.addReviewWorktree(api, 19);
+  assert.equal(sh("git", ["branch", "--show-current"], path).trim(), "typo-fixes");
+  assert.ok(fs.existsSync(`${path}/CHANGE-19.md`));
+  assert.equal((await D.prDetails("partner/api", 19)).state, "OPEN");
+});
