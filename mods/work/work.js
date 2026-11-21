@@ -495,6 +495,10 @@ export class WorkStore {
               k,
               async () => (await found).get(k) ?? [],
             );
+          // Each tracker's links land while others are still awaited, and a
+          // render (Herdr's, when a space appears) may run then: rebuild the
+          // join here so it never runs in that render (#282).
+          this.warm();
         }),
       );
       onLinked?.(this.linkedFor(ks));

@@ -281,6 +281,21 @@ test("WorkStore: warm rebuilds a stale snapshot so a render only reads it", asyn
   assert.equal(f.store.rebuilds, warmed);
 });
 
+test("WorkStore: a linked-PR lookup rebuilds the snapshot before a render can read it", async () => {
+  const f = fakeStore({ prs: { "issue-1": pr(3, "issue-1") } });
+  await f.store.scan([repo]);
+  f.store.warm();
+  let stale = null;
+  await f.store.refresh(f.keys, {
+    onLinked: () => {
+      const n = f.store.rebuilds;
+      f.store.snapshot(["#1"]);
+      stale = f.store.rebuilds !== n;
+    },
+  });
+  assert.equal(stale, false);
+});
+
 test("joinWork: a branch naming no ticket takes the one its PR's title names", () => {
   const p = { ...pr(4, "fix-login"), title: "Fix login (issue-3)", body: "" };
   const work = joinWork(
