@@ -12,6 +12,10 @@
 // line ends with what agents working in its folder have cost (usage.js).
 // "+" opens the tickets popup to start new work; ↻ refreshes everything now.
 //
+// Under a row, its ticket's other PRs in the repo (a stack), one indented
+// sub-item each: selectable like a row; a click, work.open or work.open-pr
+// opens that PR in the browser. They have no steps or space of their own.
+//
 // Under each row, buttons for its next step in the ticket workflow (Draft PR,
 // Fix CI, Address comments, Resolve conflicts, Ready, Merge, Finish; see
 // flow.js). Finish and Clean up ask for a second click. Notifies you when CI
@@ -187,14 +191,16 @@ export default class Work extends View {
     const { rows, at, step, active } = this.view(live);
     const row = rows[at];
     if (["next", "prev", "step-next", "step-prev"].includes(c)) {
-      const navRows = rows.map((r) => ({ path: r.w.path, steps: r.steps }));
+      const navRows = rows.map((r) => ({ path: r.key, steps: r.steps }));
       this.nav.move(navRows, at, step, active, c);
     } else if (c === "step") {
       if (row?.steps[step]) this.step(cx, row.w, row.steps[step], true);
     } else if (c === "open") {
-      if (row) this.open(row.w);
+      if (row?.stacked) this.openStacked(row);
+      else if (row) this.open(row.w);
     } else if (c === "open-pr") {
-      if (row) this.openPR(row.w);
+      if (row?.stacked) this.openStacked(row);
+      else if (row) this.openPR(row.w);
     } else if (c === "open-ticket") {
       if (row) this.openTicket(cx, row.w);
     } else if (c === "group") this.toggleGroupBy(cx);
@@ -208,7 +214,8 @@ export default class Work extends View {
   // (WorkModel.report), with how long renders take and the ticket URLs.
   // Everything but the ticket URLs is taken now, so a row's steps and its PR
   // always agree (a lookup may finish while the URLs are awaited).
-  report(cx, rows, live) {
+  report(cx, rows0, live) {
+    const rows = rows0.filter((r) => !r.stacked);
     const out = this.model.report(rows, live, Date.now(), {
       renders: this.renders.report(),
     });
@@ -375,6 +382,15 @@ export default class Work extends View {
     const url = this.model.prOf(w)?.url;
     if (url) return openUrl(url);
     notify({ title: `${this.who(w)}: no pull request`, level: "info" });
+  }
+
+  // Opens a stacked PR's sub-item (work-rows.js, stackItem) in the browser.
+  openStacked(item) {
+    if (item.url) return openUrl(item.url);
+    notify({
+      title: `${this.who(item.w)}: no link for #${item.number}`,
+      level: "info",
+    });
   }
 
   // A hub has no ticket or PR.
@@ -831,6 +847,60 @@ export default class Work extends View {
       );
     };
 
+    // A stacked PR under its row (work-rows.js, stackItem): one indented
+    // line, no steps; a click opens the PR. Merged or closed: dimmed.
+    const subRow = (p) =>
+      h_flex()
+        .id(`work-${p.key}`)
+        .mx(6)
+        .pl(26)
+        .pr(8)
+        .h(20)
+        .gap(6)
+        .items_center()
+        .rounded(6)
+        .border_l_2()
+        .border_color(p.selected ? t.accent : "#00000000")
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .tooltip(p.tip)
+        .on_click(() => this.openStacked(p))
+        .child(
+          div()
+            .flex_none()
+            .text_size(11)
+            .text_color(tone(p.tone))
+            .child(p.shown),
+        )
+        .child(
+          div()
+            .flex_1()
+            .min_w(0)
+            .truncate()
+            .text_size(11)
+            .text_color(p.dim ? t.dim : t.muted)
+            .child(p.title),
+        );
+    // On the rail: the PR's glyph, small, under its row's dot.
+    const subDot = (p) =>
+      div()
+        .id(`work-${p.key}`)
+        .mx(4)
+        .h(16)
+        .flex()
+        .justify_center()
+        .items_center()
+        .rounded(6)
+        .border_l_2()
+        .border_color(p.selected ? t.accent : "#00000000")
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .tooltip(p.tip)
+        .on_click(() => this.openStacked(p))
+        .text_size(9)
+        .text_color(tone(p.tone))
+        .child(p.glyph);
+
     const costEl = (r) =>
       div()
         .id(`work-cost-${r.w.path}`)
@@ -885,7 +955,7 @@ export default class Work extends View {
       const fold = (cx) => {
         this.nav.fold(
           g.key,
-          g.worktrees.map((r) => r.w.path),
+          g.worktrees.flatMap((r) => [r.key, ...r.stack.map((p) => p.key)]),
           hub ? hub.w.path : null,
         );
         this.wake(cx, "fold");
@@ -923,7 +993,9 @@ export default class Work extends View {
               ),
           )
           .when(Boolean(hub), (el) => el.child(dot(hub)))
-          .children(g.worktrees.map(dot));
+          .children(
+            g.worktrees.flatMap((r) => [dot(r), ...r.stack.map(subDot)]),
+          );
       // By stage: a plain header (no hub), the chevron and name fold it.
       if (!hub)
         return v_flex()
@@ -960,7 +1032,9 @@ export default class Work extends View {
                   .child(g.size),
               ),
           )
-          .children(g.worktrees.map(row));
+          .children(
+            g.worktrees.flatMap((r) => [row(r), ...r.stack.map(subRow)]),
+          );
       return v_flex()
         .child(
           h_flex()
@@ -1024,7 +1098,7 @@ export default class Work extends View {
                 .child(g.size),
             ),
         )
-        .children(g.worktrees.map(row));
+        .children(g.worktrees.flatMap((r) => [row(r), ...r.stack.map(subRow)]));
     };
 
     // Messages: in full on the rail too, on hover.
