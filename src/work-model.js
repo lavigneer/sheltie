@@ -7,7 +7,7 @@
 // keys and clicks, and schedules scans and lookups.
 
 import { rowSteps, stillStarting } from "./flow.js";
-import { hubExcept } from "./git.js";
+import { hubExcept, sameSlug } from "./git.js";
 import { trackerOf } from "./tracker.js";
 import { costIn } from "./usage.js";
 import { WorkStore } from "./work.js";
@@ -142,6 +142,21 @@ export class WorkModel {
     return w.handle ? this.store.rowFor(w).items : [];
   }
 
+  // The ticket's other PRs in `w`'s repo (a gh stack, or earlier PRs from
+  // the same worktree), by number: the row shows them beside its own.
+  stackOf(w) {
+    const own = this.prOf(w);
+    const seen = new Map();
+    for (const i of this.workOf(w))
+      if (
+        i.pr &&
+        i.pr.number !== own?.number &&
+        sameSlug(i.pr.slug, w.repo.slug)
+      )
+        seen.set(i.pr.number, i.pr);
+    return [...seen.values()].sort((a, b) => a.number - b.number);
+  }
+
   // Whether `w`'s branch names a ticket: only one the tracker says it doesn't
   // know (e.g. "UTF-8" in "fix-utf-8") isn't. Not looked up yet, or
   // unreachable: still a ticket.
@@ -229,6 +244,7 @@ export class WorkModel {
       spaceOf: (w) => spaceOf(w, live),
       stepsOf: (w, space) => this.stepsOf(w, space, live),
       prOf: (w) => this.prOf(w),
+      stackOf: (w) => (w.hub ? [] : this.stackOf(w)),
       ticketOf: (w) => this.tickets.get(w.handle.key),
       isTicket: (w) => this.isTicket(w),
       costOf: (w) => this.costOf(w),
@@ -290,6 +306,11 @@ export class WorkModel {
             mergeable: pr.mergeable,
             unresolved: pr.unresolved ?? null,
           },
+          stack: r.stack.map((p) => ({
+            number: p.number,
+            label: p.text,
+            state: p.state,
+          })),
           last: this.lastOf(r.w),
         };
       }),

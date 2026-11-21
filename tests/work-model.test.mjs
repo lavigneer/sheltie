@@ -175,3 +175,69 @@ test("WorkModel.revision: moves with a scan, an adoption or a cost", async () =>
   m.setUsage([{ dir: "/wt/spike", cost: 1 }]);
   assert.equal(m.revision, was);
 });
+
+test("WorkModel.view and report: a row shows its ticket's other PRs in the repo (a stack)", async () => {
+  const repo = { slug: "me/app", path: "/src/app", name: "app", tracker };
+  const pr = (number, branch, more = {}) => ({
+    slug: "me/app",
+    number,
+    branch,
+    state: "OPEN",
+    draft: false,
+    review: "REVIEW_REQUIRED",
+    checks: null,
+    mergeable: "MERGEABLE",
+    ...more,
+  });
+  const prs = {
+    "issue-1": pr(12, "issue-1", { state: "MERGED" }),
+    "issue-1-b": pr(13, "issue-1-b"),
+    "issue-1-c": pr(14, "issue-1-c", { draft: true }),
+    "issue-2": pr(20, "issue-2"),
+  };
+  const store = new WorkStore({
+    sources: {
+      repoState: async () => ({
+        worktrees: [
+          { path: "/wt/issue-1", branch: "issue-1-b" },
+          { path: "/wt/issue-2", branch: "issue-2" },
+        ],
+        branches: new Map(Object.keys(prs).map((b) => [b, { local: true }])),
+        mainBranch: "main",
+        linked: [],
+      }),
+      prDetails: async (_slug, ref) => prs[ref] ?? null,
+    },
+  });
+  const m = new WorkModel({ store });
+  await m.scan([repo]);
+  const t = { ...tracker, linkedPRs: async () => new Map() };
+  await store.refresh(
+    new Map([
+      ["#1", t],
+      ["#2", t],
+    ]),
+    { force: true },
+  );
+  const view = m.view(LIVE, 0, { width: 400 });
+  const [, one, two] = view.rows;
+  assert.equal(one.prValue.number, 13);
+  assert.deepEqual(
+    one.stack.map((p) => p.head),
+    ["#12 merged", "#14 draft"],
+  );
+  assert.equal(one.note.text, "also #12 merged · #14 draft");
+  assert.match(one.tip, /also #12 merged · #14 draft/);
+  // Another ticket's PRs aren't its stack.
+  assert.deepEqual(two.stack, []);
+  assert.equal(two.note, null);
+  const report = m.report(view.rows, LIVE, 0);
+  assert.deepEqual(
+    report.rows[1].stack.map((p) => [p.number, p.state]),
+    [
+      [12, "MERGED"],
+      [14, "OPEN"],
+    ],
+  );
+  assert.deepEqual(report.rows[0].stack, []);
+});

@@ -89,7 +89,8 @@ function statusOf(space, failed, pr) {
 //   confirm    the step waiting for its second click ({ id, byKey }) or null
 //   picked     the row and step the keys moved to ({ path, step }) or null
 //   now        Date.now()
-//   spaceOf(w), stepsOf(w, space), prOf(w), ticketOf(w) (its cache entry),
+//   spaceOf(w), stepsOf(w, space), prOf(w), stackOf(w) (the ticket's other
+//   PRs in the row's repo; optional), ticketOf(w) (its cache entry),
 //   isTicket(w), costOf(w) (in $, or null)
 // Returns { span, by, groups: [{ key, repo, name, monogram, count, size,
 // open, hub, worktrees, more, fewer }] (more: how many worktrees the cap
@@ -140,8 +141,18 @@ export function workView(input) {
       : by === "stage" && !w.hub
         ? [w.repo.name, sub0].filter(Boolean).join(" · ")
         : sub0;
+    // The ticket's other PRs here (a stack): each as its short label.
+    const stack = (input.stackOf?.(w) ?? []).map((p) => ({
+      number: p.number,
+      state: p.state,
+      ...prLabel(p, "short"),
+    }));
+    const stackText = stack.length
+      ? `also ${stack.map((p) => p.head).join(" · ")}`
+      : null;
     const extras = [
       prValue?.state === "OPEN" && prValue.autoMerge ? "auto-merge" : null,
+      stackText,
     ].filter(Boolean);
     // The row's third line: the last step's note, else these extras.
     const note = last
@@ -178,6 +189,7 @@ export function workView(input) {
       w.hub ? `${w.repo.name} hub: ${title}` : title,
       sub,
       pr?.text,
+      stackText,
       costText && `agents ${costText}`,
       running
         ? last.text
@@ -202,6 +214,7 @@ export function workView(input) {
       costText,
       pr,
       prValue,
+      stack,
       status: statusOf(space, last?.phase === "failed", pr),
       steps,
       last,
