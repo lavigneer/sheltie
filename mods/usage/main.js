@@ -8,7 +8,7 @@
 // They refresh every 5 minutes (and with ↻).
 
 import { h_flex, v_flex } from "gpui-base";
-import { div, View } from "gpui-kit";
+import { div, svg, View } from "gpui-kit";
 import { theme } from "herdr";
 import { C, configReady } from "./config.js";
 import { planLimits, resetsLabel } from "./limits.js";
@@ -171,6 +171,7 @@ export default class Usage extends View {
             .child(amount(s)),
         );
 
+    const refreshing = this.state.phase === "loading" || this.limitsLoading;
     const header = h_flex()
       .h(30)
       .flex_none()
@@ -199,13 +200,18 @@ export default class Usage extends View {
           .text_color(t.dim)
           .cursor_pointer()
           .hover((s) => s.bg(t.hover).text_color(t.foreground))
-          .tooltip("Refresh now")
+          .tooltip(refreshing ? "Refreshing…" : "Refresh now")
           .on_click((_e, cx) => {
             cx.stop_propagation();
             this.load(cx, 0);
             this.readLimits(cx);
+            cx.notify();
           })
-          .child("↻"),
+          .child(
+            refreshing
+              ? svg("mods/workspace-chrome/spinner.svg").size(11).spin(900)
+              : "↻",
+          ),
       );
 
     const message = (text, color) =>

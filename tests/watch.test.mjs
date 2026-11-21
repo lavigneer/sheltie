@@ -105,3 +105,23 @@ test("Cache: the version moves when a lookup changes an entry, not when it confi
   await c.refresh("b", async () => null);
   assert.equal(c.version, v + 3, "a new entry");
 });
+
+test("serial: forcing() while a forced run is running or queued, notifying as it starts and ends", async () => {
+  const tasks = [];
+  let notified = 0;
+  const cx = { spawn: (f) => tasks.push(f(cx)), notify: () => notified++ };
+  const releases = [];
+  const start = serial(() => new Promise((r) => releases.push(r)));
+  start(cx);
+  assert.equal(start.forcing(), false);
+  start(cx, true); // queued behind the unforced run
+  assert.equal(start.forcing(), true);
+  assert.equal(notified, 1);
+  releases.shift()();
+  await tasks.shift();
+  assert.equal(start.forcing(), true); // the forced one now runs
+  releases.shift()();
+  await tasks.shift();
+  assert.equal(start.forcing(), false);
+  assert.equal(notified, 2);
+});
