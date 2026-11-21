@@ -848,12 +848,13 @@ export default class Work extends View {
     };
 
     // A stacked PR under its row (work-rows.js, stackItem): one indented
-    // line, no steps; a click opens the PR. Merged or closed: dimmed.
-    const subRow = (p) =>
+    // line, no steps; a click opens the PR. Merged or closed: dimmed. A tree
+    // connector (├ / └ for the last) ties it to the row above.
+    const subRow = (p, last) =>
       h_flex()
         .id(`work-${p.key}`)
         .mx(6)
-        .pl(26)
+        .pl(18)
         .pr(8)
         .h(20)
         .gap(6)
@@ -865,6 +866,13 @@ export default class Work extends View {
         .hover((s) => s.bg(t.hover))
         .tooltip(p.tip)
         .on_click(() => this.openStacked(p))
+        .child(
+          div()
+            .flex_none()
+            .text_size(11)
+            .text_color(t.dim)
+            .child(last ? "└" : "├"),
+        )
         .child(
           div()
             .flex_none()
@@ -1033,7 +1041,10 @@ export default class Work extends View {
               ),
           )
           .children(
-            g.worktrees.flatMap((r) => [row(r), ...r.stack.map(subRow)]),
+            g.worktrees.flatMap((r) => [
+              row(r),
+              ...r.stack.map((p, i, all) => subRow(p, i === all.length - 1)),
+            ]),
           );
       return v_flex()
         .child(
@@ -1098,7 +1109,12 @@ export default class Work extends View {
                 .child(g.size),
             ),
         )
-        .children(g.worktrees.flatMap((r) => [row(r), ...r.stack.map(subRow)]));
+        .children(
+          g.worktrees.flatMap((r) => [
+            row(r),
+            ...r.stack.map((p, i, all) => subRow(p, i === all.length - 1)),
+          ]),
+        );
     };
 
     // Messages: in full on the rail too, on hover.
