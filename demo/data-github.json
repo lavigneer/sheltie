@@ -23,7 +23,9 @@
         "issue-8",
         "issue-9"
       ],
-      "branches": []
+      "branches": [
+        "issue-8-session-cleanup"
+      ]
     },
     {
       "name": "api",
@@ -127,6 +129,18 @@
       "checks": "FAILURE",
       "state": "OPEN",
       "unresolved": 2
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 39,
+      "branch": "issue-8-session-cleanup",
+      "title": "Clear stale session cookies (stacked on #34)",
+      "body": "Fixes #8\n\nStacked on #34.",
+      "draft": true,
+      "review": "",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0
     },
     {
       "repo": "partner/api",
