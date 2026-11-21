@@ -108,7 +108,8 @@ export default class Usage extends View {
     const amount = (s) =>
       s.unpriced && !s.cost ? "no price" : dollars(s.cost);
 
-    // Today leads: its cost large, in the foreground, so it reads first.
+    // Today leads: its cost in the foreground, so it reads first, but at the
+    // same size as the 7 and 30 day totals below it.
     const lead = (s) =>
       h_flex()
         .id("usage-today")
@@ -134,8 +135,11 @@ export default class Usage extends View {
         )
         .child(
           div()
+            .w(52)
             .flex_none()
-            .text_size(18)
+            .flex()
+            .justify_end()
+            .text_size(11.5)
             .font_semibold()
             .text_color(t.foreground)
             .child(amount(s)),
