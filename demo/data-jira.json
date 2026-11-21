@@ -53,7 +53,9 @@
         "me/WEB-102",
         "me/WEB-103"
       ],
-      "branches": []
+      "branches": [
+        "me/WEB-102-session-cleanup"
+      ]
     },
     {
       "name": "api",
@@ -162,6 +164,18 @@
       "checks": "FAILURE",
       "state": "OPEN",
       "unresolved": 2
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 36,
+      "branch": "me/WEB-102-session-cleanup",
+      "title": "WEB-102: clear stale session cookies (stacked on #34)",
+      "body": "Fixes WEB-102\n\nStacked on #34.",
+      "draft": true,
+      "review": "",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0
     },
     {
       "repo": "partner/api",
