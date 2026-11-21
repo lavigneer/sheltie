@@ -55,7 +55,8 @@
  * @property {number} [checksTotal] how many checks it has
  * @property {string} branch
  * @property {string} head
- * @property {boolean} autoMerge
+ * @property {boolean} autoMerge GitHub will merge it on its own (auto-merge
+ *   on, or in a merge queue)
  * @property {"MERGEABLE" | "CONFLICTING" | "UNKNOWN"} mergeable
  * @property {"MERGEABLE" | "CONFLICTING" | null} settled the last mergeable
  *   GitHub had worked out (carried over while it's UNKNOWN)

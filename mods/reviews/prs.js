@@ -20,7 +20,7 @@ const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 const prFields = (
   required,
 ) => `number url title body state isDraft reviewDecision headRefName
-  headRefOid mergeable autoMergeRequest { enabledAt }
+  headRefOid mergeable autoMergeRequest { enabledAt } isInMergeQueue
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
     nodes { ... on CheckRun { status conclusion${required ? " isRequired(pullRequestNumber: $number)" : ""} }
       ... on StatusContext { state${required ? " isRequired(pullRequestNumber: $number)" : ""} } } } } } } }
@@ -86,7 +86,8 @@ export function parsePR(
     checksTotal: results.length,
     branch: pr.headRefName,
     head: pr.headRefOid,
-    autoMerge: Boolean(pr.autoMergeRequest),
+    // GitHub merges it on its own: auto-merge on, or already in a merge queue.
+    autoMerge: Boolean(pr.autoMergeRequest || pr.isInMergeQueue),
     mergeable,
     settled:
       mergeable === "UNKNOWN"
