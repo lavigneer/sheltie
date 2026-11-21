@@ -11,7 +11,7 @@
 // Refreshed as often as the Work sidebar's PRs (PR_MS), and with ↻.
 
 import { h_flex, v_flex } from "gpui-base";
-import { div, View } from "gpui-kit";
+import { div, svg, View } from "gpui-kit";
 import { setShared, theme } from "herdr";
 import { C } from "./config.js";
 import { openUrl } from "./lib.js";
@@ -143,6 +143,7 @@ export default class Reviews extends View {
         );
     };
 
+    const refreshing = this.refresh.forcing();
     const header = h_flex()
       .h(30)
       .flex_none()
@@ -171,12 +172,16 @@ export default class Reviews extends View {
           .text_color(t.dim)
           .cursor_pointer()
           .hover((s) => s.bg(t.hover).text_color(t.foreground))
-          .tooltip("Refresh now")
+          .tooltip(refreshing ? "Refreshing…" : "Refresh now")
           .on_click((_e, cx) => {
             cx.stop_propagation();
             this.refresh(cx, true);
           })
-          .child("↻"),
+          .child(
+            refreshing
+              ? svg("mods/workspace-chrome/spinner.svg").size(11).spin(900)
+              : "↻",
+          ),
       );
 
     const body = C.problem

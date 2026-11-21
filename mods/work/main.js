@@ -459,6 +459,11 @@ export default class Work extends View {
           onClick(cx);
         })
         .child(label);
+    // ↻ spins while a refresh asked for by hand (git, then tickets and PRs) runs.
+    const refreshing = this.refresh.forcing() || this.details.forcing();
+    const refreshLabel = refreshing
+      ? svg("mods/workspace-chrome/spinner.svg").size(11).spin(900)
+      : "↻";
 
     const header = rail
       ? h_flex()
@@ -496,7 +501,12 @@ export default class Work extends View {
             ),
           )
           .child(
-            icon("refresh", "↻", "Refresh now", (cx) => this.refresh(cx, true)),
+            icon(
+              "refresh",
+              refreshLabel,
+              refreshing ? "Refreshing…" : "Refresh now",
+              (cx) => this.refresh(cx, true),
+            ),
           )
           .child(
             icon("new", "+", "New work (tickets)", () =>

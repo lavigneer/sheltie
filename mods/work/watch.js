@@ -2,27 +2,37 @@
 
 // Runs `body(cx, force)` one at a time (through cx.spawn). Asked again while
 // running, it runs once more afterwards (forced if any of the requests was),
-// rather than dropping it.
+// rather than dropping it. `start.forcing()`: whether a forced run is running
+// or queued (a refresh asked for by hand, which the view shows as loading); it
+// notifies when that starts and when it ends.
 export function serial(body) {
   let running = false;
+  let current = false; // whether the running one is forced
   let queued = null; // null | { force }
-  const start = (cx, force = false) => {
-    if (running) {
-      queued = { force: force || Boolean(queued?.force) };
-      return;
-    }
+  const forcing = () => current || Boolean(queued?.force);
+  const run = (cx, force) => {
     running = true;
+    current = force;
     cx.spawn(async (cx) => {
       try {
         await body(cx, force);
       } finally {
         running = false;
+        current = false;
         const next = queued;
         queued = null;
-        if (next) start(cx, next.force);
+        if (next) run(cx, next.force);
+        if (force && !forcing()) cx.notify?.();
       }
     });
   };
+  const start = (cx, force = false) => {
+    const was = forcing();
+    if (running) queued = { force: force || Boolean(queued?.force) };
+    else run(cx, force);
+    if (!was && forcing()) cx.notify?.();
+  };
+  start.forcing = forcing;
   return start;
 }
 
