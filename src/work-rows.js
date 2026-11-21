@@ -141,19 +141,11 @@ export function workView(input) {
       : by === "stage" && !w.hub
         ? [w.repo.name, sub0].filter(Boolean).join(" · ")
         : sub0;
-    // The ticket's other PRs here (a stack): each as its short label.
-    const stack = (input.stackOf?.(w) ?? []).map((p) => ({
-      number: p.number,
-      state: p.state,
-      ...prLabel(p, "short"),
-    }));
-    const stackText = stack.length
-      ? `also ${stack.map((p) => p.head).join(" · ")}`
-      : null;
-    const extras = [
-      prValue?.state === "OPEN" && prValue.autoMerge ? "auto-merge" : null,
-      stackText,
-    ].filter(Boolean);
+    // The ticket's other PRs here (a stack): each a sub-item under the row
+    // (stackItem), selectable like a row; its own key, `${path}#${number}`.
+    const stack = (input.stackOf?.(w) ?? []).map((p) => stackItem(w, p, span));
+    const extras =
+      prValue?.state === "OPEN" && prValue.autoMerge ? ["auto-merge"] : [];
     // The row's third line: the last step's note, else these extras.
     const note = last
       ? { text: last.text, tone: last.phase === "failed" ? "blocked" : "dim" }
@@ -189,7 +181,7 @@ export function workView(input) {
       w.hub ? `${w.repo.name} hub: ${title}` : title,
       sub,
       pr?.text,
-      stackText,
+      stack.length && `also ${stack.map((p) => p.head).join(" · ")}`,
       costText && `agents ${costText}`,
       running
         ? last.text
@@ -200,6 +192,7 @@ export function workView(input) {
       .filter(Boolean)
       .join(" · ");
     return {
+      key: w.path,
       w,
       space,
       hub: Boolean(w.hub),
@@ -232,14 +225,15 @@ export function workView(input) {
 
   const groups =
     by === "stage" ? stageGroups(input, rowOf) : repoGroups(input, rowOf);
+  // What the keys move through: each row, then its stack's sub-items.
   const rows = groups.flatMap((g) =>
-    (g.hub ? [g.hub] : []).concat(g.worktrees),
+    (g.hub ? [g.hub] : []).concat(g.worktrees).flatMap((r) => [r, ...r.stack]),
   );
 
   // The selected row and step: the one the keys moved to, else the focused
   // space's row, else the first.
   let at = input.picked
-    ? rows.findIndex((r) => r.w.path === input.picked.path)
+    ? rows.findIndex((r) => r.key === input.picked.path)
     : -1;
   let step = at >= 0 ? input.picked.step : 0;
   if (at < 0) {
@@ -254,6 +248,34 @@ export function workView(input) {
     if (n) rows[at].steps[step].chosen = true;
   }
   return { span, by, groups, rows, at, step };
+}
+
+// A stacked PR `p` of row `w`'s ticket, as a sub-item under it: one line
+// (number, state, title or branch), no steps, no space of its own;
+// activating it opens the PR. Merged or closed: dimmed.
+function stackItem(w, p, span) {
+  const label = /** @type {NonNullable<ReturnType<typeof prLabel>>} */ (
+    prLabel(p, "short")
+  );
+  const done = p.state === "MERGED" || p.state === "CLOSED";
+  const title = p.title || p.branch || "";
+  return {
+    key: `${w.path}#${p.number}`,
+    stacked: true,
+    w,
+    number: p.number,
+    state: p.state,
+    url: p.url ?? null,
+    title,
+    ...label,
+    // At its narrowest, the state's glyph; else "#14 draft".
+    shown: span === "glyph" || span === "rail" ? label.glyph : label.head,
+    tone: done ? "dim" : toneKey(label.tone),
+    dim: done,
+    selected: false,
+    steps: [],
+    tip: [label.text, title].filter(Boolean).join(" · ") + " — Enter to open",
+  };
 }
 
 // The worktrees a repo group shows under a cap of `cap`: the `cap` most

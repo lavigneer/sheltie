@@ -310,6 +310,9 @@ export class WorkModel {
             number: p.number,
             label: p.text,
             state: p.state,
+            title: p.title,
+            url: p.url,
+            selected: p.selected,
           })),
           last: this.lastOf(r.w),
         };

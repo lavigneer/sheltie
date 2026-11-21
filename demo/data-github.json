@@ -24,7 +24,9 @@
         "issue-9"
       ],
       "branches": [
-        "issue-8-session-cleanup"
+        "issue-8-session-cleanup",
+        "issue-8-session-refresh",
+        "issue-8-session-store"
       ]
     },
     {
@@ -140,6 +142,30 @@
       "review": "",
       "checks": "SUCCESS",
       "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 42,
+      "branch": "issue-8-session-refresh",
+      "title": "Refresh sessions before they expire (stacked on #39)",
+      "body": "Fixes #8\n\nStacked on #39.",
+      "draft": false,
+      "review": "REVIEW_REQUIRED",
+      "checks": "PENDING",
+      "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 43,
+      "branch": "issue-8-session-store",
+      "title": "Move sessions to a shared store",
+      "body": "Fixes #8",
+      "draft": false,
+      "review": "APPROVED",
+      "checks": "SUCCESS",
+      "state": "MERGED",
       "unresolved": 0
     },
     {

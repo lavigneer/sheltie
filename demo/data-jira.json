@@ -54,7 +54,9 @@
         "me/WEB-103"
       ],
       "branches": [
-        "me/WEB-102-session-cleanup"
+        "me/WEB-102-session-cleanup",
+        "me/WEB-102-session-refresh",
+        "me/WEB-102-session-store"
       ]
     },
     {
@@ -175,6 +177,30 @@
       "review": "",
       "checks": "SUCCESS",
       "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 42,
+      "branch": "me/WEB-102-session-refresh",
+      "title": "WEB-102: refresh sessions before they expire (stacked on #39)",
+      "body": "Fixes WEB-102\n\nStacked on #39.",
+      "draft": false,
+      "review": "REVIEW_REQUIRED",
+      "checks": "PENDING",
+      "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 43,
+      "branch": "me/WEB-102-session-store",
+      "title": "WEB-102: move sessions to a shared store",
+      "body": "Fixes WEB-102",
+      "draft": false,
+      "review": "APPROVED",
+      "checks": "SUCCESS",
+      "state": "MERGED",
       "unresolved": 0
     },
     {

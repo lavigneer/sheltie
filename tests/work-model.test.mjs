@@ -220,18 +220,40 @@ test("WorkModel.view and report: a row shows its ticket's other PRs in the repo 
     { force: true },
   );
   const view = m.view(LIVE, 0, { width: 400 });
-  const [, one, two] = view.rows;
+  const [, one] = view.rows;
+  const two = view.rows.find((r) => r.w?.path === "/wt/issue-2");
   assert.equal(one.prValue.number, 13);
   assert.deepEqual(
     one.stack.map((p) => p.head),
     ["#12 merged", "#14 draft"],
   );
-  assert.equal(one.note.text, "also #12 merged · #14 draft");
+  // Not on the note line: each is a sub-item after its row, to select.
+  assert.equal(one.note, null);
   assert.match(one.tip, /also #12 merged · #14 draft/);
+  const subs = view.rows.slice(2, 4);
+  assert.deepEqual(
+    subs.map((p) => [p.stacked, p.key, p.steps.length, p.dim]),
+    [
+      [true, "/wt/issue-1#12", 0, true],
+      [true, "/wt/issue-1#14", 0, false],
+    ],
+  );
+  assert.equal(view.rows[4], two);
+  // The keys can pick one.
+  const picked = m.view(LIVE, 0, {
+    width: 400,
+    picked: { path: "/wt/issue-1#14", step: 0 },
+  });
+  assert.equal(picked.rows[3].selected, true);
+  assert.equal(picked.rows[1].selected, false);
   // Another ticket's PRs aren't its stack.
   assert.deepEqual(two.stack, []);
   assert.equal(two.note, null);
-  const report = m.report(view.rows, LIVE, 0);
+  const report = m.report(
+    view.rows.filter((r) => !r.stacked),
+    LIVE,
+    0,
+  );
   assert.deepEqual(
     report.rows[1].stack.map((p) => [p.number, p.state]),
     [
