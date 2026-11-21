@@ -111,3 +111,9 @@ test("prDetails: requiredOnly leaves out checks merging doesn't need", async () 
     writeState(s);
   }
 });
+
+test("parsePR: a PR in a merge queue counts as auto-merge (#284)", () => {
+  assert.equal(parsePR("a/b", node({})).autoMerge, false);
+  const queued = { ...node({}), isInMergeQueue: true };
+  assert.equal(parsePR("a/b", queued).autoMerge, true);
+});
