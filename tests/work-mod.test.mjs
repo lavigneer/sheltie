@@ -53,8 +53,12 @@ const ran = (d, name) => d.calls.run.filter((c) => c.name === name);
 
 test("Work: a row with no PR offers Draft PR; one with a draft PR doesn't", async () => {
   const d = await ready();
+  // wt1 offers Draft PR once its PR lookup says it has none.
+  await d.until(
+    () => find(d.render(), `work-step-${wt1}-draft-pr`),
+    "wt1's Draft PR",
+  );
   const tree = d.render();
-  assert.ok(find(tree, `work-step-${wt1}-draft-pr`));
   assert.equal(find(tree, `work-step-${wt2}-draft-pr`), null);
   assert.match(d.text(), /#12/);
 });
