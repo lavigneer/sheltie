@@ -167,7 +167,7 @@
     },
     {
       "repo": "acme/web-app",
-      "number": 36,
+      "number": 39,
       "branch": "me/WEB-102-session-cleanup",
       "title": "WEB-102: clear stale session cookies (stacked on #34)",
       "body": "Fixes WEB-102\n\nStacked on #34.",

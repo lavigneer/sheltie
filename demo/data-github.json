@@ -132,7 +132,7 @@
     },
     {
       "repo": "acme/web-app",
-      "number": 36,
+      "number": 39,
       "branch": "issue-8-session-cleanup",
       "title": "Clear stale session cookies (stacked on #34)",
       "body": "Fixes #8\n\nStacked on #34.",
