@@ -10,8 +10,10 @@ export const fill = (template, values) =>
   template.replace(/\{(\w+)\}/g, (m, k) => values[k] ?? m);
 
 // Runs one of the configured programs (C.programs: git, gh, jira, hc).
-// Calls to the APIs behind gh and jira go through `limits` below.
-/** @param {string} name @param {string[]} args @param {{ cwd?: string }} [opts] @returns {Promise<import("herdr").ExecResult>} */
+// Calls to the APIs behind gh and jira go through `limits` below. `urgent`:
+// a person is waiting on the call (a click), so it takes the next free slot
+// ahead of the background lookups queued for one.
+/** @param {string} name @param {string[]} args @param {{ cwd?: string, urgent?: boolean }} [opts] @returns {Promise<import("herdr").ExecResult>} */
 export const tool = (name, args, opts) =>
   limits[name]
     ? limited(limits[name], name, args, opts)
@@ -30,12 +32,13 @@ export const RATE_LIMITED =
 const BACKOFF_MS = 60_000;
 const MAX_BACKOFF_MS = 15 * 60_000;
 const limits = {
-  gh: { max: 2, active: 0, waiting: [], until: 0, backoff: 0 },
-  jira: { max: 2, active: 0, waiting: [], until: 0, backoff: 0 },
+  gh: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
+  jira: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
 };
 
 async function limited(l, name, args, opts) {
-  if (l.active >= l.max) await new Promise((go) => l.waiting.push(go));
+  if (l.active >= l.max)
+    await new Promise((go) => (opts?.urgent ? l.urgent : l.waiting).push(go));
   l.active++;
   try {
     const wait = l.until - Date.now();
@@ -56,7 +59,7 @@ async function limited(l, name, args, opts) {
     return r;
   } finally {
     l.active--;
-    l.waiting.shift()?.();
+    (l.urgent.shift() ?? l.waiting.shift())?.();
   }
 }
 

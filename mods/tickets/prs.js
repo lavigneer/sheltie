@@ -19,20 +19,109 @@ const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 // check's isRequired needs the PR's number, so it's only asked by number.
 const prFields = (
   required,
+  number,
 ) => `number url title body state isDraft reviewDecision headRefName baseRefName
   headRefOid mergeable autoMergeRequest { enabledAt } isInMergeQueue
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
-    nodes { ... on CheckRun { status conclusion${required ? " isRequired(pullRequestNumber: $number)" : ""} }
-      ... on StatusContext { state${required ? " isRequired(pullRequestNumber: $number)" : ""} } } } } } } }
+    nodes { ... on CheckRun { status conclusion${required ? ` isRequired(pullRequestNumber: ${number})` : ""} }
+      ... on StatusContext { state${required ? ` isRequired(pullRequestNumber: ${number})` : ""} } } } } } } }
   reviewThreads(first: 100) { nodes { isResolved } }`;
-const byNumber = (
-  required,
-) => `query($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) { pullRequest(number: $number) { ${prFields(required)} } } }`;
-// Like `gh pr view <branch>`: the open PR from that branch, else the latest.
-const BY_BRANCH = `query($owner: String!, $name: String!, $branch: String!) {
-  repository(owner: $owner, name: $name) { pullRequests(headRefName: $branch,
-    first: 20, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${prFields(false)} } } } }`;
+
+// PRs looked up per GraphQL query. Each lookup is an alias in it: p<i> for a
+// PR by number, b<i> for a branch (its name in the variable $b<i>).
+export const PRS_PER_QUERY = 10;
+const isNumber = (ref) => /^\d+$/.test(String(ref));
+
+// The query for `lookups` ({ alias, ref, number, required }). A number is
+// only ever digits, so it goes in as a literal.
+function batchQuery(lookups) {
+  const vars = lookups
+    .filter((l) => !l.number)
+    .map((l) => `, $${l.alias}: String!`)
+    .join("");
+  const fields = lookups.map((l) =>
+    l.number
+      ? `${l.alias}: pullRequest(number: ${l.ref}) { ${prFields(l.required, l.ref)} }`
+      : // Like `gh pr view <branch>`: the open PR from that branch, else the latest.
+        `${l.alias}: pullRequests(headRefName: $${l.alias}, first: 20, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${prFields(false)} } }`,
+  );
+  return `query($owner: String!, $name: String!${vars}) {
+  repository(owner: $owner, name: $name) { ${fields.join("\n    ")} } }`;
+}
+
+// Each lookup's pullRequest node (null for none), or an Error for one that
+// failed, from one query's answer (`r`, the gh result). A query that failed as
+// a whole fails each of its lookups; "not found" is none.
+function answers(r, lookups) {
+  let body = null;
+  try {
+    body = JSON.parse(r.stdout);
+  } catch {}
+  const out = new Map();
+  if (!body?.data?.repository) {
+    const why =
+      firstLine(r.stderr) ||
+      body?.errors?.[0]?.message ||
+      "gh api graphql failed";
+    for (const l of lookups)
+      out.set(l.ref, NOT_FOUND.test(why) ? null : new Error(why));
+    return out;
+  }
+  for (const l of lookups) {
+    const err = body.errors?.find(
+      (e) => e.path?.[1] === l.alias && !NOT_FOUND.test(e.message),
+    );
+    if (err) {
+      out.set(l.ref, new Error(err.message));
+      continue;
+    }
+    const v = body.data.repository[l.alias];
+    out.set(
+      l.ref,
+      l.number
+        ? (v ?? null)
+        : ((v?.nodes ?? []).find((p) => p?.state === "OPEN") ??
+            (v?.nodes ?? []).find(Boolean) ??
+            null),
+    );
+  }
+  return out;
+}
+
+// The PR nodes for `refs` ({ ref, required }, in `slug`), a query per
+// PRS_PER_QUERY: Map ref -> node, null for none, or an Error.
+/** @param {string} slug @param {{ ref: string | number, required: boolean }[]} refs */
+async function fetchPRs(slug, refs) {
+  const [owner, name] = slug.split("/");
+  const out = new Map();
+  const chunks = [];
+  for (let i = 0; i < refs.length; i += PRS_PER_QUERY)
+    chunks.push(refs.slice(i, i + PRS_PER_QUERY));
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      const lookups = chunk.map((l, i) => {
+        const number = isNumber(l.ref);
+        return { ...l, number, alias: `${number ? "p" : "b"}${i}` };
+      });
+      const vars = lookups
+        .filter((l) => !l.number)
+        .flatMap((l) => ["-f", `${l.alias}=${l.ref}`]);
+      const r = await tool("gh", [
+        "api",
+        "graphql",
+        "-F",
+        `owner=${owner}`,
+        "-F",
+        `name=${name}`,
+        ...vars,
+        "-f",
+        `query=${batchQuery(lookups)}`,
+      ]);
+      for (const [ref, node] of answers(r, lookups)) out.set(ref, node);
+    }),
+  );
+  return out;
+}
 
 // A PR's details from its pullRequest node in GitHub's GraphQL answer (see
 // prFields), or null for none. Pure: no gh, no settings.
@@ -102,53 +191,60 @@ export function parsePR(
         : null,
   };
 }
-
-// The pullRequest node for a PR (number or branch) in `slug`, or null when
-// there is none, from one GraphQL call (the open PR from a branch, else its
-// latest). Throws when GitHub can't be asked, so callers can tell "no PR"
-// from "failed". `required` asks each check's isRequired (by number only).
-/** @param {string} slug @param {string | number} ref @param {boolean} required */
-async function fetchPR(slug, ref, required) {
-  const [owner, name] = slug.split("/");
-  const isNumber = /^\d+$/.test(String(ref));
-  const r = await tool("gh", [
-    "api",
-    "graphql",
-    "-F",
-    `owner=${owner}`,
-    "-F",
-    `name=${name}`,
-    ...(isNumber ? ["-F", `number=${ref}`] : ["-f", `branch=${ref}`]),
-    "-f",
-    `query=${isNumber ? byNumber(required) : BY_BRANCH}`,
-  ]);
-  if (r.code !== 0) {
-    const why = firstLine(r.stderr) || firstLine(r.stdout);
-    if (NOT_FOUND.test(why)) return null;
-    throw new Error(why || `gh api graphql (PR ${ref} in ${slug}) failed`);
+// Details for PRs in `slug`: `items` are { ref, previous } (see parsePR), a
+// query per PRS_PER_QUERY of them. Map ref -> details, or null for none, or an
+// Error for a lookup that failed (GitHub unreachable: retried later, never
+// shown as none). With `requiredOnly` (the requiredChecksOnly setting), only
+// checks required for merging count.
+/** @param {string} slug @param {{ ref: string | number, previous?: import("./types.js").PR | null }[]} items @param {{ requiredOnly?: boolean }} [opts] @returns {Promise<Map<string | number, import("./types.js").PR | null | Error>>} */
+export async function prDetailsMany(
+  slug,
+  items,
+  { requiredOnly = false } = {},
+) {
+  const found = await fetchPRs(
+    slug,
+    items.map(({ ref }) => ({
+      ref,
+      required: requiredOnly && isNumber(ref),
+    })),
+  );
+  // Found by branch: ask again by number, for which checks are required.
+  if (requiredOnly) {
+    const byBranch = items.filter(({ ref }) => {
+      const pr = found.get(ref);
+      return !isNumber(ref) && pr && !(pr instanceof Error);
+    });
+    const byNumber = await fetchPRs(
+      slug,
+      byBranch.map(({ ref }) => ({
+        ref: found.get(ref).number,
+        required: true,
+      })),
+    );
+    for (const { ref } of byBranch)
+      found.set(ref, byNumber.get(found.get(ref).number));
   }
-  const repo = JSON.parse(r.stdout).data?.repository;
-  const found = isNumber ? [repo?.pullRequest] : repo?.pullRequests?.nodes;
-  return (
-    found?.find((p) => p?.state === "OPEN") ?? found?.find(Boolean) ?? null
+  return new Map(
+    items.map(({ ref, previous = null }) => {
+      const pr = found.get(ref) ?? null;
+      return [
+        ref,
+        pr instanceof Error
+          ? pr
+          : parsePR(slug, pr, previous, { requiredOnly }),
+      ];
+    }),
   );
 }
 
 // Details for a PR (number or branch) in `slug` (see parsePR), or null when
-// there is none; throws when GitHub can't be asked. With `requiredOnly`
-// (the requiredChecksOnly setting), only checks required for merging count.
+// there is none; throws when GitHub can't be asked.
 /** @param {string} slug @param {string | number} ref @param {import("./types.js").PR | null} [previous] @param {{ requiredOnly?: boolean }} [opts] @returns {Promise<import("./types.js").PR | null>} */
-export async function prDetails(
-  slug,
-  ref,
-  previous = null,
-  { requiredOnly = false } = {},
-) {
-  let pr = await fetchPR(slug, ref, requiredOnly);
-  // Found by branch: ask again by number, for which checks are required.
-  if (pr && requiredOnly && !/^\d+$/.test(String(ref)))
-    pr = await fetchPR(slug, pr.number, true);
-  return parsePR(slug, pr, previous, { requiredOnly });
+export async function prDetails(slug, ref, previous = null, opts = {}) {
+  const pr = (await prDetailsMany(slug, [{ ref, previous }], opts)).get(ref);
+  if (pr instanceof Error) throw pr;
+  return pr ?? null;
 }
 
 export const markReady = (slug, number) =>

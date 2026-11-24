@@ -3,6 +3,7 @@
 // any machine.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { perRef } from "./fake-tools.mjs";
 
 const { WorkStore } = await import("../src/work.js");
 const { WorkModel } = await import("../src/work-model.js");
@@ -53,7 +54,7 @@ function workspace() {
           linked: [],
         };
       },
-      prDetails: async () => null,
+      prDetailsMany: perRef(async () => null),
     },
   });
   const join = store.join.bind(store);

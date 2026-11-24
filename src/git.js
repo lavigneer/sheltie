@@ -255,7 +255,8 @@ export const reviewPath = (repo, number) =>
 
 // Checks out PR #`number` (`gh pr checkout`, so forks work too) in its review
 // worktree (reviewPath) and returns { path, existing }: an existing one is
-// left as it is.
+// left as it is. Only a click starts one, so the checkout is urgent (lib.js):
+// it doesn't wait behind the PR lookups the sidebars have queued.
 export async function addReviewWorktree(repo, number) {
   const path = reviewPath(repo, number);
   const { linked } = await listWorktrees(repo.path);
@@ -266,6 +267,7 @@ export async function addReviewWorktree(repo, number) {
     throw new Error(firstLine(r.stderr) || "git worktree add failed");
   const co = await tool("gh", ["pr", "checkout", String(number)], {
     cwd: path,
+    urgent: true,
   });
   if (co.code !== 0) {
     await git(repo.path, "worktree", "remove", "--force", path);

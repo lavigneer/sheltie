@@ -127,29 +127,31 @@ case "${1:-} ${2:-}" in
     exit 0
     ;;
   esac
-  # Otherwise prDetails' query, by PR number or branch: the GraphQL response.
-  owner="" name="" ref=""
+  # Otherwise prDetails' query (prs.js batchQuery): an alias per PR, p<i> by
+  # number, b<i> by branch (its name in the variable b<i>). Each is answered
+  # from the demo's PRs, null when there is none, as GitHub answers.
+  owner="" name=""
   for a in "$@"; do
     case "$a" in
     owner=*) owner="${a#owner=}" ;;
     name=*) name="${a#name=}" ;;
-    number=* | branch=*) ref="${a#*=}" ;;
     esac
   done
   slug="$owner/$name"
-  pr="$(find_pr "$slug" "$ref")" || pr=null
-  if [ "$pr" = null ]; then
-    case " $* " in
-    *" number="*)
-      echo "GraphQL: Could not resolve to a PullRequest with the number of $ref. (repository.pullRequest)" >&2
-      exit 1
-      ;;
-    esac
+  query="$(for a in "$@"; do case "$a" in query=*) printf '%s\n' "${a#query=}" ;; esac; done)"
+  data='{}'
+  while read -r alias kind value; do
+    ref="$value"
+    if [ "$kind" = branch ]; then
+      ref=""
+      for a in "$@"; do case "$a" in "$value"=*) ref="${a#*=}" ;; esac; done
+    fi
+    pr="$(find_pr "$slug" "$ref")" || pr=null
     head=""
-  else
-    head="$(pr_head "$name" "$(jq -r .branch <<<"$pr")" "$(jq -r .number <<<"$pr")")"
-  fi
-  jq --arg head "$head" --arg by "$(case " $* " in *" number="*) echo number ;; *) echo branch ;; esac)" '
+    if [ "$pr" != null ]; then
+      head="$(pr_head "$name" "$(jq -r .branch <<<"$pr")" "$(jq -r .number <<<"$pr")")"
+    fi
+    node="$(jq --arg head "$head" '
     (if . == null then null else
     {number, title, url: "https://github.com/\(.repo)/pull/\(.number)",
      state: (.state // "OPEN"), isDraft: .draft, reviewDecision: .review,
@@ -163,10 +165,17 @@ case "${1:-} ${2:-}" in
          else [{conclusion: .checks, isRequired: true}] end)
         + ((.optionalChecks // []) | map({conclusion: ., isRequired: false}))
         | if length == 0 then null else {contexts: {nodes: .}} end)}}]},
-     reviewThreads: {nodes: ([range(.unresolved // 0)] | map({isResolved: false}))}} end) as $pr
-    | {data: {repository: (if $by == "number" then {pullRequest: $pr}
-                           else {pullRequests: {nodes: [$pr // empty]}} end)}}
-  ' <<<"$pr"
+     reviewThreads: {nodes: ([range(.unresolved // 0)] | map({isResolved: false}))}} end)
+  ' <<<"$pr")"
+    if [ "$kind" = number ]; then
+      v="$node"
+    else
+      v="$(jq -n --argjson n "$node" 'if $n == null then {nodes: []} else {nodes: [$n]} end')"
+    fi
+    data="$(jq --arg k "$alias" --argjson v "$v" '. + {($k): $v}' <<<"$data")"
+  done < <(grep -oE '[pb][0-9]+: pullRequests?\((number: [0-9]+|headRefName: \$[pb][0-9]+)' <<<"$query" |
+    sed -E 's/^([pb][0-9]+): pullRequest\(number: ([0-9]+)/\1 number \2/; s/^([pb][0-9]+): pullRequests\(headRefName: \$([pb][0-9]+)/\1 branch \2/')
+  jq -n --argjson r "$data" '{data: {repository: $r}}'
   ;;
 "pr checkout")
   # In a clone of a demo repo: the PR's head (refs/pull/<n>/head, so forks

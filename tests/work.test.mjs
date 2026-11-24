@@ -1,6 +1,7 @@
 // joinWork: workFor's merge rules on plain data.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { perRef } from "./fake-tools.mjs";
 
 const { joinWork, openWork } = await import("../src/work.js");
 
@@ -98,12 +99,12 @@ function fakeStore({ prs = {}, linked = {} } = {}) {
         mainBranch: "main",
         linked: [],
       }),
-      prDetails: async (slug, ref, was) => {
+      prDetailsMany: perRef(async (slug, ref, was) => {
         calls.pr.push([slug, ref, was?.number ?? null]);
         const v = prs[ref];
         if (v instanceof Error) throw v;
         return v ?? null;
-      },
+      }),
     },
   });
   const trk = {
@@ -158,16 +159,16 @@ test("WorkStore: an active PR is due sooner; a failure is retried and keeps the 
   f.tick(ACTIVE_PR_MS + 1);
   await f.store.refresh(f.keys);
   assert.equal(f.calls.pr.length, 2);
-  f.store.sources.prDetails = async () => {
+  f.store.sources.prDetailsMany = perRef(async () => {
     throw new Error("offline");
-  };
+  });
   f.tick(ACTIVE_PR_MS + 1);
   await f.store.refresh(f.keys);
   const entry = f.store.prEntry(repo, "issue-1");
   assert.equal(entry.state, "failed");
   assert.equal(entry.value.number, 3);
   assert.equal(f.store.snapshot(["#1"]).get("#1")[0].pr.number, 3);
-  f.store.sources.prDetails = async () => pr(3, "issue-1");
+  f.store.sources.prDetailsMany = perRef(async () => pr(3, "issue-1"));
   f.tick(RETRY_MS - ACTIVE_PR_MS);
   await f.store.refresh(f.keys);
   assert.equal(f.store.prEntry(repo, "issue-1").state, "failed");
@@ -375,7 +376,7 @@ test("WorkStore.adopt: a branch naming no ticket takes the one its PR names", as
         mainBranch: "main",
         linked: [],
       }),
-      prDetails: async () => p,
+      prDetailsMany: perRef(async () => p),
     },
   });
   await store.scan([named]);
