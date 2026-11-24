@@ -143,7 +143,16 @@ export function workView(input) {
         : sub0;
     // The ticket's other PRs here (a stack): each a sub-item under the row
     // (stackItem), selectable like a row; its own key, `${path}#${number}`.
-    const stack = (input.stackOf?.(w) ?? []).map((p) => stackItem(w, p, span));
+    // Numbered by its place in the stack (the row's own PR included), so
+    // "2/3" is the second of three PRs in order of number.
+    const others = input.stackOf?.(w) ?? [];
+    const order = [prValue, ...others]
+      .filter(Boolean)
+      .map((p) => p.number)
+      .sort((a, b) => a - b);
+    const stack = others.map((p) =>
+      stackItem(w, p, span, order.indexOf(p.number) + 1, order.length),
+    );
     const extras =
       prValue?.state === "OPEN" && prValue.autoMerge ? ["auto-merge"] : [];
     // The row's third line: the last step's note, else these extras.
@@ -251,14 +260,16 @@ export function workView(input) {
 }
 
 // A stacked PR `p` of row `w`'s ticket, as a sub-item under it: one line
-// (number, state, title or branch), no steps, no space of its own;
-// activating it opens the PR. Merged or closed: dimmed.
-function stackItem(w, p, span) {
+// (its stack position `at` of `of`, number, state, title or branch), no
+// steps, no space of its own; activating it opens the PR. Merged or closed:
+// dimmed.
+function stackItem(w, p, span, at, of) {
   const label = /** @type {NonNullable<ReturnType<typeof prLabel>>} */ (
     prLabel(p, "short")
   );
   const done = p.state === "MERGED" || p.state === "CLOSED";
   const title = p.title || p.branch || "";
+  const place = `${at}/${of}`;
   return {
     key: `${w.path}#${p.number}`,
     stacked: true,
@@ -268,13 +279,18 @@ function stackItem(w, p, span) {
     url: p.url ?? null,
     title,
     ...label,
-    // At its narrowest, the state's glyph; else "#14 draft".
-    shown: span === "glyph" || span === "rail" ? label.glyph : label.head,
+    // At its narrowest, the state's glyph; else "2/3 #14 draft".
+    shown:
+      span === "glyph" || span === "rail"
+        ? label.glyph
+        : `${place} ${label.head}`,
     tone: done ? "dim" : toneKey(label.tone),
     dim: done,
     selected: false,
     steps: [],
-    tip: [label.text, title].filter(Boolean).join(" · ") + " — Enter to open",
+    tip:
+      [`${place} ${label.text}`, title].filter(Boolean).join(" · ") +
+      " — Enter to open",
   };
 }
 

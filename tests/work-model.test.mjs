@@ -306,6 +306,11 @@ test("WorkModel.view and report: a row shows its ticket's other PRs in the repo 
       [true, "/wt/issue-1#14", 0, false],
     ],
   );
+  // Each shows its place in the stack: #12, #13 (the row's), #14 of three.
+  assert.deepEqual(
+    subs.map((p) => p.shown),
+    ["1/3 #12 merged", "3/3 #14 draft"],
+  );
   assert.equal(view.rows[4], two);
   // The keys can pick one.
   const picked = m.view(LIVE, 0, {
