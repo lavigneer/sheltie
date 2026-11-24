@@ -25,11 +25,17 @@ if (args[0] === "api" && args[1] === "graphql" && arg(/^q=(.*)$/s) !== undefined
   if (st.searchFails) { process.stderr.write("HTTP 502\\n"); process.exit(1); }
   out({ data: { viewer: { login: "me" }, search: { nodes: st.reviews ?? [] } } });
 } else if (args[0] === "api" && args[1] === "graphql") {
-  const branch = arg(/^branch=(.*)$/s), number = arg(/^number=(\\d+)$/);
+  // One alias per PR (prs.js batchQuery): p<i> by number, b<i> by the branch in $b<i>.
+  const query = arg(/^query=(.*)$/s) ?? "";
   const prs = Object.values(st.prs ?? {});
-  if (branch !== undefined)
-    out({ data: { repository: { pullRequests: { nodes: st.prs?.[branch] ? [st.prs[branch]] : [] } } } });
-  else out({ data: { repository: { pullRequest: prs.find((p) => String(p.number) === number) ?? null } } });
+  const repository = {};
+  for (const [, alias, number] of query.matchAll(/(p\\d+): pullRequest\\(number: (\\d+)\\)/g))
+    repository[alias] = prs.find((p) => String(p.number) === number) ?? null;
+  for (const [, alias, variable] of query.matchAll(/(b\\d+): pullRequests\\(headRefName: \\$(b\\d+)/g)) {
+    const branch = arg(new RegExp("^" + variable + "=(.*)$", "s"));
+    repository[alias] = { nodes: st.prs?.[branch] ? [st.prs[branch]] : [] };
+  }
+  out({ data: { repository } });
 } else if (args[0] === "pr" && args[1] === "checkout") {
   // Succeeds in place: the review worktree stays on its detached HEAD.
 } else if (args[0] === "search" && args[1] === "issues") {
@@ -45,6 +51,21 @@ if (args[0] === "api" && args[1] === "graphql" && arg(/^q=(.*)$/s) !== undefined
   else out({ number: Number(args[2]), title: i.title, state: i.state ?? "OPEN", labels: [] });
 }
 `;
+
+// A per-PR fake (slug, ref, previous, opts) as the batched source the WorkStore
+// takes (prDetailsMany): Map ref -> details, or the Error the fake threw.
+export const perRef = (f) => async (slug, items, opts) =>
+  new Map(
+    await Promise.all(
+      items.map(async ({ ref, previous }) => {
+        try {
+          return [ref, await f(slug, ref, previous, opts)];
+        } catch (e) {
+          return [ref, e];
+        }
+      }),
+    ),
+  );
 
 export function sandbox({ settings = {}, state = {} } = {}) {
   const dir = fs.realpathSync(

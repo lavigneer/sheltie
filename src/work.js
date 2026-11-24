@@ -6,7 +6,7 @@ import { C, REPO_FILE } from "./config.js";
 import { repoState, sameSlug } from "./git.js";
 import { basename, pool } from "./lib.js";
 import { PR_MS, RETRY_MS } from "./polling.js";
-import { prDetails } from "./prs.js";
+import { prDetailsMany } from "./prs.js";
 import { handleOf, ticketOfBranch, tracker, trackerOf } from "./tracker.js";
 import { Cache } from "./watch.js";
 
@@ -143,7 +143,7 @@ export const workName = (i) =>
 // worktree, pr }]. `states` are repoState results with their `repo`; a branch
 // listed both as a worktree and a branch is one item. `linked` maps a key to
 // the PRs ({ slug, number }) its tracker links; `details` maps prRef(slug,
-// branch or number) to prDetails (missing = failed lookup, the item keeps pr
+// branch or number) to prDetailsMany (missing = failed lookup, the item keeps pr
 // null). A linked PR not already attached becomes its own item.
 /**
  * @param {string[] | null} keys (null: every key the work mentions)
@@ -274,7 +274,7 @@ export const prMaxAge = (pr) =>
 // tracker-linked PRs and PR details (joinWork) and decides what is due for a
 // lookup. Holds the caches (Cache, watch.js): tickets and linked PRs by key,
 // PR details by prRef (slug#branch or slug#number). Sources are injected:
-// `repoState(repo)` and `prDetails(slug, ref, previous, { requiredOnly })`; trackers (view,
+// `repoState(repo)` and `prDetailsMany(slug, items, { requiredOnly })`; trackers (view,
 // linkedPRs) come with the keys asked about.
 // What a scan found, as text to compare with the last scan's.
 const statesKey = (states) =>
@@ -290,7 +290,7 @@ const statesKey = (states) =>
 
 export class WorkStore {
   constructor({
-    sources = { repoState, prDetails },
+    sources = { repoState, prDetailsMany },
     now = Date.now,
     retryMs = RETRY_MS,
   } = {}) {
@@ -524,21 +524,32 @@ export class WorkStore {
           )
             lookups.set(prRef(p.slug, p.number), [p.slug, p.number]);
       }
+      // The due ones, by repo: one batched lookup per repo (prDetailsMany).
+      /** @type {Map<string, { ref: string, r: string | number, was: any }[]>} */
+      const due = new Map();
+      for (const [ref, [slug, r]] of lookups)
+        if (this.prs.due(ref, prMaxAge(this.prs.get(ref)?.value), { force }))
+          due.set(slug, [
+            ...(due.get(slug) ?? []),
+            { ref, r, was: this.prs.get(ref)?.value ?? null },
+          ]);
       await pool(
-        [...lookups]
-          .filter(([ref]) =>
-            this.prs.due(ref, prMaxAge(this.prs.get(ref)?.value), { force }),
-          )
-          .map(([ref, [slug, r]]) => async () => {
-            const was = this.prs.get(ref)?.value ?? null;
-            const asked = this.now();
-            const entry = await this.prs.refresh(ref, () =>
-              this.sources.prDetails(slug, r, was, {
-                requiredOnly: C.requiredChecksOnly,
-              }),
-            );
+        [...due].map(([slug, items]) => async () => {
+          const asked = this.now();
+          const found = await this.sources.prDetailsMany(
+            slug,
+            items.map(({ r, was }) => ({ ref: r, previous: was })),
+            { requiredOnly: C.requiredChecksOnly },
+          );
+          for (const { ref, r, was } of items) {
+            const entry = await this.prs.refresh(ref, async () => {
+              const pr = found.get(r);
+              if (pr instanceof Error) throw pr;
+              return pr;
+            });
             onPR?.(ref, was, entry, asked);
-          }),
+          }
+        }),
       );
     })();
     await Promise.all([tickets, prs]);

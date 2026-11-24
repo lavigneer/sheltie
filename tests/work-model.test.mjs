@@ -1,6 +1,7 @@
 // WorkModel (#246): the Work sidebar's groups, adoption and view, with no View.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { perRef } from "./fake-tools.mjs";
 
 const { WorkStore } = await import("../src/work.js");
 const { WorkModel } = await import("../src/work-model.js");
@@ -29,7 +30,7 @@ function model(branches) {
         mainBranch: "main",
         linked: [],
       }),
-      prDetails: async () => null,
+      prDetailsMany: perRef(async () => null),
     },
   });
   return { m: new WorkModel({ store }), repo, repos: [repo], state };
@@ -137,10 +138,10 @@ test("WorkModel.lookups: a linked PR found wakes before its lookup lands", async
     new Map([["#1", [{ slug: "me/lib", number: 5 }]]]);
   let land;
   const landed = new Promise((r) => (land = r));
-  m.store.sources.prDetails = async () => {
+  m.store.sources.prDetailsMany = perRef(async () => {
     await landed;
     return null;
-  };
+  });
   await m.scan([repo]);
   // The ticket is known already: only the linked PR is new.
   await m.store.tickets.refresh("#1", async () => ({ title: "One" }));
@@ -206,7 +207,7 @@ test("WorkModel.view and report: a row shows its ticket's other PRs in the repo 
         mainBranch: "main",
         linked: [],
       }),
-      prDetails: async (_slug, ref) => prs[ref] ?? null,
+      prDetailsMany: perRef(async (_slug, ref) => prs[ref] ?? null),
     },
   });
   const m = new WorkModel({ store });
