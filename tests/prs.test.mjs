@@ -41,6 +41,14 @@ test("parsePR: no node is no PR", () => {
   assert.equal(parsePR("a/b", null), null);
 });
 
+test("parsePR: the base branch is what a stack chains by", () => {
+  assert.equal(parsePR("a/b", node()).base, null);
+  assert.equal(
+    parsePR("a/b", { ...node(), baseRefName: "me/X-0" }).base,
+    "me/X-0",
+  );
+});
+
 test("parsePR: checks roll up to passed, failed or pending", () => {
   const of = (checks) => parsePR("a/b", node({ checks }));
   assert.equal(of([]).checks, null);

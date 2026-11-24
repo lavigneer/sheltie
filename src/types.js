@@ -54,6 +54,8 @@
  * @property {number} [checksPassed] how many of its checks passed
  * @property {number} [checksTotal] how many checks it has
  * @property {string} branch
+ * @property {string | null} [base] the branch it merges into (a stack's PRs
+ *   chain by it: the one based on another comes after it)
  * @property {string} head
  * @property {boolean} autoMerge GitHub will merge it on its own (auto-merge
  *   on, or in a merge queue)
