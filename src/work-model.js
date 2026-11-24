@@ -21,6 +21,32 @@ export const spaceOf = (w, live) => live.spaceOf(w.path, w.except);
 export const costsKey = (usage) =>
   JSON.stringify(usage?.map((g) => [g.dir, g.cost]) ?? null);
 
+// `prs` in stack order, bottom first: each PR after the one whose head branch
+// it is based on (its base). A PR whose base is none of them starts a chain;
+// siblings keep number order, and a cycle (none starts it) is walked by number.
+export function stackOrder(prs) {
+  const sorted = [...prs].sort((a, b) => a.number - b.number);
+  const byBranch = new Map(sorted.map((p) => [p.branch, p]));
+  const above = new Map(); // PR number -> the PRs based on it
+  const roots = [];
+  for (const p of sorted) {
+    const under = p.base ? byBranch.get(p.base) : undefined;
+    if (under && under !== p)
+      above.set(under.number, [...(above.get(under.number) ?? []), p]);
+    else roots.push(p);
+  }
+  const out = [];
+  const seen = new Set();
+  const walk = (p) => {
+    if (seen.has(p.number)) return;
+    seen.add(p.number);
+    out.push(p);
+    for (const k of above.get(p.number) ?? []) walk(k);
+  };
+  for (const p of [...roots, ...sorted]) walk(p);
+  return out;
+}
+
 export class WorkModel {
   constructor({ store = new WorkStore() } = {}) {
     // null until the first scan; else every local repo:
@@ -143,18 +169,16 @@ export class WorkModel {
   }
 
   // The ticket's other PRs in `w`'s repo (a gh stack, or earlier PRs from
-  // the same worktree), by number: the row shows them beside its own.
+  // the same worktree), in stack order (stackOrder), the row's own PR
+  // placed among them: the row shows them beside its own.
   stackOf(w) {
     const own = this.prOf(w);
     const seen = new Map();
-    for (const i of this.workOf(w))
-      if (
-        i.pr &&
-        i.pr.number !== own?.number &&
-        sameSlug(i.pr.slug, w.repo.slug)
-      )
-        seen.set(i.pr.number, i.pr);
-    return [...seen.values()].sort((a, b) => a.number - b.number);
+    for (const p of [own, ...this.workOf(w).map((i) => i.pr)])
+      if (p && sameSlug(p.slug, w.repo.slug)) seen.set(p.number, p);
+    return stackOrder([...seen.values()]).filter(
+      (p) => p.number !== own?.number,
+    );
   }
 
   // Whether `w`'s branch names a ticket: only one the tracker says it doesn't
