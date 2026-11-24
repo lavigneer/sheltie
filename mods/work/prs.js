@@ -20,7 +20,7 @@ const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 const prFields = (
   required,
   number,
-) => `number url title body state isDraft reviewDecision headRefName
+) => `number url title body state isDraft reviewDecision headRefName baseRefName
   headRefOid mergeable autoMergeRequest { enabledAt } isInMergeQueue
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
     nodes { ... on CheckRun { status conclusion${required ? ` isRequired(pullRequestNumber: ${number})` : ""} }
@@ -174,6 +174,7 @@ export function parsePR(
     checksPassed: results.filter((x) => OK.includes(x)).length,
     checksTotal: results.length,
     branch: pr.headRefName,
+    base: pr.baseRefName ?? null,
     head: pr.headRefOid,
     // GitHub merges it on its own: auto-merge on, or already in a merge queue.
     autoMerge: Boolean(pr.autoMergeRequest || pr.isInMergeQueue),

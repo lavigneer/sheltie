@@ -155,7 +155,7 @@ case "${1:-} ${2:-}" in
     (if . == null then null else
     {number, title, url: "https://github.com/\(.repo)/pull/\(.number)",
      state: (.state // "OPEN"), isDraft: .draft, reviewDecision: .review,
-     headRefName: .branch, headRefOid: $head,
+     headRefName: .branch, baseRefName: (.base // "main"), headRefOid: $head,
      autoMergeRequest: (if .autoMerge then {enabledAt: "now"} else null end),
      mergeable: (.mergeable // "MERGEABLE"),
      commits: {nodes: [{commit: {statusCheckRollup:

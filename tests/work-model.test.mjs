@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { perRef } from "./fake-tools.mjs";
 
 const { WorkStore } = await import("../src/work.js");
-const { WorkModel } = await import("../src/work-model.js");
+const { WorkModel, stackOrder } = await import("../src/work-model.js");
 const { fixtureSpaces } = await import("../src/spaces.js");
 
 const tracker = {
@@ -177,6 +177,74 @@ test("WorkModel.revision: moves with a scan, an adoption or a cost", async () =>
   assert.equal(m.revision, was);
 });
 
+test("stackOrder: each PR after the one it is based on, bottom first", () => {
+  const pr = (number, branch, base) => ({ number, branch, base });
+  // 42 on 39 on 34 (on main), given shuffled; 50 starts its own chain.
+  const stack = stackOrder([
+    pr(42, "c", "b"),
+    pr(50, "x", "main"),
+    pr(34, "a", "main"),
+    pr(39, "b", "a"),
+  ]);
+  assert.deepEqual(
+    stack.map((p) => p.number),
+    [34, 39, 42, 50],
+  );
+  // No base known (or none of them): number order, as before.
+  assert.deepEqual(
+    stackOrder([pr(30, "p"), pr(10, "q")]).map((p) => p.number),
+    [10, 30],
+  );
+  // A cycle has no bottom: it still comes out, by number.
+  assert.deepEqual(
+    stackOrder([pr(2, "a", "b"), pr(1, "b", "a")]).map((p) => p.number),
+    [1, 2],
+  );
+});
+
+test("WorkModel.stackOf: the stack is in stack order, not number order", async () => {
+  const repo = { slug: "me/app", path: "/src/app", name: "app", tracker };
+  // 13 is the row's PR (on main); 20 is based on 13, and 12 on 20.
+  const prs = {
+    "issue-1-b": { number: 13, branch: "issue-1-b", base: "main" },
+    "issue-1-20": { number: 20, branch: "issue-1-20", base: "issue-1-b" },
+    "issue-1-12": { number: 12, branch: "issue-1-12", base: "issue-1-20" },
+  };
+  const pr = (p) => ({
+    slug: "me/app",
+    state: "OPEN",
+    draft: false,
+    review: "REVIEW_REQUIRED",
+    checks: null,
+    mergeable: "MERGEABLE",
+    ...p,
+  });
+  const store = new WorkStore({
+    sources: {
+      repoState: async () => ({
+        worktrees: [{ path: "/wt/issue-1", branch: "issue-1-b" }],
+        branches: new Map(Object.keys(prs).map((b) => [b, { local: true }])),
+        mainBranch: "main",
+        linked: [],
+      }),
+      prDetailsMany: perRef(async (_slug, ref) => {
+        const p = Object.values(prs).find((x) => x.branch === ref);
+        return p ? pr(p) : null;
+      }),
+    },
+  });
+  const m = new WorkModel({ store });
+  await m.scan([repo]);
+  const t = { ...tracker, linkedPRs: async () => new Map() };
+  await store.refresh(new Map([["#1", t]]), { force: true });
+  const [, row] = m.view(LIVE, 0, { width: 400 }).rows;
+  assert.equal(row.prValue.number, 13);
+  assert.deepEqual(
+    m.stackOf(row.w).map((p) => p.number),
+    [20, 12],
+  );
+});
+
 test("WorkModel.view and report: a row shows its ticket's other PRs in the repo (a stack)", async () => {
   const repo = { slug: "me/app", path: "/src/app", name: "app", tracker };
   const pr = (number, branch, more = {}) => ({
@@ -238,6 +306,11 @@ test("WorkModel.view and report: a row shows its ticket's other PRs in the repo 
       [true, "/wt/issue-1#12", 0, true],
       [true, "/wt/issue-1#14", 0, false],
     ],
+  );
+  // Each shows its place in the stack: #12, #13 (the row's), #14 of three.
+  assert.deepEqual(
+    subs.map((p) => p.shown),
+    ["1/3 #12 merged", "3/3 #14 draft"],
   );
   assert.equal(view.rows[4], two);
   // The keys can pick one.
