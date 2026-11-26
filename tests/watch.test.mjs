@@ -86,6 +86,23 @@ test("Cache.refresh: found / none / failed, a failure keeping the last value", a
   assert.equal(c.get("a").value, null);
 });
 
+test("Cache: a failed lookup keeps the last value and is retried only after retryMs", async () => {
+  let t = 0;
+  const c = new Cache({ retryMs: 10, now: () => t });
+  await c.refresh("a", async () => ({ n: 1 }));
+  t = 5;
+  await c.refresh("a", async () => {
+    throw new Error("down");
+  });
+  assert.deepEqual(c.get("a").value, { n: 1 }, "the last good value stays");
+  t = 15; // 10ms after the failure: not yet past retryMs
+  assert.equal(c.due("a", 1_000), false);
+  t = 16;
+  assert.equal(c.due("a", 1_000), true);
+  await c.refresh("a", async () => ({ n: 2 }));
+  assert.equal(c.get("a").state, "found", "the retry recovers");
+});
+
 test("Cache: the version moves when a lookup changes an entry, not when it confirms it", async () => {
   let t = 0;
   const c = new Cache({ retryMs: 60_000, now: () => t });
