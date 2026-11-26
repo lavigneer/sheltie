@@ -102,6 +102,24 @@ const WATCH_MS = 3_000; // between rechecks of a new space's folder
 const LINKS_W = 18; // a row's ↗ button
 
 export default class Work extends View {
+  /** @type {ReturnType<typeof serial>} */
+  refresh;
+  /** @type {ReturnType<typeof serial>} */
+  details;
+  /** @type {ReturnType<typeof serial>} */
+  starts;
+  /** @type {ReturnType<typeof serial>} */
+  costs;
+  /** @type {WorkModel} */
+  model;
+  /** @type {Nav} */
+  nav;
+  /** @type {RepoCache} */
+  repos;
+  /** @type {boolean} */
+  watchTimer;
+  /** @type {RenderStats} */
+  renders;
   init(_props, cx) {
     // Groups, steps, starting folders, costs and the store (work-model.js).
     this.model = new WorkModel();

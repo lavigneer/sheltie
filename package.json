@@ -7,14 +7,15 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --import ./tests/register.mjs --test 'tests/*.test.mjs'",
-    "typecheck": "tsc -p .",
+    "typecheck": "tsc -p . && node scripts/typecheck-mods.mjs",
     "check-built": "node scripts/build.mjs && test -z \"$(git status --porcelain --untracked-files=all -- mods sheltie.schema.json)\"",
     "e2e": "node --test 'tests/e2e/*.test.mjs'",
     "e2e:shots": "node --test tests/e2e/shots.mjs",
     "lint": "biome lint src scripts tests",
     "format": "biome check --write src scripts tests",
     "ci:lint": "biome ci src scripts tests",
-    "coverage": "node scripts/coverage.mjs"
+    "coverage": "node scripts/coverage.mjs",
+    "typecheck:mods": "node scripts/typecheck-mods.mjs"
   },
   "engines": {
     "node": ">=22"

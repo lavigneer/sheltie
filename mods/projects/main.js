@@ -53,6 +53,14 @@ async function scan() {
 }
 
 export default class Projects extends View {
+  /** @type {number} */
+  at;
+  /** @type {string[] | null} */
+  repos;
+  /** @type {Map<string, string[]>} */
+  linked;
+  /** @type {string[]} */
+  problems;
   init(_props, cx) {
     this.filter = "";
     this.at = 0;
@@ -101,6 +109,7 @@ export default class Projects extends View {
   }
 
   rows() {
+    /** @type {{ path: string, name: string, score: number, space: any }[]} */
     const rows = [];
     const live = herdrSpaces();
     for (const path of this.repos ?? []) {
@@ -113,7 +122,7 @@ export default class Projects extends View {
     rows.sort(
       (a, b) =>
         a.score - b.score ||
-        Boolean(b.space) - Boolean(a.space) ||
+        Number(Boolean(b.space)) - Number(Boolean(a.space)) ||
         a.name.localeCompare(b.name),
     );
     return rows;

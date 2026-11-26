@@ -147,7 +147,7 @@ export default class Usage extends View {
         );
 
     // 7 and 30 days sit under Today as quieter context.
-    const line = (id, label, s, tip = null) =>
+    const line = (id, label, s, /** @type {string | null} */ tip = null) =>
       h_flex()
         .id(id)
         .when(Boolean(tip), (el) => el.tooltip(tip))
