@@ -38,7 +38,8 @@ jobs:
           git config --global user.name ci
           git config --global user.email ci@example.invalid
           git config --global init.defaultBranch main
-          npm test
+          # The unit tests, under coverage: fails below the shared-module gate.
+          npm run coverage
 
   # The real Herdr with the mods, on throwaway demos (npm run e2e), on Xvfb.
   # Herdr comes from the nixpkgs in flake.lock; the scheduled run uses the
