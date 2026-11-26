@@ -15,6 +15,35 @@ const BAD = [
 
 const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 
+/**
+ * A check on a PR's head commit: a CheckRun (conclusion, status) or a
+ * StatusContext (state). isRequired is set when GitHub asks for it.
+ * @typedef {{ isRequired?: boolean, conclusion?: string | null, state?: string | null, status?: string | null }} CheckContext
+ */
+/**
+ * A pullRequest node from prDetails' query (prFields), as parsePR reads it.
+ * @typedef {{
+ *   number: number, url: string, title: string, body?: string | null,
+ *   state: "OPEN" | "CLOSED" | "MERGED", isDraft: boolean, reviewDecision?: string | null,
+ *   headRefName: string, baseRefName?: string | null, headRefOid: string,
+ *   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN", autoMergeRequest?: unknown, isInMergeQueue?: boolean,
+ *   commits?: { nodes?: { commit?: { statusCheckRollup?: { contexts?: { nodes?: CheckContext[] } } | null } }[] },
+ *   reviewThreads?: { nodes?: { isResolved: boolean }[] },
+ * }} GqlPR
+ */
+/**
+ * A PR node from reviewRequests()'s search, as reviewQueue reads it.
+ * @typedef {{
+ *   number: number, url: string, title: string, createdAt: string,
+ *   additions?: number | null, deletions?: number | null,
+ *   author?: { login: string } | null,
+ *   repository: { nameWithOwner: string },
+ *   timelineItems?: { nodes?: { createdAt: string, requestedReviewer?: { __typename?: string, login?: string } | null }[] },
+ *   latestReviews?: { nodes?: { submittedAt: string, author?: { login?: string } | null }[] },
+ * }} ReviewPR
+ */
+/** @typedef {{ viewer?: { login?: string } | null, search?: { nodes?: (ReviewPR | null)[] } }} ReviewsData */
+
 // The fields prDetails reads, for a pullRequest in GitHub's GraphQL API. A
 // check's isRequired needs the PR's number, so it's only asked by number.
 /** @param {boolean} required @param {string | number} [number] */
@@ -143,7 +172,7 @@ async function fetchPRs(slug, refs) {
 // doesn't fix it. `unresolved`: the count of unresolved review threads on an
 // open PR, else null. With `requiredOnly`, checks that aren't required for
 // merging (no isRequired on the node) are left out of `checks` and its counts.
-/** @param {string} slug @param {any} pr @param {import("./types.js").PR | null} [previous] @param {{ requiredOnly?: boolean }} [opts] @returns {import("./types.js").PR | null} */
+/** @param {string} slug @param {GqlPR | null} pr @param {import("./types.js").PR | null} [previous] @param {{ requiredOnly?: boolean }} [opts] @returns {import("./types.js").PR | null} */
 export function parsePR(
   slug,
   pr,
@@ -153,16 +182,16 @@ export function parsePR(
   if (!pr) return null;
   const contexts = (
     pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes ?? []
-  ).filter((/** @type {any} */ c) => !requiredOnly || c.isRequired);
+  ).filter((c) => !requiredOnly || c.isRequired);
   const results = contexts.map(
-    (/** @type {any} */ c) => c.conclusion || c.state || c.status || "",
+    (c) => c.conclusion || c.state || c.status || "",
   );
   // A result we don't recognise counts as still running, never as passed.
   const checks = !results.length
     ? null
-    : results.some((/** @type {any} */ x) => BAD.includes(x))
+    : results.some((x) => BAD.includes(x))
       ? "failed"
-      : results.every((/** @type {any} */ x) => OK.includes(x))
+      : results.every((x) => OK.includes(x))
         ? "passed"
         : "pending";
   const mergeable = MERGE_STATES.includes(pr.mergeable)
@@ -178,8 +207,7 @@ export function parsePR(
     draft: pr.isDraft,
     review: pr.reviewDecision || null,
     checks,
-    checksPassed: results.filter((/** @type {any} */ x) => OK.includes(x))
-      .length,
+    checksPassed: results.filter((x) => OK.includes(x)).length,
     checksTotal: results.length,
     branch: pr.headRefName,
     base: pr.baseRefName ?? null,
@@ -195,9 +223,7 @@ export function parsePR(
         : mergeable,
     unresolved:
       pr.state === "OPEN"
-        ? (pr.reviewThreads?.nodes ?? []).filter(
-            (/** @type {any} */ t) => !t.isResolved,
-          ).length
+        ? (pr.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).length
         : null,
   };
 }
@@ -335,27 +361,27 @@ export async function reviewRequests(search) {
 // (others are left out), oldest request first. A PR you've reviewed since its
 // last request to you (or a team) drops off; a re-request brings it back.
 // Each: { slug, number, url, title, author, requestedAt, additions, deletions }.
-/** @param {any} data @param {string[]} slugs @returns {import("./types.js").Review[]} */
+/** @param {ReviewsData} data @param {string[]} slugs @returns {import("./types.js").Review[]} */
 export function reviewQueue(data, slugs) {
   const me = data?.viewer?.login?.toLowerCase();
   const known = new Set(slugs.map((s) => s.toLowerCase()));
-  return (data?.search?.nodes ?? [])
-    .filter((/** @type {any} */ pr) =>
-      known.has(pr?.repository?.nameWithOwner?.toLowerCase()),
+  return /** @type {ReviewPR[]} */ (data?.search?.nodes ?? [])
+    .filter((pr) =>
+      known.has(
+        /** @type {string} */ (pr?.repository?.nameWithOwner?.toLowerCase()),
+      ),
     )
-    .map((/** @type {any} */ pr) => {
+    .map((pr) => {
       const asked = (pr.timelineItems?.nodes ?? [])
-        .filter((/** @type {any} */ e) => {
+        .filter((e) => {
           const r = e?.requestedReviewer;
           return r?.__typename === "Team" || r?.login?.toLowerCase() === me;
         })
-        .map((/** @type {any} */ e) => e.createdAt)
+        .map((e) => e.createdAt)
         .sort();
       const reviewed = (pr.latestReviews?.nodes ?? [])
-        .filter(
-          (/** @type {any} */ r) => r?.author?.login?.toLowerCase() === me,
-        )
-        .map((/** @type {any} */ r) => r.submittedAt)
+        .filter((r) => r?.author?.login?.toLowerCase() === me)
+        .map((r) => r.submittedAt)
         .sort();
       return {
         slug: pr.repository.nameWithOwner,
@@ -370,15 +396,13 @@ export function reviewQueue(data, slugs) {
         deletions: pr.deletions ?? 0,
       };
     })
-    .filter(
-      (/** @type {any} */ r) => !r.reviewedAt || r.reviewedAt < r.requestedAt,
-    )
-    .map((/** @type {any} */ x) => {
+    .filter((r) => !r.reviewedAt || r.reviewedAt < r.requestedAt)
+    .map((x) => {
       const { reviewedAt: _, ...r } = x;
       return r;
     })
     .sort(
-      (/** @type {any} */ a, /** @type {any} */ b) =>
+      (a, b) =>
         a.requestedAt.localeCompare(b.requestedAt) ||
         a.slug.localeCompare(b.slug) ||
         a.number - b.number,
