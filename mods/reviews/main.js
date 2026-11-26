@@ -14,6 +14,7 @@ import { notify, theme } from "herdr";
 import { C, configReady } from "./config.js";
 import { localRepos, sameSlug } from "./git.js";
 import { openUrl } from "./lib.js";
+import { CONFIRM_MS, Nav } from "./nav.js";
 import { reviewQueue, reviewRequests } from "./prs.js";
 import { band, RAIL, resize } from "./sidebar.js";
 import {
@@ -44,6 +45,9 @@ export default class Reviews extends View {
     this.worktrees = []; // allReviewWorktrees, after sweeping
     this.reviewed = []; // worktrees of PRs no longer in the queue, still open
     this.warned = new Set(); // paths whose automatic teardown was refused
+    // Done reviewing closes a space and removes a worktree: like Work's Finish,
+    // it asks for a second click (nav.js; workflow.confirmFinish).
+    this.confirm = new Nav();
 
     // One start at a time, so a double click can't check out twice.
     this.starting = false;
@@ -140,8 +144,11 @@ export default class Reviews extends View {
     const message = (text, color) =>
       div().px(14).py(4).text_size(11).text_color(color).child(text);
 
-    const row = (r) =>
-      h_flex()
+    const row = (r) => {
+      const w = this.worktreeOf(r);
+      const armed =
+        Boolean(w) && this.confirm.confirming(Date.now())?.id === w.path;
+      return h_flex()
         .id(`review-${r.slug}-${r.number}`)
         .px(14)
         .h(20)
@@ -151,7 +158,8 @@ export default class Reviews extends View {
         .cursor_pointer()
         .hover((s) => s.bg(t.hover))
         .tooltip(
-          `${r.slug}#${r.number} by ${r.author}\n${r.title}\nClick to start reviewing`,
+          r.tip ??
+            `${r.slug}#${r.number} by ${r.author}\n${r.title}\n${r.requestedAt ? `Requested ${age(r.requestedAt)} ago\n` : ""}Click to start reviewing`,
         )
         .on_click((_e, cx) => this.start(cx, r))
         .child(
@@ -203,7 +211,7 @@ export default class Reviews extends View {
             })
             .child("↗"),
         )
-        .when(Boolean(this.worktreeOf(r)), (el) =>
+        .when(Boolean(w), (el) =>
           el.child(
             div()
               .id(`review-done-${r.slug}-${r.number}`)
@@ -211,18 +219,28 @@ export default class Reviews extends View {
               .px(3)
               .rounded(4)
               .text_size(11)
-              .text_color(t.dim)
+              .text_color(armed ? t.blocked : t.dim)
               .hover((s) => s.bg(t.hover).text_color(t.foreground))
-              .tooltip("Done reviewing: close its space, remove the worktree")
+              .tooltip(
+                armed
+                  ? "Click again: close its space, remove the worktree"
+                  : "Done reviewing: close its space, remove the worktree",
+              )
               .on_click((_e, cx) => {
                 cx.stop_propagation();
-                const w = this.worktreeOf(r);
-                if (w) cx.spawn((cx) => this.doneReviewing(w, cx));
+                // The first click arms it; the second, within CONFIRM_MS, runs.
+                const confirm = C.workflow.confirmFinish !== false;
+                if (!this.confirm.press(w.path, confirm, false, Date.now())) {
+                  cx.timer.after(CONFIRM_MS, (cx) => cx.notify());
+                  return cx.notify();
+                }
+                cx.spawn((cx) => this.doneReviewing(w, cx));
               })
-              .child("✓"),
+              .child(armed ? "Done?" : "✓"),
           ),
         );
-    // A reviewed PR whose worktree is still here.
+    };
+    // A reviewed PR whose worktree is still here: its row opens that space.
     const reviewedRow = (w) =>
       row({
         slug: w.slug,
@@ -232,6 +250,7 @@ export default class Reviews extends View {
         author: "reviewed",
         requestedAt: null,
         additions: null,
+        tip: `${w.slug}#${w.number}\n${w.title || "Reviewed"}\nClick to open its review space`,
       });
 
     const header = h_flex()
