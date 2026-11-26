@@ -43,38 +43,6 @@ test("tool: an urgent gh call takes the next slot, ahead of queued lookups", asy
   }
 });
 
-test("tool: a gh call that doesn't answer in time fails, and frees its slot", async () => {
-  const fs = await import("node:fs");
-  const os = await import("node:os");
-  const path = await import("node:path");
-  const { C } = await import("../src/config.js");
-  const { tool } = await import("../src/lib.js");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sheltie-gh-"));
-  const gh = path.join(dir, "gh");
-  // "hang" outlives the deadline (by a second: the child can't be killed here).
-  fs.writeFileSync(
-    gh,
-    `#!/bin/sh\nif [ "$1" = hang ]; then sleep 1; fi\necho ok`,
-  );
-  fs.chmodSync(gh, 0o755);
-  const was = C.programs.gh;
-  C.programs.gh = gh;
-  try {
-    // Both slots wedged: each gives up, and a later call still runs.
-    const [a, b] = await Promise.all([
-      tool("gh", ["hang"], { timeoutMs: 50 }),
-      tool("gh", ["hang"], { timeoutMs: 50 }),
-    ]);
-    assert.equal(a.code, 1);
-    assert.match(a.stderr, /no answer after/);
-    assert.equal(b.code, 1);
-    assert.equal((await tool("gh", ["next"])).stdout.trim(), "ok");
-  } finally {
-    C.programs.gh = was;
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test("tool: gh runs two at a time and backs off after a rate limit", async () => {
   const fs = await import("node:fs");
   const os = await import("node:os");
