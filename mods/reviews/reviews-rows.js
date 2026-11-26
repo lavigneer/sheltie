@@ -71,7 +71,7 @@ export function reviewsView(input) {
       age: waited === null ? "" : age(r.requestedAt, now),
       ageTone: waited === null ? "dim" : waitTone(waited),
       done: Boolean(input.worktreeOf(r)),
-      tip: `${r.slug}#${r.number} by ${r.author}\n${r.title}\nClick to start reviewing`,
+      tip: `${r.slug}#${r.number} by ${r.author}\n${r.title}\n${r.requestedAt ? `Requested ${age(r.requestedAt, now)} ago\n` : ""}Click to start reviewing`,
     };
   });
   // Reviewed: drawn quieter, "reviewed" where the age goes.

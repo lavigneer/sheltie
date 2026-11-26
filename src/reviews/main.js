@@ -15,6 +15,7 @@ import { div, svg, View } from "gpui-kit";
 import { setShared, theme } from "herdr";
 import { C } from "./config.js";
 import { openUrl } from "./lib.js";
+import { CONFIRM_MS, Nav } from "./nav.js";
 import { PR_MS } from "./polling.js";
 import { ReviewsModel } from "./reviews-model.js";
 import { fit, reviewsView } from "./reviews-rows.js";
@@ -28,6 +29,9 @@ export default class Reviews extends View {
   init(_props, cx) {
     this.width = null;
     this.model = new ReviewsModel(); // queue, worktrees, actions (reviews-model.js)
+    // Done reviewing closes a space and removes a worktree: like Work's Finish,
+    // it asks for a second click (nav.js; workflow.confirmFinish).
+    this.confirm = new Nav();
     this.start = (cx, r) => cx.spawn(() => this.model.start(r));
     // The queue length for the layouts mod's Reviews tab: none until loaded.
     setShared(REVIEW_COUNT, null);
@@ -127,19 +131,40 @@ export default class Reviews extends View {
                 openUrl(r.url),
               ),
             )
-            .when(v.done, (el) =>
-              el.child(
-                button(
-                  `review-done-${v.key}`,
-                  "Done reviewing: close its space, remove the worktree",
-                  "✓",
-                  (cx) => {
-                    const w = this.model.worktreeOf(r);
-                    if (w) cx.spawn((cx) => this.doneReviewing(w, cx));
-                  },
-                ),
-              ),
-            ),
+            .when(v.done, (el) => {
+              const w = this.model.worktreeOf(r);
+              const armed =
+                Boolean(w) &&
+                this.confirm.confirming(Date.now())?.id === w.path;
+              return el.child(
+                div()
+                  .id(`review-done-${v.key}`)
+                  .flex_none()
+                  .px(3)
+                  .rounded(4)
+                  .text_size(11)
+                  .text_color(armed ? t.blocked : t.dim)
+                  .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                  .tooltip(
+                    armed
+                      ? "Click again: close its space, remove the worktree"
+                      : "Done reviewing: close its space, remove the worktree",
+                  )
+                  .on_click((_e, cx) => {
+                    cx.stop_propagation();
+                    // The first click arms it; the second, within CONFIRM_MS, runs.
+                    const confirm = C.workflow.confirmFinish !== false;
+                    if (
+                      !this.confirm.press(w.path, confirm, false, Date.now())
+                    ) {
+                      cx.timer.after(CONFIRM_MS, (cx) => cx.notify());
+                      return cx.notify();
+                    }
+                    cx.spawn((cx) => this.doneReviewing(w, cx));
+                  })
+                  .child(armed ? "Done?" : "✓"),
+              );
+            }),
         );
     };
 

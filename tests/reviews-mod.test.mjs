@@ -78,6 +78,10 @@ test("Reviews: a started review has ✓, which removes its worktree", async () =
     "✓ on the started review",
   );
   assert.equal(find(d.render(), "review-done-me/app-7"), null);
+  // Done reviewing asks twice (workflow.confirmFinish): the first click arms.
+  d.click("review-done-me/app-5");
+  assert.ok(find(d.render(), "review-done-me/app-5"));
+  assert.equal(fs.existsSync(reviewPath(5)), true);
   d.click("review-done-me/app-5");
   await d.until(
     () => !find(d.render(), "review-done-me/app-5"),

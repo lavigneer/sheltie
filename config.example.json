@@ -10,7 +10,9 @@
     "jira": "jira",
     "hc": "hc",
     "jq": "jq",
-    "curl": "curl"
+    "curl": "curl",
+    "sqlite3": "sqlite3",
+    "claude": "claude"
   },
   "tracker": "jira",
   "jira": {
@@ -44,6 +46,10 @@
   ],
   "branch": "me/{ref}",
   "worktreeDir": ".worktrees",
+  "workGroupBy": "repo",
+  "workRepoRows": 8,
+  "requiredChecksOnly": false,
+  "reviewSearch": "is:pr is:open archived:false review-requested:@me",
   "agent": {
     "argv": [
       "claude"
@@ -62,7 +68,8 @@
   "usage": {
     "agents": [
       { "type": "claude-code", "home": "~/.claude" },
-      { "type": "codex", "home": "~/.codex" }
+      { "type": "codex", "home": "~/.codex" },
+      { "type": "opencode", "home": "~/.local/share/opencode" }
     ],
     "prices": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
   },
