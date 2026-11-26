@@ -125,3 +125,26 @@ test("serial: forcing() while a forced run is running or queued, notifying as it
   assert.equal(start.forcing(), false);
   assert.equal(notified, 2);
 });
+
+test("serial: a forced run that throws ends forcing(); the next request runs unforced", async () => {
+  const tasks = [];
+  let notified = 0;
+  const cx = {
+    spawn: (f) => tasks.push(f(cx).catch(() => {})),
+    notify: () => notified++,
+  };
+  const runs = [];
+  const start = serial(async (_cx, force) => {
+    runs.push(force);
+    if (runs.length === 1) throw new Error("boom");
+  });
+  start(cx, true);
+  assert.equal(start.forcing(), true);
+  while (tasks.length) await tasks.shift();
+  assert.equal(start.forcing(), false, "state reset after the throw");
+  assert.equal(notified, 2, "starts, then ends");
+  start(cx);
+  while (tasks.length) await tasks.shift();
+  assert.deepEqual(runs, [true, false]);
+  assert.equal(start.forcing(), false);
+});

@@ -1,35 +1,63 @@
 // Polling helpers, kept out of the views so they can be tested.
 
+// The states of serial() name what runs and what waits behind it:
+const IDLE = "idle"; // nothing
+const RUN = "run"; // an unforced run
+const RUN_QUEUED = "run, queued"; // ... and an unforced run waits
+const RUN_FORCED = "run, forced queued"; // ... and a forced run waits
+const FORCED = "forced"; // a forced run
+const FORCED_QUEUED = "forced, queued"; // ... and an unforced run waits
+const FORCED_FORCED = "forced, forced queued"; // ... and a forced run waits
+// Forcing: a forced run is running or waiting (what `start.forcing()` reads).
+const FORCING = new Set([RUN_FORCED, FORCED, FORCED_QUEUED, FORCED_FORCED]);
+// The running run is forced (so the body is called with force).
+const FORCED_RUN = new Set([FORCED, FORCED_QUEUED, FORCED_FORCED]);
+// The state after a request (keyed by whether it is `plain` or `forced`).
+const ON_REQUEST = {
+  [IDLE]: { plain: RUN, forced: FORCED },
+  [RUN]: { plain: RUN_QUEUED, forced: RUN_FORCED },
+  [RUN_QUEUED]: { plain: RUN_QUEUED, forced: RUN_FORCED },
+  [RUN_FORCED]: { plain: RUN_FORCED, forced: RUN_FORCED },
+  [FORCED]: { plain: FORCED_QUEUED, forced: FORCED_FORCED },
+  [FORCED_QUEUED]: { plain: FORCED_QUEUED, forced: FORCED_FORCED },
+  [FORCED_FORCED]: { plain: FORCED_FORCED, forced: FORCED_FORCED },
+};
+// The state once the running run ends: the waiting run (if any) is now running.
+const ON_FINISH = {
+  [RUN]: IDLE,
+  [RUN_QUEUED]: RUN,
+  [RUN_FORCED]: FORCED,
+  [FORCED]: IDLE,
+  [FORCED_QUEUED]: RUN,
+  [FORCED_FORCED]: FORCED,
+};
+
 // Runs `body(cx, force)` one at a time (through cx.spawn). Asked again while
 // running, it runs once more afterwards (forced if any of the requests was),
 // rather than dropping it. `start.forcing()`: whether a forced run is running
 // or queued (a refresh asked for by hand, which the view shows as loading); it
 // notifies when that starts and when it ends.
 export function serial(body) {
-  let running = false;
-  let current = false; // whether the running one is forced
-  let queued = null; // null | { force }
-  const forcing = () => current || Boolean(queued?.force);
-  const run = (cx, force) => {
-    running = true;
-    current = force;
+  let state = IDLE;
+  const forcing = () => FORCING.has(state);
+  const run = (cx) => {
+    const force = FORCED_RUN.has(state);
     cx.spawn(async (cx) => {
       try {
         await body(cx, force);
       } finally {
-        running = false;
-        current = false;
-        const next = queued;
-        queued = null;
-        if (next) run(cx, next.force);
-        if (force && !forcing()) cx.notify?.();
+        const was = forcing();
+        state = ON_FINISH[state];
+        if (state !== IDLE) run(cx);
+        if (was && !forcing()) cx.notify?.();
       }
     });
   };
   const start = (cx, force = false) => {
     const was = forcing();
-    if (running) queued = { force: force || Boolean(queued?.force) };
-    else run(cx, force);
+    const idle = state === IDLE;
+    state = ON_REQUEST[state][force ? "forced" : "plain"];
+    if (idle) run(cx);
     if (!was && forcing()) cx.notify?.();
   };
   start.forcing = forcing;
