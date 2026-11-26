@@ -8,13 +8,12 @@ import { gitRepo, sandbox } from "./fake-tools.mjs";
 
 const box = sandbox({ settings: { github: { repos: ["me/app"] } } });
 const app = gitRepo(box.root, "app", "me/app", ["issue-1"]);
-box.setState({
-  issues: {
-    1: { title: "Fix the login" },
-    2: { title: "Add dark mode" },
-    3: { title: "Speed up search" },
-  },
-});
+const issues = {
+  1: { title: "Fix the login" },
+  2: { title: "Add dark mode" },
+  3: { title: "Speed up search" },
+};
+box.setState({ issues });
 
 const { mount, findAll } = await import("./mod-driver.mjs");
 const { default: Tickets } = await import("../mods/tickets/main.js");
@@ -180,4 +179,55 @@ test("Tickets: Ctrl+O opens the selected ticket in the browser", async () => {
   d.key("o", { control: true });
   await d.until(() => box.opened().length > before, "the ticket opened");
   assert.equal(box.opened().at(-1), "https://github.com/me/app/issues/1");
+});
+
+test("Tickets: a failed load shows its error; Ctrl+R retries it", async () => {
+  box.setState({ issues, issuesFails: true });
+  try {
+    const d = mount(Tickets);
+    await d.until(() => d.view.data.phase === "failed", "the load to fail");
+    assert.equal(d.view.data.from, "tickets");
+    assert.match(d.text(), /Ctrl\+R to retry/);
+  } finally {
+    box.setState({ issues });
+  }
+  const d = mount(Tickets);
+  d.key("r", { control: true });
+  await d.until(
+    () => d.view.data.phase === "ready" && /Speed up search/.test(d.text()),
+    "the retried load",
+  );
+});
+
+test("Tickets: a reload supersedes a load still in flight; only the newer one's results are kept", async () => {
+  const d = mount(Tickets);
+  const gens = [];
+  const setData = d.view.setData.bind(d.view);
+  d.view.setData = (data, cx) => {
+    gens.push(data.gen);
+    setData(data, cx);
+  };
+  d.key("r", { control: true }); // before the first load has got its list
+  await d.until(
+    () => d.view.data.phase === "ready" && /Speed up search/.test(d.text()),
+    "the reloaded tickets",
+  );
+  assert.equal(d.view.data.gen, 2);
+  assert.ok(gens.length > 0 && gens.every((g) => g === 2), `gens ${gens}`);
+});
+
+test("Tickets: while an action runs, Enter does nothing; once it's done, it works", async () => {
+  const d = await ready();
+  let finish;
+  const held = new Promise((resolve) => (finish = resolve));
+  d.view.act(d.cx, "Holding…", () => held);
+  assert.equal(d.view.running, true);
+  enterOn(d, "Add dark mode");
+  assert.match(d.text(), /Holding…/);
+  assert.deepEqual(ran(d, "space.new"), []);
+  finish();
+  await d.until(() => !d.view.running, "the action to finish");
+  // Its worktree exists by now (an earlier test), so Enter opens its screen.
+  d.submit();
+  assert.equal(d.view.screen.name, "ticket");
 });

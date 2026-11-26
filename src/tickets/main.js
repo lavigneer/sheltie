@@ -25,15 +25,18 @@
 // State, each in one field and changed only through its setter (which redraws):
 //   screen  list -> ticket -> pick; list -> adhoc (a repo for ad-hoc work);
 //           the moves are declared in SCREENS. go() moves on, back() goes back one
-//   data    tickets -> work -> ready | failed      load(); a reload supersedes
-//           an older load, whose results are then dropped (gen)
+//   data    tickets -> listed -> local -> linked -> ready | failed (tickets-model.js
+//           says what each knows and the moves between them); load(); a reload
+//           supersedes an older load, whose results are then dropped (gen)
 //   action  idle -> running -> idle | failed       act(); while running, keys
 //           and clicks are ignored. Esc is Herdr's: it always closes a popup,
 //           which stops the action after its current step (every step leaves
 //           a usable state: cloned, or cloned with its worktree), so choosing
 //           it again carries on.
-// A ticket's own screens wait for `ready`: until then its existing work is
-// unknown, and starting could clash with a worktree that's already there.
+// A ticket's own screens wait for its local work (`local`): until then its
+// existing work is unknown, and starting could clash with a worktree that's
+// already there. Enter starts a fresh ticket without its screen only once
+// `noWork` says it has none.
 
 import { h_flex, Input, InputState, v_flex } from "gpui-base";
 import { div, svg, View } from "gpui-kit";
@@ -64,6 +67,16 @@ import {
   startTickets,
   taskValues,
 } from "./start.js";
+import {
+  advance,
+  failedAction,
+  idleAction,
+  loadFailed,
+  localKnown,
+  noWork,
+  reloading,
+  runningAction,
+} from "./tickets-model.js";
 import { listTickets, suggestRepos, workFor } from "./work.js";
 
 const repoLabel = (repo) => repo.slug || repo.name;
@@ -82,8 +95,8 @@ const SCREENS = {
 export default class Tickets extends View {
   init(_props, cx) {
     this.screen = { name: "list" }; // | { name: "ticket" | "pick", ticket } | { name: "adhoc", description } (see SCREENS)
-    this.data = { phase: "tickets", gen: 0 };
-    this.action = { phase: "idle" }; // | { phase: "running", message } | { phase: "failed", error }
+    this.data = reloading(0); // tickets-model.js: each phase's shape
+    this.action = idleAction();
     this.filter = "";
     this.at = 0;
     this.marked = new Set(); // ticket keys to start together (Tab)
@@ -134,7 +147,7 @@ export default class Tickets extends View {
     this.input.set_value("");
     this.input.focus();
     this.at = 0;
-    if (this.action.phase === "failed") this.action = { phase: "idle" };
+    if (this.action.phase === "failed") this.action = idleAction();
     cx.notify();
   }
 
@@ -169,11 +182,14 @@ export default class Tickets extends View {
   load(cx) {
     const gen = this.data.gen + 1;
     const shown = this.data.tickets; // kept on screen if the reload fails
-    this.setData({ phase: "tickets", gen }, cx);
+    this.setData(reloading(gen), cx);
     const cwd = focused()?.cwd ?? null;
     cx.spawn(async (cx) => {
       const current = () => this.data.gen === gen;
-      let base = null;
+      // Moves to `phase` (tickets-model.js) unless a newer load has taken over.
+      const to = (phase, fields) => {
+        if (current()) this.setData(advance(this.data, phase, fields), cx);
+      };
       try {
         await configReady();
         const scan = localRepos();
@@ -183,40 +199,18 @@ export default class Tickets extends View {
           listTickets(scan),
         ]);
         if (!current()) return;
-        base = { gen, tickets, repos, here };
-        this.setData({ ...base, phase: "work", work: new Map() }, cx);
+        to("listed", { tickets, repos, here, work: new Map() });
         // Local branches first, so a ticket's screen needn't wait for PRs;
         // then linked PRs, all a fresh ticket's auto-start waits for.
         const work = await workFor(tickets, repos, {
-          onLocal: (work) => {
-            if (!current()) return;
-            base = { ...base, work, local: true };
-            this.setData({ ...base, phase: "work" }, cx);
-          },
-          onLinked: (linked) => {
-            if (!current()) return;
-            base = { ...base, linked };
-            this.setData({ ...base, phase: "work" }, cx);
-          },
+          onLocal: (work) => to("local", { work }),
+          onLinked: (linked) => to("linked", { linked }),
         });
-        if (!current()) return;
-        this.setData({ ...base, phase: "ready", work }, cx);
+        to("ready", { work });
       } catch (e) {
         if (!current()) return;
         recordFailure("tickets", "load", e);
-        this.setData(
-          {
-            tickets: shown ?? [],
-            repos: [],
-            here: null,
-            ...(base ?? {}),
-            gen,
-            phase: "failed",
-            work: new Map(),
-            error: errorText(e),
-          },
-          cx,
-        );
+        this.setData(loadFailed(this.data, { shown, error: errorText(e) }), cx);
       }
     });
   }
@@ -224,14 +218,14 @@ export default class Tickets extends View {
   // Runs an async action; keys are ignored meanwhile, and any error shown after.
   act(cx, message, f) {
     if (this.running) return;
-    this.setAction({ phase: "running", message }, cx);
+    this.setAction(runningAction(message), cx);
     cx.spawn(async (cx) => {
       try {
         await f(cx);
-        this.setAction({ phase: "idle" }, cx);
+        this.setAction(idleAction(), cx);
       } catch (e) {
         recordFailure("tickets", message, e);
-        this.setAction({ phase: "failed", error: errorText(e) }, cx);
+        this.setAction(failedAction(errorText(e)), cx);
       }
     });
   }
@@ -298,7 +292,7 @@ export default class Tickets extends View {
     }
     // A ticket's screens need its local work at least: wait for it (see the
     // header). PRs, and work only a linked PR shows, fill in after.
-    if (d.phase !== "ready" && !d.local) return [];
+    if (!localKnown(d)) return [];
     const t = this.screen.ticket;
     if (this.screen.name === "pick") {
       return keep(
@@ -408,9 +402,9 @@ export default class Tickets extends View {
 
   openTicket(ticket, cx) {
     // A fresh ticket with one clear home: just start. Only once its work is
-    // known: its local branches and the PRs its tracker links (not every PR's
-    // details); before that, its screen waits (and says so).
-    if (this.fresh(ticket)) {
+    // known (noWork): its local branches and the PRs its tracker links (not
+    // every PR's details); before that, its screen waits (and says so).
+    if (noWork(this.data, ticket.key)) {
       const s = this.suggestions(ticket);
       // The current repo is only a hint; a single mapped/remembered repo decides.
       const decided = s.filter((x) => x.why !== "current repo");
@@ -422,21 +416,10 @@ export default class Tickets extends View {
     this.go({ name: "ticket", ticket }, cx);
   }
 
-  // No work on `ticket`, known for sure: once everything's in, or from its
-  // local branches and linked PRs while PR details are still loading.
-  fresh(ticket) {
-    const d = this.data;
-    if (d.work?.get(ticket.key)?.length) return false;
-    if (d.phase === "ready") return true;
-    return d.phase === "work" && d.local && d.linked
-      ? !d.linked.get(ticket.key)?.length
-      : false;
-  }
-
   // The repo, cloned first if it isn't local yet.
   async local(repo, cx) {
     if (repo.path) return repo;
-    this.setAction({ phase: "running", message: `Cloning ${repo.slug}…` }, cx);
+    this.setAction(runningAction(`Cloning ${repo.slug}…`), cx);
     const cloned = await cloneRepo(repo.slug);
     learnClone(this.data.repos, repo, cloned);
     return cloned;
@@ -468,7 +451,7 @@ export default class Tickets extends View {
   }
 
   onStep(cx) {
-    return (message) => this.setAction({ phase: "running", message }, cx);
+    return (message) => this.setAction(runningAction(message), cx);
   }
 
   // Every marked ticket in its best suggested repo, then all their spaces at
@@ -478,7 +461,7 @@ export default class Tickets extends View {
     const d = this.data;
     if (d.phase !== "ready")
       return this.setAction(
-        { phase: "failed", error: "Still loading tickets' work, try again" },
+        failedAction("Still loading tickets' work, try again"),
         cx,
       );
     const tickets = d.tickets.filter((t) => this.marked.has(t.key));
@@ -586,15 +569,15 @@ export default class Tickets extends View {
     if (problem && !this.screen.ticket) return [problem, true];
     if (d.phase === "tickets") return ["Loading tickets…", false];
     const onList = this.screen.name === "list";
-    if (d.phase === "work")
+    if (d.phase === "listed")
       return [
-        d.local
-          ? "Looking for pull requests…"
-          : onList
-            ? "Looking for branches and pull requests…"
-            : "Looking for this ticket's branches and pull requests…",
+        onList
+          ? "Looking for branches and pull requests…"
+          : "Looking for this ticket's branches and pull requests…",
         false,
       ];
+    if (d.phase === "local" || d.phase === "linked")
+      return ["Looking for pull requests…", false];
     if (onList && this.marked.size)
       return [
         `${this.marked.size} marked · Enter starts them, Tab unmarks`,
@@ -609,7 +592,7 @@ export default class Tickets extends View {
     const d = this.data;
     if (rows.length || this.running) return null;
     if (d.phase === "failed") return [`${d.error} · Ctrl+R to retry`, true];
-    if (d.phase === "tickets" || (d.phase === "work" && !d.local)) return null;
+    if (d.phase === "tickets" || d.phase === "listed") return null;
     const onList = this.screen.name === "list";
     if (!onList) return ["Nothing matches", false];
     if (d.tickets.length) return ["No matching ticket", false];
