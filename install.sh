@@ -19,9 +19,9 @@
 #                           the Work sidebar's alt-shift keys (in the sheltie
 #                           layout only) added to
 #                           <home>/keys.json, unless you use those keys
-#   layouts/*               copied to <home>/layouts/ (sheltie: Herdr with the
-#                           Work sidebar)
-#   sheltie.json        a starter settings file if there is none
+#   layouts/*               copied to <home>/layouts/ (sheltie: with the Work
+#                           sidebar; review: with the Reviews sidebar)
+#   sheltie.json            a starter settings file if there is none
 # Needs bash and jq.
 
 set -euo pipefail
@@ -39,7 +39,7 @@ while [ $# -gt 0 ]; do
   --skills | --claude-commands) skills=1 ;;
   --force-skills | --force-commands) skills=1 force_skills=1 ;;
   -h | --help)
-    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
   *)

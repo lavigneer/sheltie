@@ -45,6 +45,22 @@ Each repo's group starts with its hub: the main checkout (its branch and a
 it to go to that space, or open one there with the agent. It has no ticket, PR
 or steps. A repo shows while it has worktrees or its hub has a space.
 
+## Reviews
+
+The reviews mod lists the PRs in your repos that request your review, oldest
+request first. Click a row to start the review: the PR is checked out in a
+review worktree of its repo, with a space of its own and `agent.reviewTask`
+sent to the agent (skipped when the worktree already exists, so its agent
+isn't told again). ↗ opens the PR in the browser.
+
+A reviewed PR keeps its row while its review worktree stays. ✓ (Done reviewing)
+closes its space, removes the worktree and deletes its local branch; it
+refuses if the worktree has uncommitted changes. On each refresh, a review
+worktree whose PR has merged or closed is torn down the same way, and one
+that refuses is kept and reported. The review layout (`herdr-app do
+layout.switch --name review`) shows the Reviews sidebar with the changes panel
+beside the agent.
+
 ## Notifications
 
 You're notified when CI finishes, review comments or a review arrive, the PR

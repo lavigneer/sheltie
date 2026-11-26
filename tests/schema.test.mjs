@@ -20,6 +20,21 @@ test("config.example.json sets only settings the schema has", () => {
   known(schema, read("config.example.json"), "example");
 });
 
+test("config.example.json has every default setting (so it can't fall behind)", async () => {
+  const { DEFAULTS } = await import("../src/defaults.js");
+  const example = read("config.example.json");
+  const leaves = (value, at) =>
+    isObject(value)
+      ? Object.entries(value).flatMap(([k, v]) => leaves(v, `${at}.${k}`))
+      : [at];
+  const missing = leaves(DEFAULTS, "").filter((path) => {
+    let node = example;
+    for (const k of path.split(".").slice(1)) node = node?.[k];
+    return node === undefined;
+  });
+  assert.deepEqual(missing, []);
+});
+
 test("a repo file's $schema isn't reported as a setting that doesn't apply", async () => {
   const { repoSettings } = await import("../src/config.js");
   const r = repoSettings({ $schema: "x", tracker: "github" }, ".sheltie.json");

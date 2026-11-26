@@ -8,7 +8,7 @@
     "build": "node scripts/build.mjs",
     "test": "node --import ./tests/register.mjs --test 'tests/*.test.mjs'",
     "typecheck": "tsc -p .",
-    "check-built": "node scripts/build.mjs && git diff --exit-code -- mods sheltie.schema.json",
+    "check-built": "node scripts/build.mjs && test -z \"$(git status --porcelain --untracked-files=all -- mods sheltie.schema.json)\"",
     "e2e": "node --test 'tests/e2e/*.test.mjs'",
     "e2e:shots": "node --test tests/e2e/shots.mjs",
     "lint": "biome lint src scripts tests",

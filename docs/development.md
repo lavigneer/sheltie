@@ -12,6 +12,13 @@ npm run format     # apply Biome's fixes and formatting
 Run these inside `nix develop` (on NixOS npm's Biome binary won't start; the
 shell points `BIOME_BINARY` at Nix's), or elsewhere after `npm ci`, so the
 pinned `@biomejs/biome` is used rather than another `biome` on your PATH.
+If `npm run ci:lint` says "Could not start dynamically linked executable" on
+NixOS, you're outside `nix develop`: enter it, or run Nix's Biome directly
+with `BIOME_BINARY=<nix store path>/bin/biome`.
+
+`npm run check-built` fails when `mods/` or `sheltie.schema.json` differs from
+what `npm run build` makes, including new files that aren't committed yet.
+Run `npm run build` and commit the result.
 
 ## Layout
 
