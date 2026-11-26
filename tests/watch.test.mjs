@@ -85,3 +85,43 @@ test("Cache.refresh: found / none / failed, a failure keeping the last value", a
   );
   assert.equal(c.get("a").value, null);
 });
+
+test("Cache: the version moves when a lookup changes an entry, not when it confirms it", async () => {
+  let t = 0;
+  const c = new Cache({ retryMs: 60_000, now: () => t });
+  await c.refresh("a", async () => ({ n: 1 }));
+  const v = c.version;
+  t += 1000;
+  await c.refresh("a", async () => ({ n: 1 }));
+  assert.equal(c.version, v, "the same value");
+  assert.equal(c.get("a").at, 1000, "still marks when it was looked up");
+  await c.refresh("a", async () => ({ n: 2 }));
+  assert.equal(c.version, v + 1, "a new value");
+  await c.refresh("a", async () => {
+    throw new Error("down");
+  });
+  assert.equal(c.version, v + 2, "found -> failed");
+  assert.deepEqual(c.get("a").value, { n: 2 }, "a failure keeps the value");
+  await c.refresh("b", async () => null);
+  assert.equal(c.version, v + 3, "a new entry");
+});
+
+test("serial: forcing() while a forced run is running or queued, notifying as it starts and ends", async () => {
+  const tasks = [];
+  let notified = 0;
+  const cx = { spawn: (f) => tasks.push(f(cx)), notify: () => notified++ };
+  const releases = [];
+  const start = serial(() => new Promise((r) => releases.push(r)));
+  start(cx);
+  assert.equal(start.forcing(), false);
+  start(cx, true); // queued behind the unforced run
+  assert.equal(start.forcing(), true);
+  assert.equal(notified, 1);
+  releases.shift()();
+  await tasks.shift();
+  assert.equal(start.forcing(), true); // the forced one now runs
+  releases.shift()();
+  await tasks.shift();
+  assert.equal(start.forcing(), false);
+  assert.equal(notified, 2);
+});

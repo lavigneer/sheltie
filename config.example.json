@@ -46,6 +46,10 @@
   ],
   "branch": "me/{ref}",
   "worktreeDir": ".worktrees",
+  "workGroupBy": "repo",
+  "workRepoRows": 8,
+  "requiredChecksOnly": false,
+  "reviewSearch": "is:pr is:open archived:false review-requested:@me",
   "agent": {
     "argv": [
       "claude"

@@ -5,8 +5,9 @@
 import { C, REPO_FILE } from "./config.js";
 import { repoState, sameSlug } from "./git.js";
 import { basename, pool } from "./lib.js";
-import { prDetails } from "./prs.js";
-import { tracker, trackerOf } from "./tracker.js";
+import { PR_MS, RETRY_MS } from "./polling.js";
+import { prDetailsMany } from "./prs.js";
+import { handleOf, ticketOfBranch, tracker, trackerOf } from "./tracker.js";
 import { Cache } from "./watch.js";
 
 /** @typedef {import("./types.js").Ticket} Ticket */
@@ -81,6 +82,24 @@ export function findRepo(target, repos) {
   );
 }
 
+// The keys a PR's text names, for a branch whose name names none (work made
+// outside the flow): those in its title, else those in its body.
+/** @param {import("./types.js").Tracker} t @param {{ title?: string, body?: string } | null | undefined} pr @param {string | null} slug @returns {string[]} */
+function keysInPR(t, pr, slug) {
+  if (!pr) return [];
+  const inTitle = t.keysIn(pr.title ?? "", slug);
+  return inTitle.length ? inTitle : t.keysIn(pr.body ?? "", slug);
+}
+
+// A ticket the branch in `repo` names, else one its PR `pr` names.
+/** @param {string | null} branch @param {Repo} repo @param {{ title?: string, body?: string } | null | undefined} pr @param {import("./types.js").Tracker} [t] @returns {import("./types.js").TicketHandle | null} */
+function ticketOfWork(branch, repo, pr, t = trackerOf(repo)) {
+  const own = ticketOfBranch(branch, repo, t);
+  if (own) return own;
+  const key = keysInPR(t, pr, repo.slug ?? null)[0];
+  return key ? handleOf(t, key) : null;
+}
+
 // Where a PR lookup's result lives in joinWork's `details`: by branch or number.
 export const prRef = (slug, ref) => `${slug}#${ref}`;
 
@@ -124,10 +143,10 @@ export const workName = (i) =>
 // worktree, pr }]. `states` are repoState results with their `repo`; a branch
 // listed both as a worktree and a branch is one item. `linked` maps a key to
 // the PRs ({ slug, number }) its tracker links; `details` maps prRef(slug,
-// branch or number) to prDetails (missing = failed lookup, the item keeps pr
+// branch or number) to prDetailsMany (missing = failed lookup, the item keeps pr
 // null). A linked PR not already attached becomes its own item.
 /**
- * @param {string[]} keys
+ * @param {string[] | null} keys (null: every key the work mentions)
  * @param {({ repo: Repo } & import("./git.js").RepoState | null)[]} states
  * @param {Map<string, PRRef[]>} [linked]
  * @param {Map<string, PR>} [details]
@@ -142,29 +161,59 @@ export function joinWork(
   repos = [],
 ) {
   /** @type {Map<string, WorkItem[]>} */
-  const work = new Map(keys.map((k) => [k, []]));
+  const work = new Map((keys ?? []).map((k) => [k, []]));
+  // Each key's items with a branch, by repo and branch, so add finds a
+  // duplicate without walking the list.
+  /** @type {Map<string, Map<string, WorkItem>>} */
+  const byBranch = new Map();
+  /** @param {WorkItem} w */
+  const branchId = (w) => `${w.repo.slug}|${w.repo.path}|${w.branch}`;
   /** @param {string} key @param {WorkItem} item */
   const add = (key, item) => {
-    const list = work.get(key);
-    if (!list) return;
-    const same = list.find(
-      (w) =>
-        w.repo.slug === item.repo.slug &&
-        w.repo.path === item.repo.path &&
-        w.branch &&
-        w.branch === item.branch,
-    );
+    let list = work.get(key);
+    if (!list) {
+      if (keys) return;
+      list = [];
+      work.set(key, list);
+    }
+    let seen = byBranch.get(key);
+    if (!seen) {
+      seen = new Map();
+      byBranch.set(key, seen);
+    }
+    const same = item.branch ? seen.get(branchId(item)) : undefined;
     if (same)
       Object.assign(
         same,
         Object.fromEntries(Object.entries(item).filter(([, v]) => v != null)),
       );
-    else list.push(item);
+    else {
+      list.push(item);
+      if (item.branch) seen.set(branchId(item), item);
+    }
   };
   for (const s of states) {
     if (!s) continue;
+    const t = trackerOf(s.repo);
+    // A worktree's branch is also a local branch: ask the tracker once.
+    /** @type {Map<string | null, string[]>} */
+    const asked = new Map();
     /** @param {string | null} branch */
-    const mentioned = (branch) => trackerOf(s.repo).keysIn(branch, s.repo.slug);
+    const mentioned = (branch) => {
+      let ks = asked.get(branch);
+      if (!ks) {
+        ks = t.keysIn(branch, s.repo.slug);
+        // A branch made outside the flow may name no key: its PR may.
+        if (!ks.length && branch && s.repo.slug)
+          ks = keysInPR(
+            t,
+            details.get(prRef(s.repo.slug, branch)),
+            s.repo.slug,
+          );
+        asked.set(branch, ks);
+      }
+      return ks;
+    };
     for (const w of s.worktrees)
       for (const key of mentioned(w.branch))
         add(key, {
@@ -177,6 +226,7 @@ export function joinWork(
       for (const key of mentioned(name))
         add(key, { repo: s.repo, branch: name, worktree: null, pr: null });
   }
+  if (!keys) for (const k of linked.keys()) if (!work.has(k)) work.set(k, []);
   for (const [key, items] of work) {
     for (const item of items)
       if (item.repo.slug)
@@ -202,11 +252,11 @@ export function joinWork(
 
 // How often each source is asked again (WorkStore.refresh): PRs every 2 min,
 // 20 s while CI runs, a merge is pending or it may conflict; tickets and the
-// PRs their tracker links every 10 min; a failed lookup after a minute.
-export const PR_MS = 120_000;
+// PRs their tracker links every 10 min; a failed lookup after a minute
+// (PR_MS and RETRY_MS: polling.js).
+export { PR_MS, RETRY_MS };
 export const ACTIVE_PR_MS = 20_000;
 export const TICKET_MS = 600_000;
-export const RETRY_MS = 60_000;
 
 // How long a PR's details stay fresh: shorter while something you'd wait for
 // may change soon (conflicts, or not known yet: CI starts soon after a fix).
@@ -224,11 +274,23 @@ export const prMaxAge = (pr) =>
 // tracker-linked PRs and PR details (joinWork) and decides what is due for a
 // lookup. Holds the caches (Cache, watch.js): tickets and linked PRs by key,
 // PR details by prRef (slug#branch or slug#number). Sources are injected:
-// `repoState(repo)` and `prDetails(slug, ref, previous)`; trackers (view,
+// `repoState(repo)` and `prDetailsMany(slug, items, { requiredOnly })`; trackers (view,
 // linkedPRs) come with the keys asked about.
+// What a scan found, as text to compare with the last scan's.
+const statesKey = (states) =>
+  JSON.stringify(
+    states.map((s) => [
+      s.repo.path,
+      s.mainBranch,
+      s.linked,
+      s.worktrees,
+      [...(s.branches ?? [])],
+    ]),
+  );
+
 export class WorkStore {
   constructor({
-    sources = { repoState, prDetails },
+    sources = { repoState, prDetailsMany },
     now = Date.now,
     retryMs = RETRY_MS,
   } = {}) {
@@ -241,6 +303,12 @@ export class WorkStore {
     this.tickets = new Cache({ retryMs, now });
     this.linked = new Cache({ retryMs, now });
     this.prs = new Cache({ retryMs, now });
+    // Bumped by scan; with the caches' versions, says when snapshots go stale.
+    this.version = 0;
+    /** @type {{ at: string, all: Map<string, WorkItem[]> }} */
+    this.snapshots = { at: "", all: new Map() };
+    // How many times the join ran (a render can tell whether it rebuilt).
+    this.rebuilds = 0;
   }
 
   // Git: the worktrees and branches of `repos` (those with a path).
@@ -255,8 +323,13 @@ export class WorkStore {
         ...(await this.sources.repoState(repo)),
       })),
     );
+    // A scan that finds what the last one did changes nothing: the version
+    // (and so the join, and the view) stays.
+    const key = statesKey(states);
+    if (repos !== this.repos || key !== this.statesKey) this.version++;
     this.repos = repos;
     this.states = states;
+    this.statesKey = key;
   }
 
   // The PRs trackers link to each key, as last looked up.
@@ -273,16 +346,35 @@ export class WorkStore {
   // The work on each key, from what is known now.
   /** @param {string[]} keys @returns {Map<string, WorkItem[]>} */
   snapshot(keys) {
+    // Rendering asks once per row, each for its own key; the join walks every
+    // branch of every repo, so join everything once and reuse it until a scan
+    // or lookup changes what is known.
+    const at = `${this.version}.${this.linked.version}.${this.prs.version}`;
+    if (this.snapshots.at !== at) {
+      this.snapshots = { at, all: this.join() };
+      this.rebuilds++;
+    }
+    const { all } = this.snapshots;
+    return new Map(keys.map((k) => [k, all.get(k) ?? []]));
+  }
+
+  // Rebuilds the snapshot now if a scan or lookup made it stale, so the next
+  // render only reads it: the join is the expensive part, and off the render
+  // path it can't get the render interrupted.
+  warm() {
+    this.snapshot([]);
+  }
+
+  // The work on every key the repos and linked PRs mention.
+  /** @returns {Map<string, WorkItem[]>} */
+  join() {
     const details = new Map();
     for (const [ref, e] of this.prs.entries)
       if (e.value) details.set(ref, e.value);
-    return joinWork(
-      keys,
-      this.states,
-      this.linkedFor(keys),
-      details,
-      this.repos,
-    );
+    const linked = new Map();
+    for (const [k, e] of this.linked.entries)
+      if (e.value) linked.set(k, e.value);
+    return joinWork(null, this.states, linked, details, this.repos);
   }
 
   // The PR lookup entry for `branch` in `repo` (state "found" | "none" |
@@ -292,17 +384,85 @@ export class WorkStore {
     return repo.slug ? this.prs.get(prRef(repo.slug, branch)) : undefined;
   }
 
+  // A worktree `w` ({ path, repo, branch }) resolved against what is known:
+  // `handle`, the ticket its branch names, else the one its PR names; `pr`,
+  // its branch's PR, else one its ticket's tracker links with that branch;
+  // `items`, all its ticket's work (empty without a ticket); `pr` and
+  // `items` are worked out when read. A row that
+  // carries a `handle` (resolved by a scan, or adopt) keeps it, so a render
+  // doesn't ask the tracker again. `t`: the repo's tracker, when the caller
+  // already has it (a scan asks once per repo).
+  /**
+   * @param {{ path: string, repo: Repo, branch: string | null, handle?: import("./types.js").TicketHandle | null }} w
+   * @param {import("./types.js").Tracker} [t]
+   * @returns {{ handle: import("./types.js").TicketHandle | null, pr: PR | null, items: WorkItem[] }}
+   */
+  rowFor(w, t) {
+    const own = this.prEntry(w.repo, w.branch)?.value ?? null;
+    const handle =
+      w.handle !== undefined
+        ? w.handle
+        : ticketOfWork(w.branch, w.repo, own, t);
+    // `pr` and `items` read the join (snapshot) only when asked: a scan
+    // wants just the handle.
+    const store = this;
+    return {
+      handle,
+      get items() {
+        return handle
+          ? (store.snapshot([handle.key]).get(handle.key) ?? [])
+          : [];
+      },
+      get pr() {
+        return own ?? this.items.find((i) => i.worktree === w.path)?.pr ?? null;
+      },
+    };
+  }
+
+  // Gives `rows` (worktrees with a `handle`) whose branch names no ticket the
+  // one PR `pr`, just looked up as `ref`, names: a branch made outside the
+  // flow still shows and moves its ticket. True when one changed.
+  /** @param {{ path: string, repo: Repo, branch: string | null, handle: any }[]} rows @param {string} ref @param {PR | null | undefined} pr */
+  adopt(rows, ref, pr) {
+    if (!pr) return false;
+    let changed = false;
+    for (const w of rows)
+      if (!w.handle && w.repo.slug && prRef(w.repo.slug, w.branch) === ref) {
+        w.handle = ticketOfWork(w.branch, w.repo, pr);
+        changed ||= Boolean(w.handle);
+      }
+    return changed;
+  }
+
+  // Whether the PR lookup `ref` (which found `pr`) is worktree `w`'s PR: by
+  // its branch, or as the PR its row resolves to.
+  /** @param {{ path: string, repo: Repo, branch: string | null }} w @param {string} ref @param {PR | null | undefined} pr */
+  ownsPR(w, ref, pr) {
+    if (w.repo.slug && prRef(w.repo.slug, w.branch) === ref) return true;
+    const mine = pr && this.rowFor(w).pr;
+    return Boolean(
+      mine && mine.number === pr.number && sameSlug(mine.slug, pr.slug),
+    );
+  }
+
   // Looks up what is due (everything, when forced) for `keys` (key ->
   // its tracker): with `view`, each ticket; the PRs its tracker links, then
   // every PR of their work. onLinked gets the linked PRs before the PR
   // lookups; onPR(ref, was, entry, asked) follows each PR lookup.
   /**
    * @param {Map<string, import("./types.js").Tracker>} keys
-   * @param {{ force?: boolean, view?: boolean, onTicket?: (key: string) => void, onLinked?: (linked: Map<string, PRRef[]>) => void, onPR?: (ref: string, was: PR | null, entry: any, asked: number) => void }} [opts]
+   * @param {{ force?: boolean, view?: boolean, branches?: { repo: Repo, branch: string | null }[], onTicket?: (key: string) => void, onLinked?: (linked: Map<string, PRRef[]>) => void, onPR?: (ref: string, was: PR | null, entry: any, asked: number) => void }} [opts]
    */
   async refresh(
     keys,
-    { force = false, view = false, onTicket, onLinked, onPR } = {},
+    {
+      force = false,
+      view = false,
+      branches = [],
+      onTicket,
+      onLinked,
+      onPR,
+    } = {},
   ) {
     const ks = [...keys.keys()];
     const tickets = view
@@ -335,11 +495,19 @@ export class WorkStore {
               k,
               async () => (await found).get(k) ?? [],
             );
+          // Each tracker's links land while others are still awaited, and a
+          // render (Herdr's, when a space appears) may run then: rebuild the
+          // join here so it never runs in that render (#282).
+          this.warm();
         }),
       );
       onLinked?.(this.linkedFor(ks));
       /** @type {Map<string, [string, string | number]>} */
       const lookups = new Map();
+      // Branches that name no ticket (made outside the flow): their PR may.
+      for (const { repo, branch } of branches)
+        if (repo.slug && branch)
+          lookups.set(prRef(repo.slug, branch), [repo.slug, branch]);
       for (const [key, items] of this.snapshot(ks)) {
         for (const item of items)
           if (item.repo.slug && item.branch)
@@ -356,19 +524,32 @@ export class WorkStore {
           )
             lookups.set(prRef(p.slug, p.number), [p.slug, p.number]);
       }
+      // The due ones, by repo: one batched lookup per repo (prDetailsMany).
+      /** @type {Map<string, { ref: string, r: string | number, was: any }[]>} */
+      const due = new Map();
+      for (const [ref, [slug, r]] of lookups)
+        if (this.prs.due(ref, prMaxAge(this.prs.get(ref)?.value), { force }))
+          due.set(slug, [
+            ...(due.get(slug) ?? []),
+            { ref, r, was: this.prs.get(ref)?.value ?? null },
+          ]);
       await pool(
-        [...lookups]
-          .filter(([ref]) =>
-            this.prs.due(ref, prMaxAge(this.prs.get(ref)?.value), { force }),
-          )
-          .map(([ref, [slug, r]]) => async () => {
-            const was = this.prs.get(ref)?.value ?? null;
-            const asked = this.now();
-            const entry = await this.prs.refresh(ref, () =>
-              this.sources.prDetails(slug, r, was),
-            );
+        [...due].map(([slug, items]) => async () => {
+          const asked = this.now();
+          const found = await this.sources.prDetailsMany(
+            slug,
+            items.map(({ r, was }) => ({ ref: r, previous: was })),
+            { requiredOnly: C.requiredChecksOnly },
+          );
+          for (const { ref, r, was } of items) {
+            const entry = await this.prs.refresh(ref, async () => {
+              const pr = found.get(r);
+              if (pr instanceof Error) throw pr;
+              return pr;
+            });
             onPR?.(ref, was, entry, asked);
-          }),
+          }
+        }),
       );
     })();
     await Promise.all([tickets, prs]);

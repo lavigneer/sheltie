@@ -53,7 +53,11 @@
         "me/WEB-102",
         "me/WEB-103"
       ],
-      "branches": []
+      "branches": [
+        "me/WEB-102-session-cleanup",
+        "me/WEB-102-session-refresh",
+        "me/WEB-102-session-store"
+      ]
     },
     {
       "name": "api",
@@ -164,6 +168,42 @@
       "unresolved": 2
     },
     {
+      "repo": "acme/web-app",
+      "number": 39,
+      "branch": "me/WEB-102-session-cleanup",
+      "title": "WEB-102: clear stale session cookies (stacked on #34)",
+      "body": "Fixes WEB-102\n\nStacked on #34.",
+      "draft": true,
+      "review": "",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 42,
+      "branch": "me/WEB-102-session-refresh",
+      "title": "WEB-102: refresh sessions before they expire (stacked on #39)",
+      "body": "Fixes WEB-102\n\nStacked on #39.",
+      "draft": false,
+      "review": "REVIEW_REQUIRED",
+      "checks": "PENDING",
+      "state": "OPEN",
+      "unresolved": 0
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 43,
+      "branch": "me/WEB-102-session-store",
+      "title": "WEB-102: move sessions to a shared store",
+      "body": "Fixes WEB-102",
+      "draft": false,
+      "review": "APPROVED",
+      "checks": "SUCCESS",
+      "state": "MERGED",
+      "unresolved": 0
+    },
+    {
       "repo": "partner/api",
       "number": 7,
       "branch": "me/API-7",
@@ -211,6 +251,113 @@
       "checks": "FAILURE",
       "state": "OPEN",
       "unresolved": 12
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 41,
+      "branch": "dana/session-timeout",
+      "title": "Expire idle sessions after 30 minutes",
+      "body": "",
+      "author": "dana",
+      "draft": false,
+      "review": "REVIEW_REQUIRED",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0,
+      "additions": 142,
+      "deletions": 18,
+      "requested": [
+        {
+          "minutesAgo": 2900
+        }
+      ]
+    },
+    {
+      "repo": "acme/storage",
+      "number": 15,
+      "branch": "lee/s3-multipart",
+      "title": "Use multipart uploads for files over 100 MB",
+      "body": "",
+      "author": "lee",
+      "draft": false,
+      "review": "REVIEW_REQUIRED",
+      "checks": "IN_PROGRESS",
+      "state": "OPEN",
+      "unresolved": 0,
+      "additions": 388,
+      "deletions": 61,
+      "requested": [
+        {
+          "minutesAgo": 300,
+          "team": true
+        }
+      ]
+    },
+    {
+      "repo": "partner/api",
+      "number": 19,
+      "branch": "typo-fixes",
+      "title": "Fix typos in the error messages",
+      "body": "",
+      "author": "outside-contributor",
+      "fork": true,
+      "draft": false,
+      "review": "REVIEW_REQUIRED",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0,
+      "additions": 9,
+      "deletions": 9,
+      "requested": [
+        {
+          "minutesAgo": 1500
+        }
+      ]
+    },
+    {
+      "repo": "acme/web-app",
+      "number": 38,
+      "branch": "sam/dark-mode",
+      "title": "Dark mode for the settings pages",
+      "body": "",
+      "author": "sam",
+      "draft": false,
+      "review": "CHANGES_REQUESTED",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 1,
+      "additions": 57,
+      "deletions": 23,
+      "requested": [
+        {
+          "minutesAgo": 4400
+        },
+        {
+          "minutesAgo": 40
+        }
+      ],
+      "reviewedMinutesAgo": 2000
+    },
+    {
+      "repo": "acme/storage",
+      "number": 14,
+      "branch": "lee/metrics",
+      "title": "Export upload latency metrics",
+      "body": "",
+      "author": "lee",
+      "draft": false,
+      "review": "APPROVED",
+      "checks": "SUCCESS",
+      "state": "OPEN",
+      "unresolved": 0,
+      "additions": 74,
+      "deletions": 2,
+      "requested": [
+        {
+          "minutesAgo": 3000
+        }
+      ],
+      "reviewedMinutesAgo": 1200
     }
   ]
 }

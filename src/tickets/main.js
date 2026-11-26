@@ -39,6 +39,7 @@ import { h_flex, Input, InputState, v_flex } from "gpui-base";
 import { div, svg, View } from "gpui-kit";
 import { closeOverlay, focused, notify, props, run, theme } from "herdr";
 import { C, configReady } from "./config.js";
+import { recordFailure } from "./diagnostics.js";
 import { prLabel, toneKey } from "./flow.js";
 import {
   addWorktree,
@@ -49,7 +50,8 @@ import {
   repoRoot,
   worktreePath,
 } from "./git.js";
-import { basename, fill, moveKey, openUrl, score, spaceFor } from "./lib.js";
+import { basename, columnWidth, fill, moveKey, openUrl, score } from "./lib.js";
+import { herdrSpaces } from "./spaces.js";
 import {
   errorText,
   learnClone,
@@ -98,6 +100,12 @@ export default class Tickets extends View {
     this.input.focus();
     cx.timer.after(600, () => this.input.focus());
     this.handle = cx.focus_handle();
+    // Tab is bound by the window to "focus next", which wins over a plain
+    // key_down handler and takes the keyboard off the search box. A binding
+    // in the popup's own key context is deeper, so it wins instead.
+    cx.bind_keys([
+      { keystroke: "tab", action: "tickets::mark", context: "Tickets" },
+    ]);
     this.load(cx);
   }
 
@@ -178,6 +186,7 @@ export default class Tickets extends View {
         this.setData({ ...base, phase: "ready", work }, cx);
       } catch (e) {
         if (!current()) return;
+        recordFailure("tickets", "load", e);
         this.setData(
           {
             tickets: shown ?? [],
@@ -204,6 +213,7 @@ export default class Tickets extends View {
         await f(cx);
         this.setAction({ phase: "idle" }, cx);
       } catch (e) {
+        recordFailure("tickets", message, e);
         this.setAction({ phase: "failed", error: errorText(e) }, cx);
       }
     });
@@ -282,7 +292,8 @@ export default class Tickets extends View {
       );
     }
     const work = d.work.get(t.key) ?? [];
-    const rows = work.map((item) => this.itemRow(t, item));
+    const live = herdrSpaces();
+    const rows = work.map((item) => this.itemRow(t, item, live));
     const used = new Set(work.map((w) => repoId(w.repo)));
     for (const s of this.suggestions(t))
       if (!used.has(repoId(s.repo))) rows.push(this.startRow(t, s.repo, s.why));
@@ -337,11 +348,12 @@ export default class Tickets extends View {
   }
 
   // What a piece of existing work shows (`tag`) and does, decided together.
-  itemRow(ticket, item) {
+  // `live`: the pass's snapshot (spaces.js).
+  itemRow(ticket, item, live) {
     const name = spaceName(ticket, item.repo, this.data.work.get(ticket.key));
     let tag, run;
     if (item.worktree) {
-      tag = spaceFor(item.worktree) ? "open" : "worktree";
+      tag = live.spaceOf(item.worktree) ? "open" : "worktree";
       run = () => this.openSpace(name, item.worktree);
     } else if (item.branch) {
       tag = item.repo.path ? "branch" : "not cloned";
@@ -524,13 +536,7 @@ export default class Tickets extends View {
     if (e.modifiers.control && e.key === "o" && ticket)
       this.openInBrowser(ticket, cx);
     else if (e.modifiers.control && e.key === "r") this.load(cx);
-    else if (e.key === "tab" && this.screen.name === "list") {
-      if (sel?.kind === "ticket") {
-        const k = sel.ticket.key;
-        if (!this.marked.delete(k)) this.marked.add(k);
-        cx.notify();
-      }
-    } else if (
+    else if (
       e.key === "backspace" &&
       !this.filter &&
       this.screen.name !== "list"
@@ -541,13 +547,24 @@ export default class Tickets extends View {
     return true;
   }
 
+  // Tab on the list marks or unmarks the selected ticket.
+  mark(sel, cx) {
+    if (this.running || this.screen.name !== "list" || sel?.kind !== "ticket")
+      return;
+    const k = sel.ticket.key;
+    if (!this.marked.delete(k)) this.marked.add(k);
+    this.input.focus();
+    cx.notify();
+  }
+
   // The line under the search box: [text, isError], or null for none.
   status(rows) {
     const a = this.action;
     if (a.phase === "running") return [a.message, false];
     if (a.phase === "failed") return [a.error, true];
     const d = this.data;
-    if (d.phase === "failed") return [`${d.error} (Ctrl+R to retry)`, true];
+    if (d.phase === "failed")
+      return rows.length ? [`${d.error} (Ctrl+R to retry)`, true] : null; // shown in the list's place instead (empty)
     const problem = C.problem ?? d.repos?.find((r) => r.problem)?.problem;
     if (problem && !this.screen.ticket) return [problem, true];
     if (d.phase === "tickets") return ["Loading tickets…", false];
@@ -566,16 +583,20 @@ export default class Tickets extends View {
         `${this.marked.size} marked · Enter starts them, Tab unmarks`,
         false,
       ];
-    if (!rows.length)
-      return [
-        !onList
-          ? "Nothing matches"
-          : d.tickets.length
-            ? "No matching ticket"
-            : "No tickets for this query",
-        false,
-      ];
     return null;
+  }
+
+  // What the list's place shows when it has no rows, or null: [text, isError].
+  // In the body, not the header's small hint, so it can't be missed.
+  empty(rows) {
+    const d = this.data;
+    if (rows.length || this.running) return null;
+    if (d.phase === "failed") return [`${d.error} · Ctrl+R to retry`, true];
+    if (d.phase === "tickets" || (d.phase === "work" && !d.local)) return null;
+    const onList = this.screen.name === "list";
+    if (!onList) return ["Nothing matches", false];
+    if (d.tickets.length) return ["No matching ticket", false];
+    return ["No tickets for this query · type to start ad-hoc work", false];
   }
 
   // --- Drawing ------------------------------------------------------------
@@ -625,40 +646,82 @@ export default class Tickets extends View {
         .gap(10)
         .items_center()
         .cursor_pointer()
-        .when(r === sel, (el) => el.bg(t.hover))
+        // As in the Work sidebar: the keyboard's row has an accent edge, so
+        // it reads apart from the mouse's (hover); a marked ticket is tinted.
+        .border_l_2()
+        .border_color(r === sel ? t.accent : "#00000000")
+        .when(r.kind === "ticket" && this.marked.has(r.ticket.key), (el) =>
+          el.bg(t.selected ?? t.hover),
+        )
         .hover((s) => s.bg(t.hover))
         .on_click((_e, cx) => this.choose(r, cx))
         .children(cells.filter(Boolean));
 
+    // A ticket row's cells besides its summary. The columns are as wide as
+    // their widest entry among the rows shown (the same in every row, so they
+    // line up), and one with nothing in it is left out: the summary gets the
+    // rest of the row instead of space held for empty columns.
+    const ticketCells = (r) => {
+      const where = [...new Set(r.work.map((w) => w.repo.name))];
+      return {
+        pr: r.work.map((w) => prLabel(w.pr)).find(Boolean),
+        repos: where.length > 2 ? `${where.length} repos` : where.join(", "),
+      };
+    };
+    const tickets = rows.filter((r) => r.kind === "ticket");
+    const cells = new Map(tickets.map((r) => [r, ticketCells(r)]));
+    const all = [...cells.values()];
+    const widths = {
+      label: columnWidth(
+        tickets.map((r) => r.ticket.label),
+        8,
+        100,
+      ),
+      repos: columnWidth(
+        all.map((c) => c.repos),
+        6.5,
+        130,
+      ),
+      pr: columnWidth(
+        all.map((c) => c.pr?.text),
+        6.5,
+        190,
+      ),
+      status: columnWidth(
+        tickets.map((r) => r.ticket.status),
+        6.5,
+        90,
+      ),
+    };
+    const ticketCol = (w, text, color) => (w ? col(w, text, color) : null);
+
     const row = (r, i) => {
       if (r.kind === "ticket") {
-        const pr = r.work.map((w) => prLabel(w.pr)).find(Boolean);
-        const where = [...new Set(r.work.map((w) => w.repo.name))];
+        const { pr, repos } = cells.get(r);
         return line(r, i, [
           this.marked.has(r.ticket.key)
             ? div().w(12).flex_none().text_color(t.accent).child("✓")
             : dot(r.work.some((w) => w.worktree)),
-          div()
-            .w(100)
-            .flex_none()
-            .truncate()
-            .font_semibold()
-            .text_color(t.foreground)
-            .child(r.ticket.label),
+          widths.label
+            ? div()
+                .w(widths.label)
+                .flex_none()
+                .truncate()
+                // The summary is what a ticket is picked by; the key is
+                // secondary, as in the Work sidebar.
+                .text_color(t.dim)
+                .child(r.ticket.label)
+            : null,
           div()
             .flex_1()
             .min_w(120)
             .truncate()
             .text_color(t.foreground)
             .child(r.ticket.summary),
-          // Fixed-width columns, so they line up from row to row; a long
-          // repo name is cut, never the PR's state.
-          col(
-            130,
-            where.length > 2 ? `${where.length} repos` : where.join(", "),
-          ),
-          col(190, pr?.text ?? "", tone(pr)),
-          col(90, r.ticket.status),
+          // A long repo name is cut, never the PR's state.
+          ticketCol(widths.repos, repos, t.dim),
+          ticketCol(widths.pr, pr?.text ?? "", tone(pr)),
+          ticketCol(widths.status, r.ticket.status, t.dim),
         ]);
       }
       if (r.kind === "item") {
@@ -684,12 +747,14 @@ export default class Tickets extends View {
         ]);
       }
       return line(r, i, [
-        div().w(12).flex_none().text_color(t.dim).child("+"),
+        // Actions are quiet accent text, like the Work sidebar's later steps,
+        // so they read apart from tickets and existing work.
+        div().w(12).flex_none().text_color(t.accent).child("+"),
         div()
           .flex_1()
           .min_w(100)
           .truncate()
-          .text_color(t.foreground)
+          .text_color(t.accent)
           .child(r.label),
         r.why ? small(r.why) : null,
       ]);
@@ -714,10 +779,13 @@ export default class Tickets extends View {
           ? "Tab mark · Ctrl+O browser · Ctrl+R reload · Esc"
           : "⌫ back · Esc";
     const onList = this.screen.name === "list";
+    const empty = this.empty(rows);
 
     return v_flex()
       .id("tickets")
       .track_focus(this.handle)
+      .key_context("Tickets")
+      .on_action("tickets::mark", (_e, cx) => this.mark(sel, cx))
       .w_full()
       .min_h(0)
       .p(18)
@@ -802,6 +870,16 @@ export default class Tickets extends View {
               .text_size(12.8)
               .text_color(t.foreground),
           ),
+      )
+      .when(Boolean(empty), (el) =>
+        el.child(
+          div()
+            .px(14)
+            .py(10)
+            .text_size(12)
+            .text_color(empty[1] ? t.blocked : t.dim)
+            .child(empty?.[0] ?? ""),
+        ),
       )
       .when(rows.length > 0, (el) =>
         el.child(

@@ -178,6 +178,15 @@ test("selection: the focused space's row, picked steps clamp, confirming", () =>
   assert.equal(c.steps[1].text, "Finish? Press again");
 });
 
+test("steps: only the first, the most pressing, is primary", () => {
+  const steps = view().rows[1].steps;
+  assert.ok(steps.length > 1);
+  assert.deepEqual(
+    steps.map((s) => s.primary),
+    steps.map((_s, i) => i === 0),
+  );
+});
+
 test("links: only what applies; a branch that isn't a ticket shows the branch", () => {
   const r = view({ prs: { [one]: PR } }).rows[1];
   assert.deepEqual(
@@ -190,4 +199,92 @@ test("links: only what applies; a branch that isn't a ticket shows the branch", 
   assert.deepEqual(plain.links, []);
   assert.equal(plain.title, "issue-1");
   assert.equal(plain.sub, "");
+});
+
+test("by stage: a group per stage in the flow's order, each row naming its repo", () => {
+  const two = wt(2).path;
+  const v = view({
+    by: "stage",
+    prs: {
+      [one]: { ...PR, state: "MERGED" },
+      [two]: { ...PR, draft: true },
+    },
+  });
+  assert.equal(v.by, "stage");
+  assert.deepEqual(
+    v.groups.map((g) => [g.key, g.name, g.size, g.hub]),
+    [
+      ["stage:draft", "Draft", "1", null],
+      ["stage:merged", "Merged", "1", null],
+    ],
+  );
+  assert.deepEqual(
+    v.rows.map((r) => r.w.path),
+    [two, one],
+  );
+  assert.equal(v.rows[0].sub, "app · Do it");
+  assert.equal(v.rows[0].selected, true);
+});
+
+test("by stage: hubs with a space lead in their own group; folding hides rows", () => {
+  const hub = "/ws/app";
+  const v = view({
+    by: "stage",
+    spaces: { [hub]: { id: "s1", status: "idle" } },
+    folded: new Set(["stage:no-pr"]),
+  });
+  assert.deepEqual(
+    v.groups.map((g) => [g.name, g.open, g.worktrees.length]),
+    [
+      ["Hubs", true, 1],
+      ["No PR", false, 0],
+    ],
+  );
+  assert.equal(v.rows.length, 1);
+  assert.equal(v.rows[0].title, "app");
+  assert.equal(v.rows[0].sub, "main");
+});
+
+test("by repo (the default): groups keyed by the repo's path, rows unprefixed", () => {
+  const v = view();
+  assert.equal(v.by, "repo");
+  assert.equal(v.groups[0].key, "/ws/app");
+  assert.equal(v.rows[1].sub, "Do it");
+});
+
+test("cap: a long repo group shows its most recently changed, plus a focused one", () => {
+  const ws = [1, 2, 3, 4, 5].map((n) => wt(n, { at: n * 10 }));
+  const groups = [
+    {
+      repo,
+      hub: { path: "/ws/app", branch: "main", hub: true },
+      worktrees: ws,
+    },
+  ];
+  const paths = (v) => v.groups[0].worktrees.map((r) => r.w.branch);
+  // The two most recent (5, 4), in their order, and the focused one (1).
+  const v = view({
+    groups,
+    cap: 2,
+    spaces: { [ws[0].path]: { id: "s1", active: true } },
+  });
+  assert.deepEqual(paths(v), ["issue-1", "issue-4", "issue-5"]);
+  assert.equal(v.groups[0].more, 2);
+  assert.equal(v.groups[0].fewer, false);
+  // Keys move only through what's shown: the hub and those three.
+  assert.equal(v.rows.length, 4);
+  // Expanded: all of them, offering "Show fewer".
+  const all = view({ groups, cap: 2, expanded: new Set([repo.path]) });
+  assert.equal(all.groups[0].worktrees.length, 5);
+  assert.equal(all.groups[0].more, 0);
+  assert.equal(all.groups[0].fewer, true);
+  // No cap, or a group within it: all, and nothing to offer.
+  for (const cap of [0, 5]) {
+    const g = view({ groups, cap }).groups[0];
+    assert.equal(g.worktrees.length, 5);
+    assert.equal(g.more + Number(g.fewer), 0);
+  }
+  // Folded: no "+k more" either.
+  const f = view({ groups, cap: 2, folded: new Set([repo.path]) }).groups[0];
+  assert.equal(f.more, 0);
 });

@@ -43,6 +43,19 @@
           }
         },
         {
+          "id": "layout-switcher",
+          "type": "block",
+          "size": {
+            "px": 34
+          },
+          "content": {
+            "mod": "layouts",
+            "props": {
+              "current": "work"
+            }
+          }
+        },
+        {
           "id": "sidebar-lists",
           "type": "column",
           "children": [
@@ -196,5 +209,5 @@
       ]
     }
   ],
-  "preview": "layouts/sheltie.svg"
+  "preview": "layouts/work.svg"
 }

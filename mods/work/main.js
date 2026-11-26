@@ -6,11 +6,15 @@
 // shows while it has worktrees or its hub has a space.
 // A row shows the ticket its branch names (key, summary, status), its pull
 // request (review and checks) and the agent status of its space. Click a row to
-// go to its space, or to open one there with the agent. Its ↗ button (shown on
+// go to its space, or to open one there (with the agent; a hub's opens without). Its ↗ button (shown on
 // hover, on the selected row and while its menu is open) opens a menu: Open PR,
 // Open ticket (in the browser), each only when the row has one. Its second
 // line ends with what agents working in its folder have cost (usage.js).
 // "+" opens the tickets popup to start new work; ↻ refreshes everything now.
+//
+// Under a row, its ticket's other PRs in the repo (a stack), one indented
+// sub-item each: selectable like a row; a click, work.open or work.open-pr
+// opens that PR in the browser. They have no steps or space of their own.
 //
 // Under each row, buttons for its next step in the ticket workflow (Draft PR,
 // Fix CI, Address comments, Resolve conflicts, Ready, Merge, Finish; see
@@ -26,12 +30,16 @@
 // work.open-pr / work.open-ticket open the row's PR / ticket in the browser,
 // like its ↗ menu's Open PR / Open ticket (a hub: says there's
 // nothing to open).
+// work.group switches between grouping by repo and by PR stage, like ▤
+// (C.workGroupBy sets which it opens with).
 // work.refresh refreshes everything now, like ↻. work.report writes what the
-// sidebar shows to <app home>/work-report.json, for scripts and tests.
+// sidebar shows to <app home>/work-report.json, for scripts and tests, with
+// how long its renders take (renders.js).
 // work.start starts the tickets the requests in <app home>/work-start/ name,
 // like the tickets popup (for agents and scripts; see drainRequests).
 //
-// State:
+// State (groups, store, steps, starting folders and costs live in WorkModel,
+// work-model.js, which tests reach without a View):
 //   git refresh, details   each runs one at a time; a request during a run
 //                          queues one more (serial(), watch.js), merging "force"
 //   store                  repo state, plus caches (WorkStore, work.js) of tickets,
@@ -58,66 +66,45 @@ import {
   notify,
   readTextFile,
   run,
-  spaces,
   theme,
   writeTextFile,
 } from "herdr";
 import { C, configReady } from "./config.js";
-import {
-  agentIn,
-  agentSaysDone,
-  prEvents,
-  rowSteps,
-  runStep,
-  START_MS,
-  stillStarting,
-} from "./flow.js";
-import { hubExcept, localRepos, sameSlug } from "./git.js";
-import { basename, openUrl, spaceFor } from "./lib.js";
+import { recordFailure } from "./diagnostics.js";
+import { prEvents, runStep, START_MS } from "./flow.js";
+import { basename, openUrl } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
+import { RepoCache } from "./polling.js";
+import { RenderStats } from "./renders.js";
 import { resize } from "./sidebar.js";
+import { herdrSpaces } from "./spaces.js";
 import { drainRequests } from "./start.js";
-import { ticketOfBranch } from "./tracker.js";
-import { costIn, usageGroups } from "./usage.js";
+import { usageGroups } from "./usage.js";
 import { serial } from "./watch.js";
-import { prRef, WorkStore } from "./work.js";
-import { fit, workView } from "./work-rows.js";
+import { spaceOf, WorkModel } from "./work-model.js";
+import { fit, NOTE_MS } from "./work-rows.js";
 
 const GIT_MS = 30_000;
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
 const USAGE_MS = 120_000; // agent costs (see usage.js)
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
 const WATCH_TRIES = 3;
-// Between finds of the local repos (and reads of their settings); the git
-// scans in between reuse the last list. ↻ and new space folders find now.
-const REPOS_MS = 300_000;
 const LINKS_W = 18; // a row's ↗ button
-
-// A row's space: a hub's leaves out its worktrees' folders (see spaceFor).
-const spaceOf = (w) => spaceFor(w.path, w.except);
 
 export default class Work extends View {
   init(_props, cx) {
-    // null until the first scan; else every local repo:
-    // [{ repo, hub: { path, branch, hub: true, except }, worktrees: [{ path, branch, key }] }]
-    this.groups = null;
-    this.mainCheckouts = new Set();
-    // Repo state, tickets and PRs, and when each is due (work.js).
-    this.store = new WorkStore();
-    this.tickets = this.store.tickets; // by ticket key
+    // Groups, steps, starting folders, costs and the store (work-model.js).
+    this.model = new WorkModel();
     this.nav = new Nav(); // folds, picked row and step, confirm (nav.js)
+    this.by = null; // "repo" | "stage"; null: C.workGroupBy (once loaded)
     this.watched = new Map(); // space folder -> tries
-    // Folders of spaces that appeared while we run, and when: their agent is
-    // starting until it first works (or START_MS passes), so it isn't offered
-    // Draft PR before it has begun the ticket.
-    this.starting = new Map();
-    this.repos = null; // the last localRepos(), and when: { list, at }
-    this.steps = new Map(); // worktree path -> { phase, text }
+    this.repos = new RepoCache(); // the local repos (polling.js)
     this.hovered = null; // the path of the row under the pointer
     this.linksOpen = null; // the path of the row whose ↗ menu is open
     this.watchTimer = false;
     this.width = null; // ours, from on_size_change
-    this.usage = null; // usage groups (usage.js), for each row's agent cost
+    this.renders = new RenderStats(); // render timings, for work.report
+    this.why = null; // what the next render is for (wake); null: Herdr's own
     this.refresh = serial((cx, force) => this.scan(cx, force));
     this.details = serial((cx, force) => this.lookups(cx, force));
     this.refresh(cx);
@@ -128,18 +115,21 @@ export default class Work extends View {
     // drainRequests, start.js), one run at a time.
     this.starts = serial(async (cx) => {
       await configReady();
-      await drainRequests(`${appHome()}/work-start`).catch((e) =>
-        console.error(`work.start: ${e?.message ?? e}`),
-      );
+      await drainRequests(`${appHome()}/work-start`).catch((e) => {
+        console.error(`work.start: ${e?.message ?? e}`);
+        recordFailure("work.start", "drain requests", e);
+      });
       this.refresh(cx, true);
     });
     this.costs = serial(async (cx) => {
       await configReady();
-      this.usage = await usageGroups().catch((e) => {
+      const usage = await usageGroups().catch((e) => {
         console.error(`work: ${e?.message ?? e}`);
-        return this.usage;
+        recordFailure("work", "usage", e);
+        return this.model.usage;
       });
-      cx.notify();
+      // Rows show each folder's cost: re-render only when one moved.
+      if (this.model.setUsage(usage)) this.wake(cx, "costs");
     });
     this.costs(cx);
     cx.timer.every(USAGE_MS, (cx) => this.costs(cx));
@@ -150,91 +140,88 @@ export default class Work extends View {
           this.command(cx, c);
         } catch (e) {
           console.error(`work.${c}: ${e?.message ?? e}`);
+          recordFailure(`work.${c}`, "command", e);
         }
-        cx.notify();
+        this.wake(cx, "command");
       }
     });
   }
 
+  get store() {
+    return this.model.store;
+  }
+
+  get groups() {
+    return this.model.groups;
+  }
+
   // --- Keyboard ---------------------------------------------------------------
 
-  // The groups shown: repos with worktrees, or whose hub has a space.
-  shownGroups() {
-    return (this.groups ?? []).filter(
-      (g) => g.worktrees.length || spaceOf(g.hub),
-    );
-  }
-
-  // A row's next steps (rowSteps).
-  stepsOf(w, space) {
-    return rowSteps({
-      hub: w.hub,
-      pr: this.prOf(w),
-      lookup: w.hub ? null : this.store.prEntry(w.repo, w.branch),
-      last: this.steps.get(w.path),
-      status: space?.status,
-      bornAt: this.starting.get(w.path),
-      agentDone: agentSaysDone(space),
-      repo: w.repo,
-    });
-  }
-
-  // What the sidebar shows (work-rows.js), with the selected row and step:
+  // What the sidebar shows (WorkModel.view), with the selected row and step:
   // the one the keys moved to while the same space stays focused, else the
-  // focused space's row, else the first. Adds active: the focused space's id.
-  view() {
-    const active = spaces().find((s) => s.active && !s.machine)?.id ?? null;
+  // focused space's row, else the first. `live`: the pass's snapshot of
+  // Herdr's live data (herdrSpaces), so a render reads it once.
+  view(live) {
     const now = Date.now();
-    const view = workView({
-      groups: this.shownGroups(),
+    const active = live.active;
+    return this.model.view(live, now, {
+      by: this.groupBy(),
       folded: this.nav.folded,
+      cap: C.workRepoRows ?? 0,
+      expanded: this.nav.expanded,
       width: this.width,
-      steps: this.steps,
       confirm: this.nav.confirming(now),
       picked: this.nav.picked(active),
-      now,
-      spaceOf,
-      stepsOf: (w, space) => this.stepsOf(w, space),
-      prOf: (w) => this.prOf(w),
-      ticketOf: (w) => this.tickets.get(w.handle.key),
-      isTicket: (w) => this.isTicket(w),
-      costOf: (w) => this.costOf(w),
     });
-    return { ...view, active };
+  }
+
+  // How the rows are grouped: as last switched to, else as configured.
+  groupBy() {
+    return this.by ?? C.workGroupBy ?? "repo";
+  }
+
+  // Switches between grouping by repo and by stage.
+  toggleGroupBy(cx) {
+    this.by = this.groupBy() === "stage" ? "repo" : "stage";
+    this.wake(cx, "group");
   }
 
   command(cx, c) {
-    const { rows, at, step, active } = this.view();
+    const live = herdrSpaces();
+    const { rows, at, step, active } = this.view(live);
     const row = rows[at];
     if (["next", "prev", "step-next", "step-prev"].includes(c)) {
-      const navRows = rows.map((r) => ({ path: r.w.path, steps: r.steps }));
+      const navRows = rows.map((r) => ({ path: r.key, steps: r.steps }));
       this.nav.move(navRows, at, step, active, c);
     } else if (c === "step") {
       if (row?.steps[step]) this.step(cx, row.w, row.steps[step], true);
     } else if (c === "open") {
-      if (row) this.open(row.w);
+      if (row?.stacked) this.openStacked(row);
+      else if (row) this.open(row.w);
     } else if (c === "open-pr") {
-      if (row) this.openPR(row.w);
+      if (row?.stacked) this.openStacked(row);
+      else if (row) this.openPR(row.w);
     } else if (c === "open-ticket") {
       if (row) this.openTicket(cx, row.w);
-    } else if (c === "refresh") this.refresh(cx, true);
-    else if (c === "report") this.report(cx, rows);
+    } else if (c === "group") this.toggleGroupBy(cx);
+    else if (c === "refresh") this.refresh(cx, true);
+    else if (c === "report") this.report(cx, rows, live);
     else if (c === "start") this.starts(cx);
     else console.error(`work: unknown command ${c}`);
   }
 
-  // What the sidebar shows, as JSON in <app home>/work-report.json: the shown
-  // rows with their space's agent (where agent steps go) and whether it says
-  // the PR is done (agentDone: its pr=ready label), PR, next steps and
-  // last step, and which row and step the keys would act on, and what
-  // work.open-pr / work.open-ticket would open (prUrl / ticketUrl).
+  // What the sidebar shows, as JSON in <app home>/work-report.json
+  // (WorkModel.report), with how long renders take and the ticket URLs.
   // Everything but the ticket URLs is taken now, so a row's steps and its PR
   // always agree (a lookup may finish while the URLs are awaited).
-  report(cx, rows) {
-    const out = this.reportNow(rows);
+  report(cx, rows0, live) {
+    const rows = rows0.filter((r) => !r.stacked);
+    const out = this.model.report(rows, live, Date.now(), {
+      renders: this.renders.report(),
+    });
     cx.spawn(async () => {
       const urls = await Promise.all(
-        rows.map((r) => this.ticketUrl(r.w).catch(() => null)),
+        rows.map((r) => this.model.ticketUrl(r.w).catch(() => null)),
       );
       for (const [i, row] of out.rows.entries()) row.ticketUrl = urls[i];
       const file = `${appHome()}/work-report.json`;
@@ -242,164 +229,37 @@ export default class Work extends View {
         .then((old) =>
           writeTextFile(file, `${JSON.stringify(out, null, 2)}\n`, old),
         )
-        .catch((e) => console.error(`work.report: ${e?.message ?? e}`));
+        .catch((e) => {
+          console.error(`work.report: ${e?.message ?? e}`);
+          recordFailure("work.report", "write report", e);
+        });
     });
-  }
-
-  // The report of the view's rows (view()), without the ticket URLs (null
-  // until report() adds them).
-  reportNow(rows) {
-    return {
-      at: Date.now(),
-      loaded: this.groups !== null,
-      rows: rows.map((r) => {
-        const pr = r.prValue;
-        const confirming = r.steps.find((s) => s.confirming)?.id ?? null;
-        return {
-          path: r.w.path,
-          hub: r.hub,
-          branch: r.w.branch,
-          key: r.w.handle?.key ?? null,
-          repo: r.w.repo.slug ?? r.w.repo.name,
-          space: r.space?.id ?? null,
-          // The status dot: working, blocked… (null: no space).
-          status: r.space?.status ?? null,
-          // What the row's status shows (null: the working spinner).
-          glyph: r.status.glyph,
-          title: r.title,
-          sub: r.sub,
-          agent: agentIn(r.space),
-          agentDone: agentSaysDone(r.space),
-          cost: r.cost,
-          selected: r.selected,
-          step: r.selected
-            ? Math.max(
-                0,
-                r.steps.findIndex((s) => s.chosen),
-              )
-            : null,
-          steps: r.steps.map((s) => ({
-            id: s.id,
-            label: s.label,
-            confirm: Boolean(s.confirm),
-          })),
-          confirming,
-          ticket: r.ticket,
-          ticketUrl: null,
-          prUrl: pr?.url ?? null,
-          pr: pr && {
-            number: pr.number,
-            label: r.pr?.text ?? null,
-            state: pr.state,
-            draft: pr.draft,
-            review: pr.review,
-            checks: pr.checks,
-            autoMerge: pr.autoMerge,
-            mergeable: pr.mergeable,
-            unresolved: pr.unresolved ?? null,
-          },
-          last: this.lastOf(r.w),
-        };
-      }),
-    };
-  }
-
-  // The last step run on a row (unfaded: a report keeps its note), or null.
-  lastOf(w) {
-    const last = this.steps.get(w.path);
-    return last
-      ? { phase: last.phase, text: last.text, at: last.at ?? null }
-      : null;
-  }
-
-  // What the agents started in a row's folder have cost, in $, or null.
-  costOf(w) {
-    return this.usage ? costIn(this.usage, w.path) : null;
   }
 
   // Git only: worktrees and branches. Ticket and PR details follow separately,
   // so slow tracker/GitHub calls never hold up the next git refresh.
+  // Renders follow what changed, not the 30 s poll.
   async scan(cx, force) {
     await configReady();
     const repos = await this.localRepos(force);
-    await this.store.scan(repos);
-    this.mainCheckouts = new Set(repos.map((r) => r.path));
-    this.groups = this.store.states.filter(Boolean).map((s) => ({
-      repo: s.repo,
-      hub: {
-        path: s.repo.path,
-        branch: s.mainBranch,
-        hub: true,
-        except: hubExcept(s.repo.path, s.linked),
-      },
-      worktrees: s.worktrees.map((w) => ({
-        ...w,
-        repo: s.repo,
-        handle: ticketOfBranch(w.branch, s.repo),
-      })),
-    }));
+    const changed = await this.model.scan(repos);
     this.recheckWatched(cx);
-    cx.notify();
+    if (changed) this.wake(cx, "scan");
     this.details(cx, force);
-  }
-
-  // A worktree's PR: the one from its branch, else one its ticket's tracker
-  // links with that branch (joinWork); null for a hub or none known.
-  prOf(w) {
-    if (w.hub) return null;
-    const own = this.store.prEntry(w.repo, w.branch)?.value;
-    if (own || !w.handle) return own ?? null;
-    return (
-      this.store
-        .snapshot([w.handle.key])
-        .get(w.handle.key)
-        ?.find((i) => i.worktree === w.path)?.pr ?? null
-    );
   }
 
   // The local repos, found again when forced, when a watched space folder is
   // still unknown (it may be a new clone), or every REPOS_MS.
-  async localRepos(force) {
+  localRepos(force) {
     const pending = [...this.watched.values()].some((t) => t < WATCH_TRIES);
-    if (
-      force ||
-      pending ||
-      !this.repos ||
-      Date.now() - this.repos.at >= REPOS_MS
-    )
-      this.repos = { list: await localRepos(), at: Date.now() };
-    return this.repos.list;
+    return this.repos.get(force || pending);
   }
 
-  // The ticket and PR lookups that are due (WorkStore.refresh).
+  // The ticket and PR lookups that are due (WorkModel.lookups).
   async lookups(cx, force) {
-    if (!this.groups) return;
-    const all = this.groups.flatMap((g) =>
-      g.worktrees.map((w) => ({ ...w, repo: g.repo })),
-    );
-    // Each key once, with the tracker of the repo it's from.
-    const keys = new Map(
-      all.filter((w) => w.handle).map((w) => [w.handle.key, w.handle.tracker]),
-    );
-    await this.store.refresh(keys, {
-      force,
-      view: true,
-      onTicket: () => cx.notify(),
-      onPR: (ref, was, entry, asked) => {
-        const pr = entry.value;
-        for (const w of all) {
-          const mine =
-            (w.repo.slug && prRef(w.repo.slug, w.branch) === ref) ||
-            (pr &&
-              this.prOf(w)?.number === pr.number &&
-              sameSlug(this.prOf(w)?.slug, pr.slug));
-          if (!mine) continue;
-          if (entry.state === "found" && was) this.tell(w, was, pr);
-          const last = this.steps.get(w.path);
-          if (last?.staleAt <= asked) delete last.staleAt;
-        }
-        cx.notify();
-      },
+    await this.model.lookups(force, {
+      changed: () => this.wake(cx, "lookup"),
+      tell: (w, was, pr) => this.tell(w, was, pr),
     });
   }
 
@@ -407,37 +267,27 @@ export default class Work extends View {
   // our worktrees (nor a main checkout) may be a new worktree: refresh now
   // rather than at the next poll, and recheck a few times in case it appears
   // a little later.
-  watchSpaces(cx) {
-    const now = Date.now();
-    for (const [f, born] of this.starting)
-      if (!stillStarting(born, spaceFor(f)?.status, now))
-        this.starting.delete(f);
-    if (!this.groups) return;
-    const known = this.knownFolders();
-    const fresh = spaces()
-      .filter((s) => !s.machine && s.folder)
+  watchSpaces(cx, live) {
+    this.model.settle(live, Date.now());
+    if (!this.model.groups) return;
+    const known = this.model.knownFolders();
+    const fresh = live.local
+      .filter((s) => s.folder)
       .map((s) => s.folder.replace(/\/+$/, ""))
       .filter((f) => !known.has(f) && !this.watched.has(f));
     if (!fresh.length) return;
     for (const f of fresh) {
       this.watched.set(f, 0);
-      this.starting.set(f, Date.now());
+      this.model.starting.set(f, Date.now());
     }
     // Shows its steps once it's no longer starting, even if nothing changes.
-    cx.timer.after(START_MS, (cx) => cx.notify());
+    cx.timer.after(START_MS, (cx) => this.wake(cx, "timer"));
     cx.timer.after(0, (cx) => this.refresh(cx));
-  }
-
-  knownFolders() {
-    return new Set([
-      ...this.mainCheckouts,
-      ...this.groups.flatMap((g) => g.worktrees.map((w) => w.path)),
-    ]);
   }
 
   // After a scan: folders now listed are done; the rest get another try soon.
   recheckWatched(cx) {
-    const known = this.knownFolders();
+    const known = this.model.knownFolders();
     let again = false;
     for (const [f, tries] of this.watched) {
       if (known.has(f)) this.watched.delete(f);
@@ -458,7 +308,7 @@ export default class Work extends View {
   // A notification when something you'd wait for changes on a PR.
   tell(w, was, pr) {
     const who = this.who(w);
-    const space = spaceOf(w);
+    const space = spaceOf(w, herdrSpaces());
     const action = space
       ? { name: "space.select", args: { id: space.id } }
       : undefined;
@@ -470,27 +320,28 @@ export default class Work extends View {
   // second click or key press (within a few seconds).
   step(cx, w, step, byKey = false) {
     const path = w.path;
-    if (this.steps.get(path)?.phase === "running") return;
+    const steps = this.model.steps;
+    if (steps.get(path)?.phase === "running") return;
     const id = `${path}:${step.id}`;
     if (!this.nav.press(id, Boolean(step.confirm), byKey, Date.now())) {
       // Redraws once it expires.
-      cx.timer.after(CONFIRM_MS, (cx) => cx.notify());
-      return cx.notify();
+      cx.timer.after(CONFIRM_MS, (cx) => this.wake(cx, "timer"));
+      return this.wake(cx, "step");
     }
-    this.steps.set(path, { phase: "running", text: `${step.label}…` });
-    cx.notify();
-    const pr = this.prOf(w);
+    steps.set(path, { phase: "running", text: `${step.label}…` });
+    this.wake(cx, "step");
+    const pr = this.model.prOf(w);
     // The ticket's work everywhere: worktrees and branches here, and the PRs
     // its tracker links (in repos with no worktree here too).
-    const work = w.handle
-      ? (this.store.snapshot([w.handle.key]).get(w.handle.key) ?? [])
-      : [];
+    const work = this.model.workOf(w);
     cx.spawn(async (cx) => {
       const who = this.who(w);
       try {
         const note = await runStep(step.id, w, pr, work);
         const at = Date.now();
-        this.steps.set(path, { phase: "done", text: note, at, staleAt: at });
+        steps.set(path, { phase: "done", text: note, at, staleAt: at });
+        // The note fades after NOTE_MS: nothing else may re-render by then.
+        cx.timer.after(NOTE_MS + 50, (cx) => this.wake(cx, "timer"));
         if (step.kind === "direct")
           notify({
             title: `${who}: ${step.label}`,
@@ -499,51 +350,47 @@ export default class Work extends View {
           });
       } catch (e) {
         const text = `${e?.message ?? e}`.split("\n")[0];
-        this.steps.set(path, { phase: "failed", text, at: Date.now() });
+        steps.set(path, { phase: "failed", text, at: Date.now() });
+        recordFailure("work", step.label, e, { path });
         notify({
           title: `${who}: ${step.label} failed`,
           body: text,
           level: "error",
         });
       }
-      cx.notify();
+      this.wake(cx, "step");
       this.refresh(cx, true);
     });
   }
 
   open(w) {
-    const space = spaceOf(w);
+    const space = spaceOf(w, herdrSpaces());
     if (space) run("space.select", { id: space.id });
+    // A hub's space is for terminals and git, so it starts without an agent.
+    else if (w.hub) run("space.new", { name: w.repo.name, folder: w.path });
     else
       run("space.new", {
-        name: w.hub
-          ? w.repo.name
-          : (w.handle?.label ?? w.branch.split("/").pop()),
+        name: w.handle?.label ?? w.branch.split("/").pop(),
         folder: w.path,
         argv: C.agent.argv,
       });
   }
 
-  // Whether `w`'s branch names a ticket: only one the tracker says it doesn't
-  // know (e.g. "UTF-8" in "fix-utf-8") isn't. Not looked up yet, or
-  // unreachable: still a ticket.
-  isTicket(w) {
-    return (
-      Boolean(w.handle) && this.tickets.get(w.handle.key)?.state !== "none"
-    );
-  }
-
-  // Where `w`'s ticket is in the browser; null when its branch isn't a ticket.
-  async ticketUrl(w) {
-    return this.isTicket(w) ? await w.handle.url() : null;
-  }
-
   // Opens `w`'s PR in the browser; without one, says so.
   openPR(w) {
     if (w.hub) return this.nothingToOpen(w);
-    const url = this.prOf(w)?.url;
+    const url = this.model.prOf(w)?.url;
     if (url) return openUrl(url);
     notify({ title: `${this.who(w)}: no pull request`, level: "info" });
+  }
+
+  // Opens a stacked PR's sub-item (work-rows.js, stackItem) in the browser.
+  openStacked(item) {
+    if (item.url) return openUrl(item.url);
+    notify({
+      title: `${this.who(item.w)}: no link for #${item.number}`,
+      level: "info",
+    });
   }
 
   // A hub has no ticket or PR.
@@ -559,10 +406,10 @@ export default class Work extends View {
   openTicket(cx, w) {
     if (w.hub) return this.nothingToOpen(w);
     cx.spawn(async () => {
-      const url = await this.ticketUrl(w).catch(() => null);
+      const url = await this.model.ticketUrl(w).catch(() => null);
       if (url) return openUrl(url);
       notify({
-        title: `${this.who(w)}: ${this.isTicket(w) ? `no link for ${w.handle.label}` : "not a ticket"}`,
+        title: `${this.who(w)}: ${this.model.isTicket(w) ? `no link for ${w.handle.label}` : "not a ticket"}`,
         level: "info",
       });
     });
@@ -572,10 +419,42 @@ export default class Work extends View {
     return w.handle?.label ?? basename(w.path);
   }
 
+  // cx.notify(), noting why for the render's timing (renders.js).
+  wake(cx, why) {
+    this.why ??= why;
+    // A scan or lookup that changed what is known rebuilds the snapshot here,
+    // in async code, so the render it asks for only reads it.
+    this.store.warm();
+    cx.notify();
+  }
+
+  // Draws the sidebar (draw); a render that throws (Herdr interrupts one that
+  // runs too long) never reaches timed, so it's recorded here, with whether it
+  // rebuilt the snapshot, before being passed on.
   render(cx) {
-    this.watchSpaces(cx);
+    const start = Date.now();
+    const trigger = this.why ?? "host";
+    this.why = null;
+    const rebuilds = this.store.rebuilds;
+    try {
+      return this.draw(cx, start, trigger);
+    } catch (e) {
+      recordFailure("work", "render interrupted", e, {
+        elapsedMs: Date.now() - start,
+        trigger,
+        rebuilt: this.store.rebuilds !== rebuilds,
+      }).catch(() => {});
+      throw e;
+    }
+  }
+
+  draw(cx, start, trigger) {
+    // One read of Herdr's live data for the whole render (herdrSpaces).
+    const live = herdrSpaces();
+    this.watchSpaces(cx, live);
     const t = theme();
-    const view = this.view();
+    const view = this.view(live);
+    const viewed = Date.now();
     const rail = view.span === "rail";
     const tone = (name) => t[name] ?? t.accent;
     const icon = (name, label, tip, onClick) =>
@@ -596,6 +475,11 @@ export default class Work extends View {
           onClick(cx);
         })
         .child(label);
+    // ↻ spins while a refresh asked for by hand (git, then tickets and PRs) runs.
+    const refreshing = this.refresh.forcing() || this.details.forcing();
+    const refreshLabel = refreshing
+      ? svg("mods/workspace-chrome/spinner.svg").size(11).spin(900)
+      : "↻";
 
     const header = rail
       ? h_flex()
@@ -625,7 +509,20 @@ export default class Work extends View {
               .child("Work"),
           )
           .child(
-            icon("refresh", "↻", "Refresh now", (cx) => this.refresh(cx, true)),
+            icon(
+              "group",
+              "▤",
+              view.by === "stage" ? "Group by repo" : "Group by stage",
+              (cx) => this.toggleGroupBy(cx),
+            ),
+          )
+          .child(
+            icon(
+              "refresh",
+              refreshLabel,
+              refreshing ? "Refreshing…" : "Refresh now",
+              (cx) => this.refresh(cx, true),
+            ),
           )
           .child(
             icon("new", "+", "New work (tickets)", () =>
@@ -648,10 +545,13 @@ export default class Work extends View {
       ).child(st.glyph);
     };
 
-    // A step button: filled and accent-coloured, so it reads as clickable
-    // next to plain labels; outlined only while picked or confirming.
-    const button = (r, s) =>
-      div()
+    // A step button. The row's next step (primary) is the one solid thing in
+    // the sidebar: accent fill, background-coloured text. Later steps are
+    // quiet accent text. Picked: an accent outline; confirming: blocked.
+    const button = (r, s) => {
+      const solid = s.primary && !s.confirming;
+      const ink = s.confirming ? t.blocked : solid ? t.background : t.accent;
+      return div()
         .id(`work-step-${r.w.path}-${s.id}`)
         .flex_none()
         .h(18)
@@ -659,20 +559,30 @@ export default class Work extends View {
         .flex()
         .items_center()
         .rounded(5)
-        .bg(t.hover)
+        .bg(solid ? t.accent : s.confirming ? t.hover : "#00000000")
         .border_1()
         .border_color(
-          s.confirming ? t.blocked : s.chosen ? t.accent : "#00000000",
+          s.confirming
+            ? t.blocked
+            : s.chosen
+              ? solid
+                ? t.foreground
+                : t.accent
+              : "#00000000",
         )
         .text_size(11)
-        .text_color(s.confirming ? t.blocked : t.accent)
+        .when(solid, (el) => el.font_semibold())
+        .text_color(ink)
         .cursor_pointer()
-        .hover((st) => st.text_color(s.confirming ? t.blocked : t.foreground))
+        .hover((st) =>
+          solid ? st.bg(t.foreground) : st.bg(t.hover).text_color(ink),
+        )
         .on_click((_e, cx) => {
           cx.stop_propagation();
           this.step(cx, r.w, s);
         })
         .child(s.text);
+    };
 
     // What a link in a row's ↗ menu does.
     const follow = (w, id, cx) =>
@@ -683,7 +593,7 @@ export default class Work extends View {
     const linksMenu = (w, links) => {
       const close = (cx) => {
         this.linksOpen = null;
-        cx.notify();
+        this.wake(cx, "menu");
       };
       return Popover.new(`work-links-${w.path}`)
         .anchor("top_right")
@@ -691,7 +601,7 @@ export default class Work extends View {
         .on_open_change((open, cx) => {
           if (open) this.linksOpen = w.path;
           else if (this.linksOpen === w.path) this.linksOpen = null;
-          cx.notify();
+          this.wake(cx, "menu");
         })
         .trigger(
           div()
@@ -800,10 +710,12 @@ export default class Work extends View {
           .cursor_pointer()
           .when(Boolean(space?.active), (el) => el.bg(t.selected ?? t.hover))
           .hover((s) => s.bg(t.hover))
+          // Only entering a row renders: leaving one is followed by entering
+          // the next, and leaving the list is handled on "work-list".
           .on_hover((hovered, cx) => {
-            if (hovered) this.hovered = w.path;
-            else if (this.hovered === w.path) this.hovered = null;
-            cx.notify();
+            if (!hovered || this.hovered === w.path) return;
+            this.hovered = w.path;
+            this.wake(cx, "hover");
           })
           .on_click(() => this.open(w))
           .child(
@@ -935,6 +847,68 @@ export default class Work extends View {
       );
     };
 
+    // A stacked PR under its row (work-rows.js, stackItem): one indented
+    // line, no steps; a click opens the PR. Merged or closed: dimmed. A tree
+    // connector (├ / └ for the last) ties it to the row above.
+    const subRow = (p, last) =>
+      h_flex()
+        .id(`work-${p.key}`)
+        .mx(6)
+        .pl(18)
+        .pr(8)
+        .h(20)
+        .gap(6)
+        .items_center()
+        .rounded(6)
+        .border_l_2()
+        .border_color(p.selected ? t.accent : "#00000000")
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .tooltip(p.tip)
+        .on_click(() => this.openStacked(p))
+        .child(
+          div()
+            .flex_none()
+            .text_size(11)
+            .text_color(t.dim)
+            .child(last ? "└" : "├"),
+        )
+        .child(
+          div()
+            .flex_none()
+            .text_size(11)
+            .text_color(tone(p.tone))
+            .child(p.shown),
+        )
+        .child(
+          div()
+            .flex_1()
+            .min_w(0)
+            .truncate()
+            .text_size(11)
+            .text_color(p.dim ? t.dim : t.muted)
+            .child(p.title),
+        );
+    // On the rail: the PR's glyph, small, under its row's dot.
+    const subDot = (p) =>
+      div()
+        .id(`work-${p.key}`)
+        .mx(4)
+        .h(16)
+        .flex()
+        .justify_center()
+        .items_center()
+        .rounded(6)
+        .border_l_2()
+        .border_color(p.selected ? t.accent : "#00000000")
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .tooltip(p.tip)
+        .on_click(() => this.openStacked(p))
+        .text_size(9)
+        .text_color(tone(p.tone))
+        .child(p.glyph);
+
     const costEl = (r) =>
       div()
         .id(`work-cost-${r.w.path}`)
@@ -947,14 +921,52 @@ export default class Work extends View {
     // A repo's header. In full, it is also its hub's row (the hub has no
     // ticket, PR or steps, so a row of its own would repeat in every group):
     // the chevron folds the group, the rest opens the hub like a row.
-    const group = (g) => {
+    // Below a capped repo group: "+k more" shows the rest, "Show fewer" goes
+    // back to the cap (workRepoRows). On the rail, "+k".
+    const moreRow = (g) => {
+      const label = g.more
+        ? rail
+          ? `+${g.more}`
+          : `+${g.more} more`
+        : rail
+          ? "−"
+          : "Show fewer";
+      return div()
+        .id(`work-more-${g.key}`)
+        .mx(rail ? 4 : 6)
+        .px(rail ? 6 : 24)
+        .h(20)
+        .flex()
+        .items_center()
+        .when(rail, (el) => el.justify_center())
+        .rounded(6)
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .text_size(11)
+        .text_color(t.dim)
+        .tooltip(
+          g.more
+            ? `Show ${g.more} less recently changed worktree${g.more === 1 ? "" : "s"}`
+            : "Show only the most recently changed",
+        )
+        .on_click((_e, cx) => {
+          this.nav.expand(g.key);
+          cx.notify();
+        })
+        .child(label);
+    };
+    const withMore = (el, g) => (g.more || g.fewer ? el.child(moreRow(g)) : el);
+
+    const group = (g) => withMore(groupEl(g), g);
+    const groupEl = (g) => {
       const { hub } = g;
       const fold = (cx) => {
         this.nav.fold(
-          g.repo.path,
-          g.worktrees.map((r) => r.w.path),
+          g.key,
+          g.worktrees.flatMap((r) => [r.key, ...r.stack.map((p) => p.key)]),
+          hub ? hub.w.path : null,
         );
-        cx.notify();
+        this.wake(cx, "fold");
       };
       const chevron = svg(
         `mods/workspace-chrome/chevron-${g.open ? "down" : "right"}.svg`,
@@ -966,7 +978,7 @@ export default class Work extends View {
         return v_flex()
           .child(
             h_flex()
-              .id(`work-repo-${g.repo.path}`)
+              .id(`work-repo-${g.key}`)
               .mx(4)
               .px(6)
               .h(24)
@@ -988,8 +1000,52 @@ export default class Work extends View {
                   .child(g.monogram),
               ),
           )
-          .child(dot(hub))
-          .children(g.worktrees.map(dot));
+          .when(Boolean(hub), (el) => el.child(dot(hub)))
+          .children(
+            g.worktrees.flatMap((r) => [dot(r), ...r.stack.map(subDot)]),
+          );
+      // By stage: a plain header (no hub), the chevron and name fold it.
+      if (!hub)
+        return v_flex()
+          .child(
+            h_flex()
+              .id(`work-group-${g.key}`)
+              .mx(6)
+              .px(6)
+              .h(24)
+              .gap(5)
+              .items_center()
+              .rounded(6)
+              .cursor_pointer()
+              .hover((s) => s.bg(t.hover))
+              .on_click((_e, cx) => fold(cx))
+              .child(chevron)
+              .child(
+                div()
+                  .flex_1()
+                  .min_w(0)
+                  .truncate()
+                  .text_size(12.5)
+                  .font_semibold()
+                  .text_color(t.muted)
+                  .child(g.name),
+              )
+              .child(
+                div()
+                  .id(`work-count-${g.key}`)
+                  .flex_none()
+                  .text_size(11)
+                  .text_color(t.muted)
+                  .tooltip(g.count)
+                  .child(g.size),
+              ),
+          )
+          .children(
+            g.worktrees.flatMap((r) => [
+              row(r),
+              ...r.stack.map((p, i, all) => subRow(p, i === all.length - 1)),
+            ]),
+          );
       return v_flex()
         .child(
           h_flex()
@@ -1053,7 +1109,12 @@ export default class Work extends View {
                 .child(g.size),
             ),
         )
-        .children(g.worktrees.map(row));
+        .children(
+          g.worktrees.flatMap((r) => [
+            row(r),
+            ...r.stack.map((p, i, all) => subRow(p, i === all.length - 1)),
+          ]),
+        );
     };
 
     // Messages: in full on the rail too, on hover.
@@ -1081,12 +1142,12 @@ export default class Work extends View {
               t.dim,
             );
 
-    return v_flex()
+    const el = v_flex()
       .id("work")
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        if (resize(this, size.width, fit)) cx.notify();
+        if (resize(this, size.width, fit)) this.wake(cx, "resize");
       })
       .child(header)
       .when(Boolean(problem), (el) => el.child(problem))
@@ -1099,7 +1160,29 @@ export default class Work extends View {
           .border_b_1()
           .border_color(t.border ?? t.dim)
           .overflow_y_scrollbar()
+          .on_hover((hovered, cx) => {
+            if (hovered || this.hovered === null) return;
+            this.hovered = null;
+            cx.notify();
+          })
           .child(body),
       );
+    this.timed(start, viewed, view, trigger);
+    return el;
+  }
+
+  // Records a render's timing (renders.js); a slow one as a failure too.
+  timed(start, viewed, view, trigger) {
+    const end = Date.now();
+    const r = {
+      ms: end - start,
+      viewMs: viewed - start,
+      buildMs: end - viewed,
+      rows: view.rows.length,
+      trigger,
+      at: end,
+    };
+    if (this.renders.add(r))
+      recordFailure("work", "slow render", `${r.ms} ms`, r);
   }
 }

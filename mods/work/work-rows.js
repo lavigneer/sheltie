@@ -6,7 +6,7 @@
 // Tones name theme colours ("blocked", "done", "muted", "dim", "working",
 // or a space status, which falls back to "accent" when the theme has none).
 
-import { prLabel, toneKey } from "./flow.js";
+import { prLabel, stageOf, toneKey } from "./flow.js";
 import { band, RAIL } from "./sidebar.js";
 import { dollars } from "./usage.js";
 
@@ -30,6 +30,19 @@ export const fit = (width) =>
 // A repo's rail monogram: its name's first letter or digit, upper-cased.
 export const monogram = (name) =>
   (name.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
+
+// Grouped by stage, the groups in the flow's order, and the name each shows.
+export const STAGES = [
+  ["no-pr", "No PR"],
+  ["draft", "Draft"],
+  ["in-review", "In review"],
+  ["approved", "Approved"],
+  ["merged", "Merged"],
+  ["closed", "Closed"],
+];
+
+// A stage group's key in the folded set (repo groups use the repo's path).
+export const stageKey = (stage) => `stage:${stage}`;
 
 // How long a step's success note stays.
 export const NOTE_MS = 60_000;
@@ -64,21 +77,30 @@ function statusOf(space, failed, pr) {
 
 // The groups and rows shown. `input`:
 //   groups     the shown groups ([{ repo, hub, worktrees }])
-//   folded     repo paths folded (their hub stays, as the header)
+//   by         "repo" (the default) or "stage": one group per PR stage
+//              (STAGES), each row naming its repo; the hubs with a space
+//              come first, in a "Hubs" group of their own
+//   folded     group keys folded: repo paths (their hub stays, as the
+//              header) or stageKey()s
+//   cap        by repo, the most worktrees a group shows (0 or absent: all)
+//   expanded   repo paths whose "+k more" was clicked: they show them all
 //   width      the sidebar's, or null
 //   steps      worktree path -> the last step run ({ phase, text, at })
 //   confirm    the step waiting for its second click ({ id, byKey }) or null
 //   picked     the row and step the keys moved to ({ path, step }) or null
 //   now        Date.now()
-//   spaceOf(w), stepsOf(w, space), prOf(w), ticketOf(w) (its cache entry),
+//   spaceOf(w), stepsOf(w, space), prOf(w), stackOf(w) (the ticket's other
+//   PRs in the row's repo; optional), ticketOf(w) (its cache entry),
 //   isTicket(w), costOf(w) (in $, or null)
-// Returns { span, groups: [{ repo, name, monogram, count, size, open, hub,
-// worktrees }], rows (in order: what the keys move through), at, step }.
+// Returns { span, by, groups: [{ key, repo, name, monogram, count, size,
+// open, hub, worktrees, more, fewer }] (more: how many worktrees the cap
+// hides; fewer: expanded past the cap) (by stage: repo and hub are null), rows (in order: what the keys move through), at, step }.
 export function workView(input) {
   const span = fit(input.width);
   const narrow = span === "short" || span === "glyph";
   const now = input.now ?? Date.now();
 
+  const by = input.by === "stage" ? "stage" : "repo";
   const rowOf = (w) => {
     const space = input.spaceOf(w);
     const last0 = input.steps.get(w.path) ?? null;
@@ -96,21 +118,43 @@ export function workView(input) {
     const pr = label && { ...label, tone: toneKey(label.tone), shown };
     // A branch that isn't a ticket (see isTicket) shows the branch.
     const isTicket = input.isTicket(w);
+    // By stage, a hub's row has no repo header above it: it's named for
+    // its repo, its branch below.
+    const hubStage = w.hub && by === "stage";
     const title = w.hub
-      ? (w.branch ?? "detached")
+      ? hubStage
+        ? w.repo.name
+        : (w.branch ?? "detached")
       : isTicket
         ? w.handle.label
         : w.branch;
-    const sub = ticket
+    const sub0 = ticket
       ? ticket.summary
       : isTicket
         ? entry?.state === "failed"
           ? `${w.branch} · ${w.handle.tracker.name} unreachable`
           : w.branch
         : "";
-    const extras = [
-      prValue?.state === "OPEN" && prValue.autoMerge ? "auto-merge" : null,
-    ].filter(Boolean);
+    // By stage, rows of every repo mix: each names its own.
+    const sub = hubStage
+      ? (w.branch ?? "detached")
+      : by === "stage" && !w.hub
+        ? [w.repo.name, sub0].filter(Boolean).join(" · ")
+        : sub0;
+    // The ticket's other PRs here (a stack): each a sub-item under the row
+    // (stackItem), selectable like a row; its own key, `${path}#${number}`.
+    // Numbered by its place in the stack (the row's own PR included), so
+    // "2/3" is the second of three PRs in order of number.
+    const others = input.stackOf?.(w) ?? [];
+    const order = [prValue, ...others]
+      .filter(Boolean)
+      .map((p) => p.number)
+      .sort((a, b) => a - b);
+    const stack = others.map((p) =>
+      stackItem(w, p, span, order.indexOf(p.number) + 1, order.length),
+    );
+    const extras =
+      prValue?.state === "OPEN" && prValue.autoMerge ? ["auto-merge"] : [];
     // The row's third line: the last step's note, else these extras.
     const note = last
       ? { text: last.text, tone: last.phase === "failed" ? "blocked" : "dim" }
@@ -119,7 +163,7 @@ export function workView(input) {
         : null;
     const steps = running
       ? []
-      : input.stepsOf(w, space).map((s) => {
+      : input.stepsOf(w, space).map((s, i) => {
           const confirming = input.confirm?.id === `${w.path}:${s.id}`;
           // A step button's label is never cut: narrow, it takes its short
           // label (and the buttons wrap).
@@ -127,6 +171,9 @@ export function workView(input) {
           return {
             ...s,
             confirming,
+            // Steps come most pressing first (nextSteps): the first is the
+            // row's next step, drawn solid; the rest are quiet.
+            primary: i === 0,
             chosen: false,
             text: confirming
               ? `${name}? ${input.confirm.byKey ? "Press" : "Click"} again`
@@ -143,6 +190,7 @@ export function workView(input) {
       w.hub ? `${w.repo.name} hub: ${title}` : title,
       sub,
       pr?.text,
+      stack.length && `also ${stack.map((p) => p.head).join(" · ")}`,
       costText && `agents ${costText}`,
       running
         ? last.text
@@ -153,6 +201,7 @@ export function workView(input) {
       .filter(Boolean)
       .join(" · ");
     return {
+      key: w.path,
       w,
       space,
       hub: Boolean(w.hub),
@@ -167,6 +216,7 @@ export function workView(input) {
       costText,
       pr,
       prValue,
+      stack,
       status: statusOf(space, last?.phase === "failed", pr),
       steps,
       last,
@@ -182,29 +232,17 @@ export function workView(input) {
     };
   };
 
-  const groups = input.groups.map((g) => {
-    const open = !input.folded.has(g.repo.path);
-    const n = g.worktrees.length;
-    return {
-      repo: g.repo,
-      name: g.repo.name,
-      monogram: monogram(g.repo.name),
-      count: `hub and ${n} worktree${n === 1 ? "" : "s"}`,
-      size: String(n + 1),
-      open,
-      hub: rowOf({ ...g.hub, repo: g.repo }),
-      // Folded, the group keeps only its header (the hub's row).
-      worktrees: open
-        ? g.worktrees.map((w) => rowOf({ ...w, repo: g.repo }))
-        : [],
-    };
-  });
-  const rows = groups.flatMap((g) => [g.hub, ...g.worktrees]);
+  const groups =
+    by === "stage" ? stageGroups(input, rowOf) : repoGroups(input, rowOf);
+  // What the keys move through: each row, then its stack's sub-items.
+  const rows = groups.flatMap((g) =>
+    (g.hub ? [g.hub] : []).concat(g.worktrees).flatMap((r) => [r, ...r.stack]),
+  );
 
   // The selected row and step: the one the keys moved to, else the focused
   // space's row, else the first.
   let at = input.picked
-    ? rows.findIndex((r) => r.w.path === input.picked.path)
+    ? rows.findIndex((r) => r.key === input.picked.path)
     : -1;
   let step = at >= 0 ? input.picked.step : 0;
   if (at < 0) {
@@ -218,5 +256,120 @@ export function workView(input) {
     rows[at].selected = true;
     if (n) rows[at].steps[step].chosen = true;
   }
-  return { span, groups, rows, at, step };
+  return { span, by, groups, rows, at, step };
+}
+
+// A stacked PR `p` of row `w`'s ticket, as a sub-item under it: one line
+// (its stack position `at` of `of`, number, state, title or branch), no
+// steps, no space of its own; activating it opens the PR. Merged or closed:
+// dimmed.
+function stackItem(w, p, span, at, of) {
+  const label = /** @type {NonNullable<ReturnType<typeof prLabel>>} */ (
+    prLabel(p, "short")
+  );
+  const done = p.state === "MERGED" || p.state === "CLOSED";
+  const title = p.title || p.branch || "";
+  const place = `${at}/${of}`;
+  return {
+    key: `${w.path}#${p.number}`,
+    stacked: true,
+    w,
+    number: p.number,
+    state: p.state,
+    url: p.url ?? null,
+    title,
+    ...label,
+    // At its narrowest, the state's glyph; else "2/3 #14 draft".
+    shown:
+      span === "glyph" || span === "rail"
+        ? label.glyph
+        : `${place} ${label.head}`,
+    tone: done ? "dim" : toneKey(label.tone),
+    dim: done,
+    selected: false,
+    steps: [],
+    tip:
+      [`${place} ${label.text}`, title].filter(Boolean).join(" · ") +
+      " — Enter to open",
+  };
+}
+
+// The worktrees a repo group shows under a cap of `cap`: the `cap` most
+// recently changed (`at`), and any whose space is focused, in their order.
+export function capped(worktrees, cap, isActive) {
+  if (!cap || worktrees.length <= cap) return worktrees;
+  const recent = new Set(
+    [...worktrees].sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, cap),
+  );
+  return worktrees.filter((w) => recent.has(w) || isActive(w));
+}
+
+// One group per repo, headed by its hub's row.
+function repoGroups(input, rowOf) {
+  return input.groups.map((g) => {
+    const open = !input.folded.has(g.repo.path);
+    const n = g.worktrees.length;
+    const cappedTo = capped(
+      g.worktrees,
+      input.cap ?? 0,
+      (w) => input.spaceOf({ ...w, repo: g.repo })?.active ?? false,
+    );
+    const expanded = input.expanded?.has(g.repo.path) ?? false;
+    const shown = expanded ? g.worktrees : cappedTo;
+    return {
+      key: g.repo.path,
+      repo: g.repo,
+      name: g.repo.name,
+      monogram: monogram(g.repo.name),
+      count: `hub and ${n} worktree${n === 1 ? "" : "s"}`,
+      size: String(n + 1),
+      open,
+      hub: rowOf({ ...g.hub, repo: g.repo }),
+      // Folded, the group keeps only its header (the hub's row).
+      worktrees: open ? shown.map((w) => rowOf({ ...w, repo: g.repo })) : [],
+      more: open ? n - shown.length : 0,
+      // Expanded past a cap that would hide some: it offers "Show fewer".
+      fewer: open && expanded && cappedTo.length < n,
+    };
+  });
+}
+
+// One group per stage with any rows, in the flow's order (STAGES), after the
+// hubs that have a space. A stage group has no hub: its header is a label.
+function stageGroups(input, rowOf) {
+  const hubs = [];
+  /** @type {Record<string, any[]>} */
+  const by = Object.fromEntries(STAGES.map(([id]) => [id, []]));
+  for (const g of input.groups) {
+    const hub = { ...g.hub, repo: g.repo };
+    if (input.spaceOf(hub)) hubs.push(hub);
+    for (const w0 of g.worktrees) {
+      const w = { ...w0, repo: g.repo };
+      by[stageOf(input.prOf(w))].push(w);
+    }
+  }
+  const group = (key, name, ws, noun) => {
+    const open = !input.folded.has(key);
+    const n = ws.length;
+    return {
+      key,
+      repo: null,
+      name,
+      monogram: monogram(name),
+      count: `${n} ${noun}${n === 1 ? "" : "s"}`,
+      size: String(n),
+      open,
+      hub: null,
+      worktrees: open ? ws.map(rowOf) : [],
+      more: 0,
+      fewer: false,
+    };
+  };
+  const out = [];
+  if (hubs.length) out.push(group(stageKey("hubs"), "Hubs", hubs, "hub"));
+  for (const [id, name] of STAGES) {
+    const ws = by[id];
+    if (ws.length) out.push(group(stageKey(id), name, ws, "worktree"));
+  }
+  return out;
 }

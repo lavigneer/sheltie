@@ -13,6 +13,7 @@ import {
   writeTextFile,
 } from "herdr";
 import { C } from "./config.js";
+import { recordFailure } from "./diagnostics.js";
 import {
   addReviewWorktree,
   addWorktree,
@@ -23,8 +24,9 @@ import {
   removeWorktree,
   reviewWorktrees,
 } from "./git.js";
-import { closeSpacesIn, fill, firstLine, spaceFor } from "./lib.js";
+import { closeSpacesIn, errorText, fill } from "./lib.js";
 import { prDetails } from "./prs.js";
+import { herdrSpaces } from "./spaces.js";
 import {
   findRepo,
   listTickets,
@@ -41,8 +43,7 @@ import {
 const REMEMBER = "tickets.repo"; // shared: ticket key -> repo slug or path
 
 export const repoId = (repo) => repo.slug || repo.path;
-export const errorText = (e) =>
-  firstLine(`${e?.message ?? e}`) || "Something went wrong";
+export { errorText };
 
 // The repo last used for a ticket (a slug or path), for suggestRepos.
 export const rememberedRepo = (key) => shared(REMEMBER)?.[key];
@@ -127,8 +128,9 @@ export async function prepareStart(
 // with the agent (and its task, if any).
 /** @param {{ name: string, folder: string, task?: string | null }[]} list */
 export function openSpaces(list) {
+  const live = herdrSpaces();
   for (const { name, folder, task } of list) {
-    const open = spaceFor(folder);
+    const open = live.spaceOf(folder);
     if (open) run("space.select", { id: open.id });
     else
       run("space.new", {
@@ -204,7 +206,8 @@ export async function allReviewWorktrees(repos) {
 export async function sweepReviews(
   worktrees,
   queue,
-  state = (slug, number) => prDetails(slug, number),
+  state = (slug, number) =>
+    prDetails(slug, number, null, { requiredOnly: C.requiredChecksOnly }),
 ) {
   const kept = [];
   const refused = [];
@@ -375,6 +378,7 @@ export async function drainRequests(dir, start = startRequested) {
       out.results = await start(JSON.parse(text));
     } catch (e) {
       out.error = `${e?.message ?? e}`;
+      recordFailure("work.start", "start", e, { request: text });
       notify({ title: "work.start failed", body: out.error, level: "error" });
     }
     await writeTextFile(

@@ -8,9 +8,14 @@ import { cycle } from "./lib.js";
 
 export const CONFIRM_MS = 4_000;
 
+// The groups folded until unfolded: grouped by stage, Merged and Closed (their
+// rows rarely need you). Stage keys as stageKey() (work-rows.js) makes them.
+export const FOLDED = ["stage:merged", "stage:closed"];
+
 export class Nav {
-  constructor() {
-    this.folded = new Set(); // repo paths
+  constructor(folded = FOLDED) {
+    this.folded = new Set(folded); // group keys: repo paths or stage keys
+    this.expanded = new Set(); // repo paths showing past their cap ("+k more")
     this.pick = null; // { path, step, active }: see picked()
     this.pending = null; // { id, byKey, until }: see press()
   }
@@ -41,14 +46,20 @@ export class Nav {
     return this.folded.has(repo);
   }
 
-  // Folds or unfolds the group of repo `repo` (its hub's path), whose
+  // Folds or unfolds the group `key` (a repo's: its hub's path), whose
   // worktrees are `paths`. Folding the group the keys picked a worktree in
-  // moves the pick to its hub, which stays shown.
-  fold(repo, paths) {
-    if (this.folded.delete(repo)) return;
-    this.folded.add(repo);
+  // moves the pick to `home`, the row that stays shown (a repo's hub), or
+  // drops it when there is none (a stage group).
+  fold(key, paths, home = key) {
+    if (this.folded.delete(key)) return;
+    this.folded.add(key);
     if (this.pick && paths.includes(this.pick.path))
-      this.pick = { ...this.pick, path: repo, step: 0 };
+      this.pick = home ? { ...this.pick, path: home, step: 0 } : null;
+  }
+
+  // Shows all of repo group `key`'s worktrees past its cap, or back to the cap.
+  expand(key) {
+    if (!this.expanded.delete(key)) this.expanded.add(key);
   }
 
   // A press of step `id` (unique across rows); one that `asks` runs on its

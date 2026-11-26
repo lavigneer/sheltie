@@ -11,6 +11,38 @@ test("cycle: moves through n items and wraps both ways", () => {
   assert.equal(cycle(1, 0, 1), 0);
 });
 
+// Runs before the rate-limit test below: its backoff holds every gh call in this file.
+test("tool: an urgent gh call takes the next slot, ahead of queued lookups", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { C } = await import("../src/config.js");
+  const { tool } = await import("../src/lib.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sheltie-gh-"));
+  const log = path.join(dir, "log");
+  const gh = path.join(dir, "gh");
+  fs.writeFileSync(
+    gh,
+    `#!/bin/sh\necho "start $1" >> ${log}\nsleep 0.1\necho ok`,
+  );
+  fs.chmodSync(gh, 0o755);
+  const was = C.programs.gh;
+  C.programs.gh = gh;
+  try {
+    // Two running, four lookups queued, then a click's call.
+    const lookups = ["q1", "q2", "q3", "q4", "q5", "q6"].map((x) =>
+      tool("gh", [x]),
+    );
+    await Promise.all([...lookups, tool("gh", ["click"], { urgent: true })]);
+    const started = fs.readFileSync(log, "utf8").trim().split("\n");
+    assert.ok(started.indexOf("start click") < started.indexOf("start q5"));
+    assert.ok(started.indexOf("start click") < started.indexOf("start q6"));
+  } finally {
+    C.programs.gh = was;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("tool: gh runs two at a time and backs off after a rate limit", async () => {
   const fs = await import("node:fs");
   const os = await import("node:os");
@@ -53,4 +85,12 @@ echo ok`,
     C.programs.gh = was;
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("columnWidth sizes to the longest text, capped, 0 when empty", async () => {
+  const { columnWidth } = await import("../src/lib.js");
+  assert.equal(columnWidth(["ab", "abcd", undefined], 6.5, 100), 26);
+  assert.equal(columnWidth(["x".repeat(50)], 6.5, 100), 100);
+  assert.equal(columnWidth(["", null], 6.5, 100), 0);
+  assert.equal(columnWidth([], 6.5, 100), 0);
 });

@@ -199,6 +199,31 @@
       "description": "Where ticket worktrees go, relative to the repo's main checkout.",
       "default": ".worktrees"
     },
+    "workGroupBy": {
+      "type": "string",
+      "enum": [
+        "repo",
+        "stage"
+      ],
+      "description": "How the Work sidebar groups its rows when it opens: \"repo\", under each repo's hub, or \"stage\", by where each PR stands (no PR, draft, in review, approved, merged, closed). Its ▤ button and work.group switch between them.",
+      "default": "repo"
+    },
+    "workRepoRows": {
+      "type": "number",
+      "description": "Grouped by repo, how many worktrees a repo shows at most: the most recently changed (by their branch's last commit), plus the row of a focused space. A \"+k more\" row shows the rest; the keys and work.report cover only the rows shown. 0 shows them all.",
+      "minimum": 0,
+      "default": 8
+    },
+    "reviewSearch": {
+      "type": "string",
+      "description": "The GitHub search that finds the Reviews sidebar's PRs (only those in your local repos are shown). The default includes requests to a team you're on; \"is:pr is:open archived:false user-review-requested:@me\" shows only those asking you by name.",
+      "default": "is:pr is:open archived:false review-requested:@me"
+    },
+    "requiredChecksOnly": {
+      "type": "boolean",
+      "description": "A PR's checks (in the Work and Reviews sidebars, and for Ready and Merge) count only those required for merging by the base branch's protection rules, so a failing optional check doesn't hold it up.",
+      "default": false
+    },
     "agent": {
       "type": "object",
       "properties": {

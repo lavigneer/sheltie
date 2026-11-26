@@ -87,6 +87,33 @@ export interface Settings {
   branch: string;
   /** Where ticket worktrees go, relative to the repo's main checkout. */
   worktreeDir: string;
+  /**
+   * How the Work sidebar groups its rows when it opens: "repo", under each
+   * repo's hub, or "stage", by where each PR stands (no PR, draft, in review,
+   * approved, merged, closed). Its ▤ button and work.group switch between them.
+   */
+  workGroupBy: "repo" | "stage";
+  /**
+   * Grouped by repo, how many worktrees a repo shows at most: the most
+   * recently changed (by their branch's last commit), plus the row of a
+   * focused space. A "+k more" row shows the rest; the keys and work.report
+   * cover only the rows shown. 0 shows them all.
+   * @minimum 0
+   */
+  workRepoRows: number;
+  /**
+   * The GitHub search that finds the Reviews sidebar's PRs (only those in your
+   * local repos are shown). The default includes requests to a team you're on;
+   * "is:pr is:open archived:false user-review-requested:@me" shows only those
+   * asking you by name.
+   */
+  reviewSearch: string;
+  /**
+   * A PR's checks (in the Work and Reviews sidebars, and for Ready and
+   * Merge) count only those required for merging by the base branch's
+   * protection rules, so a failing optional check doesn't hold it up.
+   */
+  requiredChecksOnly: boolean;
   agent: {
     /**
      * The agent started in a ticket's space; its first message is the last

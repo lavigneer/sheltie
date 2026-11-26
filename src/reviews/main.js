@@ -1,258 +1,174 @@
 // Reviews: the PRs in your repos (localRepos) that request your review, oldest
 // request first (prs.js reviewQueue). A row: repo, #number, title, author,
-// how long it has waited, and its size. Click to start the review: the PR
+// how long it has waited (the row's loud element, toned by the wait), and
+// its size; reviews-rows.js decides what a row shows. Click to start the review: the PR
 // checked out in a review worktree, in its own space with agent.reviewTask
 // (start.js prepareReview); ↗ opens it in the browser. A row with a review
 // worktree has ✓ (Done reviewing: start.js finishReview); reviewed PRs keep a
 // row while their worktree stays, and one whose PR merged or closed is torn
 // down on the next refresh (sweepReviews).
+// Publishes the queue length (switcher.js REVIEW_COUNT) for the layouts mod.
 // Refreshed as often as the Work sidebar's PRs (PR_MS), and with ↻.
 
 import { h_flex, v_flex } from "gpui-base";
-import { div, View } from "gpui-kit";
-import { notify, theme } from "herdr";
-import { C, configReady } from "./config.js";
-import { localRepos, sameSlug } from "./git.js";
+import { div, svg, View } from "gpui-kit";
+import { setShared, theme } from "herdr";
+import { C } from "./config.js";
 import { openUrl } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
-import { reviewQueue, reviewRequests } from "./prs.js";
-import { band, RAIL, resize } from "./sidebar.js";
-import {
-  allReviewWorktrees,
-  errorText,
-  finishReview,
-  openSpaces,
-  prepareReview,
-  sweepReviews,
-} from "./start.js";
-import { Cache, serial } from "./watch.js";
-import { PR_MS, RETRY_MS } from "./work.js";
+import { PR_MS } from "./polling.js";
+import { ReviewsModel } from "./reviews-model.js";
+import { fit, reviewsView } from "./reviews-rows.js";
+import { resize } from "./sidebar.js";
+import { REVIEW_COUNT } from "./switcher.js";
+import { serial } from "./watch.js";
 
-// "3d", "5h", "12m": how long ago `iso` was.
-export function age(iso, now = Date.now()) {
-  const m = Math.max(0, Math.floor((now - Date.parse(iso)) / 60_000));
-  return m >= 1440
-    ? `${Math.floor(m / 1440)}d`
-    : m >= 60
-      ? `${Math.floor(m / 60)}h`
-      : `${m}m`;
-}
+export { age } from "./reviews-rows.js";
 
 export default class Reviews extends View {
   init(_props, cx) {
     this.width = null;
-    this.repos = [];
-    this.worktrees = []; // allReviewWorktrees, after sweeping
-    this.reviewed = []; // worktrees of PRs no longer in the queue, still open
-    this.warned = new Set(); // paths whose automatic teardown was refused
+    this.model = new ReviewsModel(); // queue, worktrees, actions (reviews-model.js)
     // Done reviewing closes a space and removes a worktree: like Work's Finish,
     // it asks for a second click (nav.js; workflow.confirmFinish).
     this.confirm = new Nav();
-
-    // One start at a time, so a double click can't check out twice.
-    this.starting = false;
-    this.start = (cx, r) => {
-      if (this.starting) return;
-      this.starting = true;
-      cx.spawn(() => this.startReview(r));
-    };
-    // One entry, "queue": the last good queue survives a failed refresh.
-    this.cache = new Cache({ retryMs: RETRY_MS });
-    this.refresh = serial(async (cx) => {
-      await configReady();
-      await this.cache.refresh("queue", async () => {
-        const [repos, data] = await Promise.all([
-          localRepos(),
-          reviewRequests(),
-        ]);
-        this.repos = repos;
-        return reviewQueue(data, repos.map((r) => r.slug).filter(Boolean));
-      });
-      await this.sweep().catch(() => {});
+    this.start = (cx, r) => cx.spawn(() => this.model.start(r));
+    // The queue length for the layouts mod's Reviews tab: none until loaded.
+    setShared(REVIEW_COUNT, null);
+    this.refresh = serial(async (cx, force) => {
+      await this.model.refresh(force);
+      if (this.model.count !== null) setShared(REVIEW_COUNT, this.model.count);
       cx.notify();
     });
     this.refresh(cx);
     cx.timer.every(PR_MS, (cx) => this.refresh(cx));
   }
 
-  // Tears down review worktrees whose PR merged or closed; a refusal is told
-  // once per worktree.
-  async sweep() {
-    const queue = this.cache.get("queue")?.value ?? [];
-    const all = await allReviewWorktrees(this.repos);
-    const { kept, refused } = await sweepReviews(all, queue);
-    for (const w of refused)
-      if (!this.warned.has(w.path)) {
-        this.warned.add(w.path);
-        notify({
-          title: `${w.slug}#${w.number}: review worktree kept`,
-          body: w.why,
-          level: "warning",
-        });
-      }
-    const gone = new Set(all.map((w) => w.path));
-    for (const w of kept) gone.delete(w.path);
-    this.worktrees = all.filter((w) => !gone.has(w.path));
-    const queued = (w) =>
-      queue.some((r) => r.number === w.number && sameSlug(r.slug, w.slug));
-    this.reviewed = kept.filter((w) => !queued(w));
-  }
-
-  worktreeOf(r) {
-    return this.worktrees.find(
-      (w) => w.number === r.number && sameSlug(w.slug, r.slug),
-    );
-  }
-
   async doneReviewing(w, cx) {
-    try {
-      await finishReview(w.repo, w);
-      this.worktrees = this.worktrees.filter((x) => x.path !== w.path);
-      this.reviewed = this.reviewed.filter((x) => x.path !== w.path);
-    } catch (e) {
-      notify({
-        title: `${w.slug}#${w.number}: couldn't tear down the review`,
-        body: errorText(e),
-        level: "error",
-      });
-    }
+    await this.model.done(w);
     cx.notify();
-  }
-
-  async startReview(r) {
-    try {
-      const repo = this.repos.find((x) => x.path && sameSlug(x.slug, r.slug));
-      if (!repo) throw new Error(`${r.slug} isn't checked out here`);
-      openSpaces([await prepareReview(r, repo)]);
-    } catch (e) {
-      notify({
-        title: `${r.slug}#${r.number}: couldn't start the review`,
-        body: errorText(e),
-        level: "error",
-      });
-    } finally {
-      this.starting = false;
-    }
   }
 
   render(_cx) {
     const t = theme();
-    const rail = band(this.width, [["rail", RAIL]]) === "rail";
-    const entry = this.cache.get("queue");
-    const queue = entry?.value ?? [];
-    const failed = entry?.state === "failed";
+    const { queue, failed, entry } = this.model;
+    const view = reviewsView({
+      queue,
+      reviewed: this.model.reviewed,
+      worktreeOf: (r) => this.model.worktreeOf(r),
+      width: this.width,
+    });
+    const rail = view.span === "rail";
+    const tone = (name) => t[name] ?? t.accent;
     const message = (text, color) =>
       div().px(14).py(4).text_size(11).text_color(color).child(text);
+    const button = (id, tip, glyph, onClick) =>
+      div()
+        .id(id)
+        .flex_none()
+        .px(3)
+        .rounded(4)
+        .text_size(11)
+        .text_color(t.dim)
+        .hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .tooltip(tip)
+        .on_click((_e, cx) => {
+          cx.stop_propagation();
+          onClick(cx);
+        })
+        .child(glyph);
 
-    const row = (r) => {
-      const w = this.worktreeOf(r);
-      const armed =
-        Boolean(w) && this.confirm.confirming(Date.now())?.id === w.path;
-      return h_flex()
-        .id(`review-${r.slug}-${r.number}`)
+    // Two lines: the title and its age; then the dim sub-line and the buttons.
+    const row = (v) => {
+      const r = v.pr;
+      return v_flex()
+        .id(`review-${v.key}`)
         .px(14)
-        .h(20)
-        .gap(6)
-        .items_center()
-        .text_size(12.5)
+        .py(3)
         .cursor_pointer()
         .hover((s) => s.bg(t.hover))
-        .tooltip(
-          r.tip ??
-            `${r.slug}#${r.number} by ${r.author}\n${r.title}\n${r.requestedAt ? `Requested ${age(r.requestedAt)} ago\n` : ""}Click to start reviewing`,
-        )
+        .tooltip(v.tip)
         .on_click((_e, cx) => this.start(cx, r))
         .child(
-          div()
-            .flex_none()
-            .text_color(t.dim)
-            .child(`${r.slug.split("/")[1]} #${r.number}`),
-        )
-        .child(
-          div()
-            .flex_1()
-            .min_w(0)
-            .truncate()
-            .text_color(t.foreground)
-            .child(r.title),
-        )
-        .child(
-          div().flex_none().text_size(11).text_color(t.dim).child(r.author),
-        )
-        .child(
-          div()
-            .flex_none()
-            .text_size(11)
-            .text_color(t.muted)
-            .child(r.requestedAt ? age(r.requestedAt) : ""),
-        )
-        .child(
-          div()
-            .flex_none()
-            .text_size(11)
-            .text_color(t.dim)
+          h_flex()
+            .gap(6)
+            .items_center()
             .child(
-              r.additions == null ? "" : `+${r.additions} −${r.deletions}`,
+              div()
+                .flex_1()
+                .min_w(0)
+                .truncate()
+                .text_size(12.5)
+                .text_color(v.reviewed ? t.dim : t.foreground)
+                .child(v.title),
+            )
+            .child(
+              div()
+                .flex_none()
+                .text_size(11)
+                .text_color(tone(v.ageTone))
+                .when(!v.reviewed && v.ageTone !== "dim", (d) =>
+                  d.font_semibold(),
+                )
+                .child(v.age),
             ),
         )
         .child(
-          div()
-            .id(`review-open-${r.slug}-${r.number}`)
-            .flex_none()
-            .px(3)
-            .rounded(4)
-            .text_size(11)
-            .text_color(t.dim)
-            .hover((s) => s.bg(t.hover).text_color(t.foreground))
-            .tooltip("Open in browser")
-            .on_click((_e, cx) => {
-              cx.stop_propagation();
-              openUrl(r.url);
-            })
-            .child("↗"),
-        )
-        .when(Boolean(w), (el) =>
-          el.child(
-            div()
-              .id(`review-done-${r.slug}-${r.number}`)
-              .flex_none()
-              .px(3)
-              .rounded(4)
-              .text_size(11)
-              .text_color(armed ? t.blocked : t.dim)
-              .hover((s) => s.bg(t.hover).text_color(t.foreground))
-              .tooltip(
-                armed
-                  ? "Click again: close its space, remove the worktree"
-                  : "Done reviewing: close its space, remove the worktree",
-              )
-              .on_click((_e, cx) => {
-                cx.stop_propagation();
-                // The first click arms it; the second, within CONFIRM_MS, runs.
-                const confirm = C.workflow.confirmFinish !== false;
-                if (!this.confirm.press(w.path, confirm, false, Date.now())) {
-                  cx.timer.after(CONFIRM_MS, (cx) => cx.notify());
-                  return cx.notify();
-                }
-                cx.spawn((cx) => this.doneReviewing(w, cx));
-              })
-              .child(armed ? "Done?" : "✓"),
-          ),
+          h_flex()
+            .gap(6)
+            .items_center()
+            .child(
+              div()
+                .flex_1()
+                .min_w(0)
+                .truncate()
+                .text_size(11)
+                .text_color(t.dim)
+                .child(v.sub),
+            )
+            .child(
+              button(`review-open-${v.key}`, "Open in browser", "↗", () =>
+                openUrl(r.url),
+              ),
+            )
+            .when(v.done, (el) => {
+              const w = this.model.worktreeOf(r);
+              const armed =
+                Boolean(w) &&
+                this.confirm.confirming(Date.now())?.id === w.path;
+              return el.child(
+                div()
+                  .id(`review-done-${v.key}`)
+                  .flex_none()
+                  .px(3)
+                  .rounded(4)
+                  .text_size(11)
+                  .text_color(armed ? t.blocked : t.dim)
+                  .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                  .tooltip(
+                    armed
+                      ? "Click again: close its space, remove the worktree"
+                      : "Done reviewing: close its space, remove the worktree",
+                  )
+                  .on_click((_e, cx) => {
+                    cx.stop_propagation();
+                    // The first click arms it; the second, within CONFIRM_MS, runs.
+                    const confirm = C.workflow.confirmFinish !== false;
+                    if (
+                      !this.confirm.press(w.path, confirm, false, Date.now())
+                    ) {
+                      cx.timer.after(CONFIRM_MS, (cx) => cx.notify());
+                      return cx.notify();
+                    }
+                    cx.spawn((cx) => this.doneReviewing(w, cx));
+                  })
+                  .child(armed ? "Done?" : "✓"),
+              );
+            }),
         );
     };
-    // A reviewed PR whose worktree is still here: its row opens that space.
-    const reviewedRow = (w) =>
-      row({
-        slug: w.slug,
-        number: w.number,
-        url: w.url || `https://github.com/${w.slug}/pull/${w.number}`,
-        title: w.title || "(reviewed)",
-        author: "reviewed",
-        requestedAt: null,
-        additions: null,
-        tip: `${w.slug}#${w.number}\n${w.title || "Reviewed"}\nClick to open its review space`,
-      });
 
+    const refreshing = this.refresh.forcing();
     const header = h_flex()
       .h(30)
       .flex_none()
@@ -281,12 +197,16 @@ export default class Reviews extends View {
           .text_color(t.dim)
           .cursor_pointer()
           .hover((s) => s.bg(t.hover).text_color(t.foreground))
-          .tooltip("Refresh now")
+          .tooltip(refreshing ? "Refreshing…" : "Refresh now")
           .on_click((_e, cx) => {
             cx.stop_propagation();
             this.refresh(cx, true);
           })
-          .child("↻"),
+          .child(
+            refreshing
+              ? svg("mods/workspace-chrome/spinner.svg").size(11).spin(900)
+              : "↻",
+          ),
       );
 
     const body = C.problem
@@ -295,8 +215,7 @@ export default class Reviews extends View {
         ? message("Looking for review requests…", t.dim)
         : v_flex()
             .pb(6)
-            .children(queue.map(row))
-            .children(this.reviewed.map(reviewedRow))
+            .children(view.rows.map(row))
             .when(!queue.length && !failed, (el) =>
               el.child(message("Nothing awaits your review", t.dim)),
             )
@@ -309,8 +228,7 @@ export default class Reviews extends View {
       .size_full()
       .min_h(0)
       .on_size_change((size, cx) => {
-        if (resize(this, size.width, (w) => band(w, [["rail", RAIL]])))
-          cx.notify();
+        if (resize(this, size.width, fit)) cx.notify();
       })
       .child(
         rail

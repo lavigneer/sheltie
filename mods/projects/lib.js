@@ -1,7 +1,7 @@
 // Small helpers shared by every mod (scripts/build.mjs copies the shared
 // modules into each mod folder: Herdr only resolves imports inside it).
 
-import { exec, run as herdrRun, panes, spaces } from "herdr";
+import { exec, run as herdrRun, spaces } from "herdr";
 import { C } from "./config.js";
 
 export const firstLine = (text) => (text || "").trim().split("\n")[0];
@@ -10,8 +10,10 @@ export const fill = (template, values) =>
   template.replace(/\{(\w+)\}/g, (m, k) => values[k] ?? m);
 
 // Runs one of the configured programs (C.programs: git, gh, jira, hc).
-// Calls to the APIs behind gh and jira go through `limits` below.
-/** @param {string} name @param {string[]} args @param {{ cwd?: string }} [opts] @returns {Promise<import("herdr").ExecResult>} */
+// Calls to the APIs behind gh and jira go through `limits` below. `urgent`:
+// a person is waiting on the call (a click), so it takes the next free slot
+// ahead of the background lookups queued for one.
+/** @param {string} name @param {string[]} args @param {{ cwd?: string, urgent?: boolean }} [opts] @returns {Promise<import("herdr").ExecResult>} */
 export const tool = (name, args, opts) =>
   limits[name]
     ? limited(limits[name], name, args, opts)
@@ -30,12 +32,13 @@ export const RATE_LIMITED =
 const BACKOFF_MS = 60_000;
 const MAX_BACKOFF_MS = 15 * 60_000;
 const limits = {
-  gh: { max: 2, active: 0, waiting: [], until: 0, backoff: 0 },
-  jira: { max: 2, active: 0, waiting: [], until: 0, backoff: 0 },
+  gh: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
+  jira: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
 };
 
 async function limited(l, name, args, opts) {
-  if (l.active >= l.max) await new Promise((go) => l.waiting.push(go));
+  if (l.active >= l.max)
+    await new Promise((go) => (opts?.urgent ? l.urgent : l.waiting).push(go));
   l.active++;
   try {
     const wait = l.until - Date.now();
@@ -56,7 +59,7 @@ async function limited(l, name, args, opts) {
     return r;
   } finally {
     l.active--;
-    l.waiting.shift()?.();
+    (l.urgent.shift() ?? l.waiting.shift())?.();
   }
 }
 
@@ -126,29 +129,6 @@ export function score(text, query) {
   return 100 + gaps;
 }
 
-// The local space already working in `dir`: its start folder, else any of its
-// terminals. Folders inside `except` don't count as in `dir` (a repo's main
-// checkout holds its worktrees: see hubExcept in git.js). A space started in
-// a folder above `dir` or inside `except` belongs there, wherever its
-// terminals are: a hub's space is never one of its worktrees', nor the other
-// way round.
-export function spaceFor(dir, except = []) {
-  const ok = (p) =>
-    Boolean(p) && inside(p, dir) && !except.some((e) => inside(p, e));
-  const local = spaces().filter((s) => !s.machine);
-  const byFolder = local.find((s) => ok(s.folder));
-  if (byFolder) return byFolder;
-  const elsewhere = (f) =>
-    Boolean(f) &&
-    ((f !== dir && inside(dir, f)) || except.some((e) => inside(f, e)));
-  const live = panes();
-  return local.find((s) => {
-    if (elsewhere(s.folder)) return false;
-    const tabs = new Set(s.tabs.map((t) => t.id));
-    return live.some((p) => tabs.has(p.tab) && ok(p.cwd));
-  });
-}
-
 // Closes every local space started inside `dir` (its work is done there).
 export function closeSpacesIn(dir) {
   for (const s of spaces())
@@ -174,3 +154,15 @@ export function moveKey(e, view, n, close) {
 
 // The index `delta` steps from `at` among `n` items, wrapping around.
 export const cycle = (n, at, delta) => (((at + delta) % n) + n) % n;
+
+// A column's width for the longest of `texts`, estimated at `perChar` px a
+// character (text can't be measured from a mod) and capped at `max`: 0 when
+// they're all empty, so the column can go and give its space to the rest.
+export const columnWidth = (texts, perChar, max) => {
+  const longest = Math.max(0, ...texts.map((s) => (s ?? "").length));
+  return longest ? Math.min(max, Math.ceil(longest * perChar)) : 0;
+};
+
+// An error's first line, for a notification.
+export const errorText = (e) =>
+  firstLine(`${e?.message ?? e}`) || "Something went wrong";

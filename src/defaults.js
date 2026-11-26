@@ -34,6 +34,10 @@ export const DEFAULTS = {
     /** @type {{ component?: string, label?: string, project?: string, repo: string }[]} */ ([]),
   branch: "{ref}",
   worktreeDir: ".worktrees",
+  workGroupBy: /** @type {"repo" | "stage"} */ ("repo"),
+  workRepoRows: 8,
+  requiredChecksOnly: false,
+  reviewSearch: "is:pr is:open archived:false review-requested:@me",
   agent: {
     argv: ["claude"],
     task: 'Work on {key}: {summary}\n\nRun `{viewCommand}` for the description and comments. When the pull request is complete, run `hc label "$HC_TERMINAL_ID" pr=ready`.',

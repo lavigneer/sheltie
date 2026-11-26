@@ -5,7 +5,8 @@ here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 . "$here/state.sh"
 
 # Fake gh for herdr-demo: PR search, details (GraphQL), ready, merge (with auto-merge),
-# review threads, the repo's merge method and repo clone, from the demo's state
+# review threads, the review queue's search, pr checkout, the repo's merge
+# method and repo clone, from the demo's state
 # (state.sh); clones come from the demo's local remotes. Also GitHub issues
 # (search, view with linked PRs, close) for the GitHub tracker.
 
@@ -104,43 +105,91 @@ case "${1:-} ${2:-}" in
   echo "SQUASH"
   ;;
 "api graphql")
-  # Only prDetails' query, by PR number or branch: the GraphQL response.
-  owner="" name="" ref=""
+  # The review queue's search (q=...): open PRs by others (with an author),
+  # each requested of you (or a team, .requested[].team) minutesAgo, and
+  # reviewed by you reviewedMinutesAgo. The search terms are ignored.
+  case " $* " in
+  *" q="*)
+    state_jq '
+      def ago(m): (now - m * 60 | floor | todate);
+      {data: {viewer: {login: "me"}, search: {nodes: [.prs[]
+        | select(.author and (.state // "OPEN") == "OPEN")
+        | {number, title, additions: (.additions // 0), deletions: (.deletions // 0),
+           url: "https://github.com/\(.repo)/pull/\(.number)",
+           createdAt: ago((.requested // [] | map(.minutesAgo) | max) // 60),
+           repository: {nameWithOwner: .repo}, author: {login: .author},
+           timelineItems: {nodes: [.requested // [] | .[]
+             | {createdAt: ago(.minutesAgo),
+                requestedReviewer: (if .team then {__typename: "Team"}
+                                    else {__typename: "User", login: "me"} end)}]},
+           latestReviews: {nodes: [if .reviewedMinutesAgo then
+             {author: {login: "me"}, submittedAt: ago(.reviewedMinutesAgo)} else empty end]}}]}}}'
+    exit 0
+    ;;
+  esac
+  # Otherwise prDetails' query (prs.js batchQuery): an alias per PR, p<i> by
+  # number, b<i> by branch (its name in the variable b<i>). Each is answered
+  # from the demo's PRs, null when there is none, as GitHub answers.
+  owner="" name=""
   for a in "$@"; do
     case "$a" in
     owner=*) owner="${a#owner=}" ;;
     name=*) name="${a#name=}" ;;
-    number=* | branch=*) ref="${a#*=}" ;;
     esac
   done
   slug="$owner/$name"
-  pr="$(find_pr "$slug" "$ref")" || pr=null
-  if [ "$pr" = null ]; then
-    case " $* " in
-    *" number="*)
-      echo "GraphQL: Could not resolve to a PullRequest with the number of $ref. (repository.pullRequest)" >&2
-      exit 1
-      ;;
-    esac
+  query="$(for a in "$@"; do case "$a" in query=*) printf '%s\n' "${a#query=}" ;; esac; done)"
+  data='{}'
+  while read -r alias kind value; do
+    ref="$value"
+    if [ "$kind" = branch ]; then
+      ref=""
+      for a in "$@"; do case "$a" in "$value"=*) ref="${a#*=}" ;; esac; done
+    fi
+    pr="$(find_pr "$slug" "$ref")" || pr=null
     head=""
-  else
-    head="$(pr_head "$name" "$(jq -r .branch <<<"$pr")" "$(jq -r .number <<<"$pr")")"
-  fi
-  jq --arg head "$head" --arg by "$(case " $* " in *" number="*) echo number ;; *) echo branch ;; esac)" '
+    if [ "$pr" != null ]; then
+      head="$(pr_head "$name" "$(jq -r .branch <<<"$pr")" "$(jq -r .number <<<"$pr")")"
+    fi
+    node="$(jq --arg head "$head" '
     (if . == null then null else
     {number, title, url: "https://github.com/\(.repo)/pull/\(.number)",
      state: (.state // "OPEN"), isDraft: .draft, reviewDecision: .review,
-     headRefName: .branch, headRefOid: $head,
+     headRefName: .branch, baseRefName: (.base // "main"), headRefOid: $head,
      autoMergeRequest: (if .autoMerge then {enabledAt: "now"} else null end),
      mergeable: (.mergeable // "MERGEABLE"),
      commits: {nodes: [{commit: {statusCheckRollup:
-       (if .checks == null then null
-        elif .checks == "IN_PROGRESS" then {contexts: {nodes: [{status: .checks, conclusion: null}]}}
-        else {contexts: {nodes: [{conclusion: .checks}]}} end)}}]},
-     reviewThreads: {nodes: ([range(.unresolved // 0)] | map({isResolved: false}))}} end) as $pr
-    | {data: {repository: (if $by == "number" then {pullRequest: $pr}
-                           else {pullRequests: {nodes: [$pr // empty]}} end)}}
-  ' <<<"$pr"
+       # .optionalChecks: conclusions of checks not required for merging.
+       ((if .checks == null then []
+         elif .checks == "IN_PROGRESS" then [{status: .checks, conclusion: null, isRequired: true}]
+         else [{conclusion: .checks, isRequired: true}] end)
+        + ((.optionalChecks // []) | map({conclusion: ., isRequired: false}))
+        | if length == 0 then null else {contexts: {nodes: .}} end)}}]},
+     reviewThreads: {nodes: ([range(.unresolved // 0)] | map({isResolved: false}))}} end)
+  ' <<<"$pr")"
+    if [ "$kind" = number ]; then
+      v="$node"
+    else
+      v="$(jq -n --argjson n "$node" 'if $n == null then {nodes: []} else {nodes: [$n]} end')"
+    fi
+    data="$(jq --arg k "$alias" --argjson v "$v" '. + {($k): $v}' <<<"$data")"
+  done < <(grep -oE '[pb][0-9]+: pullRequests?\((number: [0-9]+|headRefName: \$[pb][0-9]+)' <<<"$query" |
+    sed -E 's/^([pb][0-9]+): pullRequest\(number: ([0-9]+)/\1 number \2/; s/^([pb][0-9]+): pullRequests\(headRefName: \$([pb][0-9]+)/\1 branch \2/')
+  jq -n --argjson r "$data" '{data: {repository: $r}}'
+  ;;
+"pr checkout")
+  # In a clone of a demo repo: the PR's head (refs/pull/<n>/head, so forks
+  # work too) on a local branch named after the PR's.
+  url="$(git config --get remote.origin.url)"
+  slug="${url#https://github.com/}"
+  slug="${slug%.git}"
+  pr="$(find_pr "$slug" "${3:-}")" || {
+    echo "GraphQL: Could not resolve to a PullRequest with the number of ${3:-}. (repository.pullRequest)" >&2
+    exit 1
+  }
+  pr_head "${slug##*/}" "$(jq -r .branch <<<"$pr")" "${3:-}" >/dev/null
+  git fetch --quiet origin "refs/pull/${3:-}/head"
+  git checkout --quiet -B "$(jq -r .branch <<<"$pr")" FETCH_HEAD
   ;;
 "repo clone")
   slug="${3:?}"

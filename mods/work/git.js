@@ -37,7 +37,10 @@ export async function localRepos() {
   const paths = new Set();
   for (const root of C.roots) {
     const depth = String(C.depth + 1);
+    // -H: a root that is a symlink (e.g. ~/workspace on another disk) is
+    // followed, not listed as itself.
     const r = await exec("find", [
+      "-H",
       root,
       "-mindepth",
       depth,
@@ -55,7 +58,13 @@ export async function localRepos() {
       if (line.endsWith("/.git")) paths.add(line.slice(0, -5));
   }
   const repos = await pool(
-    [...paths].map((path) => async () => {
+    [...paths].map((found) => async () => {
+      // Its real path, as git reports worktrees (and so the main checkout) by
+      // theirs: a symlink on the way would otherwise make the hub a worktree.
+      const top = await git(found, "rev-parse", "--show-toplevel").catch(
+        () => null,
+      );
+      const path = (top?.code === 0 && top.stdout.trim()) || found;
       const r = await git(path, "config", "--get", "remote.origin.url").catch(
         () => null,
       );
@@ -67,8 +76,14 @@ export async function localRepos() {
       };
     }),
   );
+  // Two roots (or a root and a symlink into it) may reach the same repo.
+  const seen = new Set();
   return repos
-    .filter((r) => r !== null)
+    .flatMap((r) => {
+      if (r === null || seen.has(r.path)) return [];
+      seen.add(r.path);
+      return [r];
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -102,20 +117,25 @@ export async function repoRoot(dir) {
 
 // A repo's worktrees from `git worktree list --porcelain`: the main checkout's
 // branch (null when detached) and every other worktree ({ path, branch },
-// branch null when detached).
+// branch null when detached). A worktree git marks `prunable` (its folder is
+// gone) is left out: it is only a stale registration until `git worktree prune`.
 /** @param {string} porcelain @param {string} repoPath */
 export function parseWorktrees(porcelain, repoPath) {
   /** @type {{ path: string, branch: string | null }[]} */
   const all = [];
+  /** @type {Set<object>} */
+  const prunable = new Set();
   for (const line of (porcelain || "").split("\n")) {
     if (line.startsWith("worktree "))
       all.push({ path: line.slice(9), branch: null });
     else if (line.startsWith("branch refs/heads/") && all.length)
       all[all.length - 1].branch = line.slice(18);
+    else if (/^prunable( |$)/.test(line) && all.length)
+      prunable.add(all[all.length - 1]);
   }
   return {
     mainBranch: all.find((w) => w.path === repoPath)?.branch ?? null,
-    linked: all.filter((w) => w.path !== repoPath),
+    linked: all.filter((w) => w.path !== repoPath && !prunable.has(w)),
   };
 }
 
@@ -139,7 +159,7 @@ export const hubExcept = (repoPath, linked) => [
 // linked worktree's path (linked; detached ones too).
 /**
  * @typedef {object} RepoState
- * @property {{ path: string, branch: string }[]} worktrees
+ * @property {{ path: string, branch: string, at?: number }[]} worktrees
  * @property {Map<string, { local?: boolean, remote?: boolean }>} branches
  * @property {string | null} mainBranch
  * @property {string[]} linked
@@ -151,14 +171,16 @@ export async function repoState(repo) {
     w.branch ? [{ path: w.path, branch: w.branch }] : [],
   );
   const branches = new Map(); // name -> { local, remote }
+  const changed = new Map(); // local branch -> its last commit (unix s)
   const refs = await git(
     repo.path,
     "for-each-ref",
-    "--format=%(refname)",
+    "--format=%(refname) %(committerdate:unix)",
     "refs/heads",
     "refs/remotes/origin",
   ).catch(() => null);
-  for (const ref of refs?.stdout.split("\n") ?? []) {
+  for (const line of refs?.stdout.split("\n") ?? []) {
+    const [ref, at] = line.split(" ");
     let name, kind;
     if (ref.startsWith("refs/heads/")) [name, kind] = [ref.slice(11), "local"];
     else if (
@@ -167,10 +189,13 @@ export async function repoState(repo) {
     )
       [name, kind] = [ref.slice(20), "remote"];
     else continue;
+    if (kind === "local") changed.set(name, Number(at) || 0);
     branches.set(name, { ...(branches.get(name) ?? {}), [kind]: true });
   }
   return {
-    worktrees,
+    // `at`: when its branch last changed (its last commit), for the Work
+    // sidebar's cap on a long repo group (workRepoRows).
+    worktrees: worktrees.map((w) => ({ ...w, at: changed.get(w.branch) ?? 0 })),
     branches,
     mainBranch,
     linked: linked.map((w) => w.path),
@@ -230,7 +255,8 @@ export const reviewPath = (repo, number) =>
 
 // Checks out PR #`number` (`gh pr checkout`, so forks work too) in its review
 // worktree (reviewPath) and returns { path, existing }: an existing one is
-// left as it is.
+// left as it is. Only a click starts one, so the checkout is urgent (lib.js):
+// it doesn't wait behind the PR lookups the sidebars have queued.
 export async function addReviewWorktree(repo, number) {
   const path = reviewPath(repo, number);
   const { linked } = await listWorktrees(repo.path);
@@ -241,6 +267,7 @@ export async function addReviewWorktree(repo, number) {
     throw new Error(firstLine(r.stderr) || "git worktree add failed");
   const co = await tool("gh", ["pr", "checkout", String(number)], {
     cwd: path,
+    urgent: true,
   });
   if (co.code !== 0) {
     await git(repo.path, "worktree", "remove", "--force", path);
