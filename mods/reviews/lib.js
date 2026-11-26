@@ -81,13 +81,16 @@ async function limited(l, name, args, opts) {
 const timers = globalThis;
 /** @param {Promise<import("herdr").ExecResult>} p @param {number} ms @param {string} why @returns {Promise<import("herdr").ExecResult>} */
 function answerWithin(p, ms, why) {
-  const { setTimeout: later, clearTimeout: cancel } = timers;
-  if (!later) return p;
+  if (typeof timers.setTimeout !== "function") return p;
+  // Called as methods of the global object, not detached from it.
   let timer;
   const late = new Promise((done) => {
-    timer = later(() => done({ code: 1, stdout: "", stderr: why }), ms);
+    timer = timers.setTimeout(
+      () => done({ code: 1, stdout: "", stderr: why }),
+      ms,
+    );
   });
-  return Promise.race([p, late]).finally(() => cancel?.(timer));
+  return Promise.race([p, late]).finally(() => timers.clearTimeout?.(timer));
 }
 
 // Runs a program and returns its stdout, or throws with its first error line.
