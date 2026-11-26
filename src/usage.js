@@ -50,6 +50,7 @@ reduce inputs as $r ({ seen: {}, g: {} };
 // the log is newer. The cache takes the log's mtime from before it was read,
 // so a line written meanwhile makes it stale. A half-written last line is
 // skipped until the log grows.
+/** @param {string} dir */
 const JSONL = (dir) => `[ -d "$1/${dir}" ] || exit 0
 find "$1/${dir}" -name "*.jsonl" -type f | while IFS= read -r f; do
   c="$5$f"
@@ -70,6 +71,7 @@ def tok: if type == "number" and . > 0 then . else 0 end;
 def str: if type == "string" then . else "" end;`;
 
 // Each reader's jq turns its source's lines (one log's, for JSONL) into records.
+/** @type {Record<string, { source: string, jq: string }>} */
 const READERS = {
   "claude-code": {
     source: JSONL("projects"),
@@ -130,12 +132,14 @@ inputs | fromjson? | try (
   },
 };
 
+/** @param {string} p */
 const expandHome = (p) => p.replace(/^~(?=\/|$)/, home());
 
 // One agent's groups: [{ dir, day, model, fast, input, output, read, write5m,
 // write1h }]. An agent that was never used (no folder) gives none. The groups
 // are kept in <cache>/<home>.groups after a "<scan time in ms>" line, and a
 // scan younger than maxAge ms is reused from there.
+/** @param {{ type: string, dir?: string, [k: string]: any }} agent @param {number} maxAge */
 async function scan(agent, maxAge) {
   const reader = READERS[agent.type];
   if (!reader) throw new Error(`usage: unknown agent type ${agent.type}`);
@@ -178,6 +182,7 @@ with_entries(select(.value | type == "object" and .input_cost_per_token != null)
                 r: .cache_read_input_token_cost,
                 fast: .provider_specific_entry.fast })`;
 
+/** @type {{ at: number, table: Record<string, any> } | null} */
 let priceCache = null; // { at, table }
 
 async function prices() {
@@ -208,6 +213,7 @@ async function prices() {
 }
 
 // A model's price: its own, else without a [1m]-style tag or date suffix.
+/** @param {Record<string, any>} table @param {string} model */
 export function priceOf(table, model) {
   const bare = model.replace(/\[.*\]$/, "");
   return (
@@ -217,6 +223,7 @@ export function priceOf(table, model) {
 
 // One group's cost in $, or null for a model without a price. A cache write
 // without its own price costs what input does; a 1 h one what a 5 min one does.
+/** @param {Record<string, any>} table @param {any} u */
 export function costOf(table, u) {
   const p = priceOf(table, u.model);
   if (!p) return null;
@@ -247,6 +254,7 @@ export const LOADING = { phase: "loading", groups: null, error: null };
 
 // The state after `read` (which resolves to the payload stored under `key`)
 // finishes. The plan limits use the same shape with key "list".
+/** @param {any} state @param {() => Promise<any>} read @param {string} [key] */
 export async function settled(state, read, key = "groups") {
   try {
     return { phase: "ready", [key]: await read(), error: null };
@@ -261,6 +269,7 @@ export async function settled(state, read, key = "groups") {
 
 // Sums groups: { cost, tokens, unpriced } (unpriced: tokens of models
 // without a price, left out of cost).
+/** @param {any[]} groups */
 export function total(groups) {
   let cost = 0;
   let tokens = 0;
@@ -275,11 +284,13 @@ export function total(groups) {
 }
 
 // What was spent working in `dir`, or null with nothing there.
+/** @param {any[]} groups @param {string} dir */
 export function costIn(groups, dir) {
   const mine = groups.filter((g) => g.dir === dir);
   return mine.length ? total(mine).cost : null;
 }
 
+/** @param {number} n */
 export const dollars = (n) =>
   n >= 100
     ? `$${Math.round(n)}`
@@ -287,6 +298,7 @@ export const dollars = (n) =>
       ? `$${n.toFixed(2)}`
       : "<$0.01";
 
+/** @param {number} n */
 export const tokenCount = (n) =>
   n >= 1e9
     ? `${(n / 1e9).toFixed(1)}B`

@@ -10,6 +10,7 @@ export const REVIEW_COUNT = "reviews.count";
 // count rides beside the label as a badge (not in it) so the label never
 // shifts; its tone is "accent" while reviews wait and "dim" at zero, the same
 // theme keys the Work and Reviews sidebars use.
+/** @param {string} current @param {number | null} [count] */
 export const switcherTabs = (current, count) => [
   { layout: "work", label: "Work", active: current !== "review", badge: null },
   {

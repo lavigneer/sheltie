@@ -7,16 +7,21 @@
 export const SLOWEST = 5; // how many of the slowest renders to keep
 export const SLOW_MS = 100; // a render this slow is recorded as a failure
 
+/** @typedef {{ ms: number, viewMs: number, buildMs: number, rows: number, trigger: string, at?: number }} Render */
+
 export class RenderStats {
   constructor() {
     this.count = 0;
     this.totalMs = 0;
+    /** @type {Render[]} */
     this.slowest = []; // slowest first
+    /** @type {Record<string, number>} */
     this.byTrigger = {}; // trigger -> count
   }
 
   // Adds one render: { ms, viewMs, buildMs, rows, trigger }. True when it's
   // slower than SLOW_MS.
+  /** @param {Render} r */
   add(r) {
     this.count++;
     this.totalMs += r.ms;

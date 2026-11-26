@@ -8,6 +8,7 @@ export const RAIL = 160;
 
 // The band a width falls in: the first of bands ([[name, below px], ...],
 // ascending) it is narrower than, else wide. An unknown (null) width is wide.
+/** @param {number | null | undefined} width @param {[string, number][]} bands @param {string} [wide] @returns {string} */
 export const band = (width, bands, wide = "full") =>
   width === null || width === undefined
     ? wide
@@ -15,6 +16,7 @@ export const band = (width, bands, wide = "full") =>
 
 // Records a new width on view (view.width); true when the render depends on
 // the change, that is when key (the layout a width gets) differs.
+/** @param {{ width: number | null }} view @param {number} width @param {(width: number | null) => unknown} key @returns {boolean} */
 export function resize(view, width, key) {
   const was = key(view.width);
   view.width = width;

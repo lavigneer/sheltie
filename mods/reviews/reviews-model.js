@@ -16,6 +16,7 @@ import {
 } from "./start.js";
 import { Cache } from "./watch.js";
 
+/** @param {{ number: number, slug: string | null }} a @param {{ number: number, slug: string | null }} b */
 const samePR = (a, b) => a.number === b.number && sameSlug(a.slug, b.slug);
 
 export const DEFAULT_SOURCES = {
@@ -41,12 +42,15 @@ export class ReviewsModel {
     this.repoCache = repos;
     // One entry, "queue": the last good queue survives a failed refresh.
     this.cache = new Cache({ retryMs, now });
+    /** @type {any[]} */
     this.worktrees = []; // review worktrees still here, after sweeping
+    /** @type {any[]} */
     this.reviewed = []; // of those, the ones whose PR left the queue
     this.warned = new Set(); // paths whose automatic teardown was refused
     this.starting = false; // one start at a time: no double checkout
   }
 
+  /** @returns {any[]} */
   get repos() {
     return this.repoCache.list;
   }
@@ -103,17 +107,20 @@ export class ReviewsModel {
       }
     // sweepReviews leaves queued ones alone: those stay, with kept.
     const keptPaths = new Set(kept.map((w) => w.path));
+    /** @param {any} w */
     const queued = (w) => queue.some((r) => samePR(r, w));
     this.worktrees = all.filter((w) => queued(w) || keptPaths.has(w.path));
     this.reviewed = kept.filter((w) => !queued(w));
   }
 
+  /** @param {any} r */
   worktreeOf(r) {
     return this.worktrees.find((w) => samePR(w, r));
   }
 
   // Starts reviewing r: its PR checked out in a review worktree, in a space.
   // false when one is already starting.
+  /** @param {any} r */
   async start(r) {
     if (this.starting) return false;
     this.starting = true;
@@ -130,6 +137,7 @@ export class ReviewsModel {
   }
 
   // Done reviewing: tears w's worktree down; true when it went.
+  /** @param {any} w */
   async done(w) {
     try {
       await this.src.finish(w.repo, w);
@@ -142,6 +150,7 @@ export class ReviewsModel {
     return true;
   }
 
+  /** @param {string} what @param {string} title @param {{ slug: string, number: number }} pr @param {unknown} error */
   fail(what, title, pr, error) {
     const name = `${pr.slug}#${pr.number}`;
     reportFailure(

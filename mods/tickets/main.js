@@ -79,7 +79,7 @@ import {
 } from "./tickets-model.js";
 import { listTickets, suggestRepos, workFor } from "./work.js";
 
-const repoLabel = (repo) => repo.slug || repo.name;
+const repoLabel = (/** @type {any} */ repo) => repo.slug || repo.name;
 
 // The popup's screens and every move between them. `to`: the screens a screen
 // can move to, back included; `back`: where ⌫ and the header's ‹ go (none on
@@ -94,14 +94,14 @@ const SCREENS = {
 
 export default class Tickets extends View {
   /** @type {Record<string, any>} */
-  inputs;
+  inputs = /** @type {any} */ (undefined);
   /** @type {any} */
-  input;
+  input = /** @type {any} */ (undefined);
   /** @type {number} */
-  at;
+  at = /** @type {any} */ (undefined);
   /** @type {Set<string>} */
-  marked;
-  init(_props, cx) {
+  marked = /** @type {any} */ (undefined);
+  init(/** @type {any} */ _props, /** @type {any} */ cx) {
     this.screen = { name: "list" }; // | { name: "ticket" | "pick", ticket } | { name: "adhoc", description } (see SCREENS)
     this.data = reloading(0); // tickets-model.js: each phase's shape
     this.action = idleAction();
@@ -117,12 +117,12 @@ export default class Tickets extends View {
     };
     this.inputs.adhoc = this.inputs.pick;
     for (const input of new Set(Object.values(this.inputs))) {
-      input.on("change", (_e, cx) => {
+      input.on("change", (/** @type {any} */ _e, /** @type {any} */ cx) => {
         this.filter = input.value();
         this.at = 0;
         cx.notify();
       });
-      input.on("submit", (_e, cx) =>
+      input.on("submit", (/** @type {any} */ _e, /** @type {any} */ cx) =>
         this.screen.name === "list" && this.marked.size
           ? this.startMarked(cx)
           : this.choose(this.selected(), cx),
@@ -143,8 +143,14 @@ export default class Tickets extends View {
 
   // --- State --------------------------------------------------------------
 
-  go(screen, cx) {
-    if (!SCREENS[this.screen.name].to.includes(screen.name))
+  go(/** @type {any} */ screen, /** @type {any} */ cx) {
+    if (
+      !(
+        /** @type {Record<string, any>} */ (SCREENS)[
+          this.screen.name
+        ].to.includes(screen.name)
+      )
+    )
       throw new Error(
         `Tickets: no move from ${this.screen.name} to ${screen.name}`,
       );
@@ -159,8 +165,9 @@ export default class Tickets extends View {
     cx.notify();
   }
 
-  back(cx) {
-    const back = SCREENS[this.screen.name].back;
+  back(/** @type {any} */ cx) {
+    const back = /** @type {Record<string, any>} */ (SCREENS)[this.screen.name]
+      .back;
     if (!back) return this.dismiss();
     // A ticket's screen keeps its ticket.
     this.go(
@@ -171,12 +178,12 @@ export default class Tickets extends View {
     );
   }
 
-  setData(data, cx) {
+  setData(/** @type {any} */ data, /** @type {any} */ cx) {
     this.data = data;
     cx.notify();
   }
 
-  setAction(action, cx) {
+  setAction(/** @type {any} */ action, /** @type {any} */ cx) {
     this.action = action;
     cx.notify();
   }
@@ -187,15 +194,15 @@ export default class Tickets extends View {
 
   // The ticket list first, then each ticket's work. A newer load (Ctrl+R)
   // supersedes this one: its results are dropped.
-  load(cx) {
+  load(/** @type {any} */ cx) {
     const gen = this.data.gen + 1;
     const shown = this.data.tickets; // kept on screen if the reload fails
     this.setData(reloading(gen), cx);
     const cwd = focused()?.cwd ?? null;
-    cx.spawn(async (cx) => {
+    cx.spawn(async (/** @type {any} */ cx) => {
       const current = () => this.data.gen === gen;
       // Moves to `phase` (tickets-model.js) unless a newer load has taken over.
-      const to = (phase, fields) => {
+      const to = (/** @type {any} */ phase, /** @type {any} */ fields) => {
         if (current()) this.setData(advance(this.data, phase, fields), cx);
       };
       try {
@@ -224,10 +231,10 @@ export default class Tickets extends View {
   }
 
   // Runs an async action; keys are ignored meanwhile, and any error shown after.
-  act(cx, message, f) {
+  act(/** @type {any} */ cx, /** @type {any} */ message, /** @type {any} */ f) {
     if (this.running) return;
     this.setAction(runningAction(message), cx);
-    cx.spawn(async (cx) => {
+    cx.spawn(async (/** @type {any} */ cx) => {
       try {
         await f(cx);
         this.setAction(idleAction(), cx);
@@ -250,38 +257,40 @@ export default class Tickets extends View {
 
   rows() {
     const d = this.data;
-    const keep = (rows, text) =>
+    const keep = (/** @type {any} */ rows, /** @type {any} */ text) =>
       rows
-        .map((r) => ({ r, s: score(text(r), this.filter) }))
-        .filter((x) => x.s !== null)
-        .sort((a, b) => a.s - b.s)
-        .map((x) => x.r);
+        .map((/** @type {any} */ r) => ({ r, s: score(text(r), this.filter) }))
+        .filter((/** @type {any} */ x) => x.s !== null)
+        .sort((/** @type {any} */ a, /** @type {any} */ b) => a.s - b.s)
+        .map((/** @type {any} */ x) => x.r);
     if (this.screen.name === "list") {
       const rows = keep(
-        (d.tickets ?? []).map((ticket) => ({
+        (d.tickets ?? []).map((/** @type {any} */ ticket) => ({
           kind: "ticket",
           ticket,
           work: d.work?.get(ticket.key) ?? [],
-          run: (cx) => this.openTicket(ticket, cx),
+          run: (/** @type {any} */ cx) => this.openTicket(ticket, cx),
         })),
-        (r) => `${r.ticket.label} ${r.ticket.key} ${r.ticket.summary}`,
+        (/** @type {any} */ r) =>
+          `${r.ticket.label} ${r.ticket.key} ${r.ticket.summary}`,
       );
       // Whatever was typed can start ad-hoc work; always last, never filtered.
       // Not before the list loads: Enter on a ticket's key typed early would
       // start ad-hoc work instead of the ticket.
       const description = this.filter.trim();
-      if (d.tickets && adhocBranch(description))
+      if (d.tickets && adhocBranch(description, null))
         rows.push({
           kind: "action",
           label: `Start ad-hoc work: ${description}`,
-          run: (cx) => this.go({ name: "adhoc", description }, cx),
+          run: (/** @type {any} */ cx) =>
+            this.go({ name: "adhoc", description }, cx),
         });
       return rows;
     }
     if (this.screen.name === "adhoc") {
       const { description } = this.screen;
       return keep(
-        (d.repos ?? []).map((repo) => {
+        (d.repos ?? []).map((/** @type {any} */ repo) => {
           const label = `Start in ${repoLabel(repo)}${repo.path ? "" : " (clone)"}`;
           const why = repo.path === d.here ? "current repo" : "";
           return {
@@ -289,13 +298,16 @@ export default class Tickets extends View {
             label,
             why,
             text: `${label} ${repo.name} ${why}`,
-            run: (cx) =>
-              this.act(cx, `Creating worktree in ${repoLabel(repo)}…`, (cx) =>
-                this.startAdhoc(description, repo, cx),
+            run: (/** @type {any} */ cx) =>
+              this.act(
+                cx,
+                `Creating worktree in ${repoLabel(repo)}…`,
+                (/** @type {any} */ cx) =>
+                  this.startAdhoc(description, repo, cx),
               ),
           };
         }),
-        (r) => r.text,
+        (/** @type {any} */ r) => r.text,
       );
     }
     // A ticket's screens need its local work at least: wait for it (see the
@@ -304,26 +316,30 @@ export default class Tickets extends View {
     const t = this.screen.ticket;
     if (this.screen.name === "pick") {
       return keep(
-        d.repos.map((repo) =>
+        d.repos.map((/** @type {any} */ repo) =>
           this.startRow(t, repo, repo.path === d.here ? "current repo" : ""),
         ),
-        (r) => r.text,
+        (/** @type {any} */ r) => r.text,
       );
     }
     const work = d.work.get(t.key) ?? [];
     const live = herdrSpaces();
-    const rows = work.map((item) => this.itemRow(t, item, live));
-    const used = new Set(work.map((w) => repoId(w.repo)));
+    const rows = work.map((/** @type {any} */ item) =>
+      this.itemRow(t, item, live),
+    );
+    const used = new Set(work.map((/** @type {any} */ w) => repoId(w.repo)));
     for (const s of this.suggestions(t))
       if (!used.has(repoId(s.repo))) rows.push(this.startRow(t, s.repo, s.why));
     rows.push({
       kind: "action",
       label: "Start in another repo…",
       text: "start in another repo",
-      run: (cx) => this.go({ name: "pick", ticket: t }, cx),
+      run: (/** @type {any} */ cx) => this.go({ name: "pick", ticket: t }, cx),
     });
     for (const repo of new Map(
-      work.filter((w) => w.repo.path).map((w) => [w.repo.path, w.repo]),
+      work
+        .filter((/** @type {any} */ w) => w.repo.path)
+        .map((/** @type {any} */ w) => [w.repo.path, w.repo]),
     ).values()) {
       const label = `Ask ${basename(C.agent.argv[0])} for another branch in ${repoLabel(repo)}`;
       rows.push({
@@ -333,7 +349,7 @@ export default class Tickets extends View {
         run: () => this.another(t, repo),
       });
     }
-    return keep(rows, (r) => r.text);
+    return keep(rows, (/** @type {any} */ r) => r.text);
   }
 
   selected() {
@@ -341,7 +357,7 @@ export default class Tickets extends View {
     return rows[Math.max(0, Math.min(this.at, rows.length - 1))];
   }
 
-  suggestions(ticket) {
+  suggestions(/** @type {any} */ ticket) {
     return suggestRepos(
       ticket,
       this.data.repos,
@@ -350,25 +366,33 @@ export default class Tickets extends View {
     );
   }
 
-  startRow(ticket, repo, why) {
+  startRow(
+    /** @type {any} */ ticket,
+    /** @type {any} */ repo,
+    /** @type {any} */ why,
+  ) {
     const label = `Start in ${repoLabel(repo)}${repo.path ? "" : " (clone)"}`;
     return {
       kind: "action",
       label,
       why,
       text: `${label} ${repo.name} ${why ?? ""}`,
-      run: (cx) =>
+      run: (/** @type {any} */ cx) =>
         this.act(
           cx,
           `Creating worktree for ${ticket.label} in ${repoLabel(repo)}…`,
-          (cx) => this.start(ticket, repo, cx),
+          (/** @type {any} */ cx) => this.start(ticket, repo, cx),
         ),
     };
   }
 
   // What a piece of existing work shows (`tag`) and does, decided together.
   // `live`: the pass's snapshot (spaces.js).
-  itemRow(ticket, item, live) {
+  itemRow(
+    /** @type {any} */ ticket,
+    /** @type {any} */ item,
+    /** @type {any} */ live,
+  ) {
     const name = spaceName(ticket, item.repo, this.data.work.get(ticket.key));
     let tag, run;
     if (item.worktree) {
@@ -376,15 +400,19 @@ export default class Tickets extends View {
       run = () => this.openSpace(name, item.worktree);
     } else if (item.branch) {
       tag = item.repo.path ? "branch" : "not cloned";
-      run = (cx) =>
-        this.act(cx, `Opening ${ticket.label}…`, async (cx) => {
-          const repo = await this.local(item.repo, cx);
-          const path = await addWorktree(repo, item.branch, {
-            pr: item.pr?.number ?? null,
-          });
-          remember(ticket, repo);
-          this.openSpace(name, path);
-        });
+      run = (/** @type {any} */ cx) =>
+        this.act(
+          cx,
+          `Opening ${ticket.label}…`,
+          async (/** @type {any} */ cx) => {
+            const repo = await this.local(item.repo, cx);
+            const path = await addWorktree(repo, item.branch, {
+              pr: item.pr?.number ?? null,
+            });
+            remember(ticket, repo);
+            this.openSpace(name, path);
+          },
+        );
     } else {
       // A PR whose branch we don't know: show it instead.
       tag = "PR";
@@ -404,11 +432,11 @@ export default class Tickets extends View {
 
   // --- Actions ------------------------------------------------------------
 
-  choose(r, cx) {
+  choose(/** @type {any} */ r, /** @type {any} */ cx) {
     if (r && !this.running) r.run(cx);
   }
 
-  openTicket(ticket, cx) {
+  openTicket(/** @type {any} */ ticket, /** @type {any} */ cx) {
     // A fresh ticket with one clear home: just start. Only once its work is
     // known (noWork): its local branches and the PRs its tracker links (not
     // every PR's details); before that, its screen waits (and says so).
@@ -417,15 +445,17 @@ export default class Tickets extends View {
       // The current repo is only a hint; a single mapped/remembered repo decides.
       const decided = s.filter((x) => x.why !== "current repo");
       if (decided.length === 1 && s[0] === decided[0] && s[0].repo.path)
-        return this.act(cx, `Creating worktree for ${ticket.label}…`, (cx) =>
-          this.start(ticket, s[0].repo, cx),
+        return this.act(
+          cx,
+          `Creating worktree for ${ticket.label}…`,
+          (/** @type {any} */ cx) => this.start(ticket, s[0].repo, cx),
         );
     }
     this.go({ name: "ticket", ticket }, cx);
   }
 
   // The repo, cloned first if it isn't local yet.
-  async local(repo, cx) {
+  async local(/** @type {any} */ repo, /** @type {any} */ cx) {
     if (repo.path) return repo;
     this.setAction(runningAction(`Cloning ${repo.slug}…`), cx);
     const cloned = await cloneRepo(repo.slug);
@@ -433,24 +463,36 @@ export default class Tickets extends View {
     return cloned;
   }
 
-  openSpace(name, folder, task) {
+  openSpace(
+    /** @type {any} */ name,
+    /** @type {any} */ folder,
+    /** @type {any} */ task = undefined,
+  ) {
     this.openSpaces([{ name, folder, task }]);
   }
 
-  openSpaces(spaces) {
+  openSpaces(/** @type {any} */ spaces) {
     this.dismiss();
     openSpaces(spaces);
   }
 
   // New work on the ticket's own branch (C.branch) in `target`.
-  async start(ticket, target, cx) {
+  async start(
+    /** @type {any} */ ticket,
+    /** @type {any} */ target,
+    /** @type {any} */ cx,
+  ) {
     const s = await this.prepare(ticket, target, cx);
     this.openSpaces([s]);
   }
 
   // start()'s work up to opening the space: { name, folder, task }. Before
   // opening it, which closes this popup and with it any work still to do here.
-  async prepare(ticket, target, cx) {
+  async prepare(
+    /** @type {any} */ ticket,
+    /** @type {any} */ target,
+    /** @type {any} */ cx,
+  ) {
     return prepareStart(ticket, target, {
       work: this.data.work.get(ticket.key) ?? [],
       repos: this.data.repos,
@@ -458,13 +500,14 @@ export default class Tickets extends View {
     });
   }
 
-  onStep(cx) {
-    return (message) => this.setAction(runningAction(message), cx);
+  onStep(/** @type {any} */ cx) {
+    return (/** @type {any} */ message) =>
+      this.setAction(runningAction(message), cx);
   }
 
   // Every marked ticket in its best suggested repo, then all their spaces at
   // once: opening one closes this popup, which would stop the rest.
-  startMarked(cx) {
+  startMarked(/** @type {any} */ cx) {
     if (this.running) return;
     const d = this.data;
     if (d.phase !== "ready")
@@ -472,35 +515,47 @@ export default class Tickets extends View {
         failedAction("Still loading tickets' work, try again"),
         cx,
       );
-    const tickets = d.tickets.filter((t) => this.marked.has(t.key));
-    this.act(cx, `Creating ${tickets.length} worktrees…`, async (cx) => {
-      const { results, spaces } = await startTickets(
-        tickets.map((ticket) => ({ ticket, repo: null })),
-        {
-          repos: d.repos,
-          work: d.work,
-          here: d.here,
-          onStep: this.onStep(cx),
-        },
-      );
-      // Opening a space closes this popup: what didn't start is a notification.
-      const left = results.filter((r) => r.status !== "started");
-      if (left.length)
-        notify({
-          title: `${left.length} of ${results.length} tickets not started`,
-          body: left.map((r) => `${r.label}: ${r.why}`).join("\n"),
-          level: "warning",
-        });
-      this.marked.clear();
-      this.openSpaces(spaces);
-    });
+    const tickets = d.tickets.filter((/** @type {any} */ t) =>
+      this.marked.has(t.key),
+    );
+    this.act(
+      cx,
+      `Creating ${tickets.length} worktrees…`,
+      async (/** @type {any} */ cx) => {
+        const { results, spaces } = await startTickets(
+          tickets.map((/** @type {any} */ ticket) => ({ ticket, repo: null })),
+          {
+            repos: d.repos,
+            work: d.work,
+            here: d.here,
+            onStep: this.onStep(cx),
+          },
+        );
+        // Opening a space closes this popup: what didn't start is a notification.
+        const left = results.filter((r) => r.status !== "started");
+        if (left.length)
+          notify({
+            title: `${left.length} of ${results.length} tickets not started`,
+            body: left.map((r) => `${r.label}: ${r.why}`).join("\n"),
+            level: "warning",
+          });
+        this.marked.clear();
+        this.openSpaces(spaces);
+      },
+    );
   }
 
   // Ad-hoc work in `target`: its own branch (see adhocBranch), reused if it's
   // already there, and the agent told what it is.
-  async startAdhoc(description, target, cx) {
+  async startAdhoc(
+    /** @type {any} */ description,
+    /** @type {any} */ target,
+    /** @type {any} */ cx,
+  ) {
     const repo = await this.local(target, cx);
     const branch = adhocBranch(description, repo);
+    if (!branch)
+      throw new Error(`ad-hoc work: no branch name from "${description}"`);
     const path = worktreePath(repo, branch);
     const existing = (await listWorktrees(repo.path)).linked.some(
       (w) => w.path === path,
@@ -520,7 +575,7 @@ export default class Tickets extends View {
   }
 
   // The agent names and creates the extra branch itself (C.branch + a short description).
-  another(ticket, repo) {
+  another(/** @type {any} */ ticket, /** @type {any} */ repo) {
     this.dismiss();
     run("space.new", {
       name: `${ticket.label} ${repo.name}+`,
@@ -530,7 +585,7 @@ export default class Tickets extends View {
     });
   }
 
-  openInBrowser(ticket, cx) {
+  openInBrowser(/** @type {any} */ ticket, /** @type {any} */ cx) {
     cx.spawn(async () => {
       const url = await ticket.tracker.url(ticket.key).catch(() => null);
       if (url) await openUrl(url);
@@ -538,7 +593,12 @@ export default class Tickets extends View {
   }
 
   // Returns true when the popup handled the key.
-  onKey(e, rows, sel, cx) {
+  onKey(
+    /** @type {any} */ e,
+    /** @type {any} */ rows,
+    /** @type {any} */ sel,
+    /** @type {any} */ cx,
+  ) {
     if (this.running) return true; // nothing but the action until it finishes
     const ticket = this.screen.ticket ?? sel?.ticket;
     if (e.modifiers.control && e.key === "o" && ticket)
@@ -556,7 +616,7 @@ export default class Tickets extends View {
   }
 
   // Tab on the list marks or unmarks the selected ticket.
-  mark(sel, cx) {
+  mark(/** @type {any} */ sel, /** @type {any} */ cx) {
     if (this.running || this.screen.name !== "list" || sel?.kind !== "ticket")
       return;
     const k = sel.ticket.key;
@@ -566,14 +626,15 @@ export default class Tickets extends View {
   }
 
   // The line under the search box: [text, isError], or null for none.
-  status(rows) {
+  status(/** @type {any} */ rows) {
     const a = this.action;
     if (a.phase === "running") return [a.message, false];
     if (a.phase === "failed") return [a.error, true];
     const d = this.data;
     if (d.phase === "failed")
       return rows.length ? [`${d.error} (Ctrl+R to retry)`, true] : null; // shown in the list's place instead (empty)
-    const problem = C.problem ?? d.repos?.find((r) => r.problem)?.problem;
+    const problem =
+      C.problem ?? d.repos?.find((/** @type {any} */ r) => r.problem)?.problem;
     if (problem && !this.screen.ticket) return [problem, true];
     if (d.phase === "tickets") return ["Loading tickets…", false];
     const onList = this.screen.name === "list";
@@ -596,7 +657,7 @@ export default class Tickets extends View {
 
   // What the list's place shows when it has no rows, or null: [text, isError].
   // In the body, not the header's small hint, so it can't be missed.
-  empty(rows) {
+  empty(/** @type {any} */ rows) {
     const d = this.data;
     if (rows.length || this.running) return null;
     if (d.phase === "failed") return [`${d.error} · Ctrl+R to retry`, true];
@@ -613,10 +674,10 @@ export default class Tickets extends View {
     const t = theme();
     const rows = this.rows();
     const sel = rows[Math.max(0, Math.min(this.at, rows.length - 1))];
-    const tone = (label) => t[toneKey(label?.tone)];
+    const tone = (/** @type {any} */ label) => t[toneKey(label?.tone)];
     // Tags at a row's end: at most 150 px, and they shrink to an ellipsis
     // before the text they follow goes below its minimum.
-    const small = (text, color = t.dim) =>
+    const small = (/** @type {any} */ text, color = t.dim) =>
       div()
         .flex_shrink(1)
         .min_w(0)
@@ -627,9 +688,13 @@ export default class Tickets extends View {
         .child(text);
     // A PR's state and checks matter more than the title's tail: it keeps
     // its full width and the title gives way instead.
-    const prTag = (pr) =>
+    const prTag = (/** @type {any} */ pr) =>
       div().flex_none().text_size(11).text_color(tone(pr)).child(pr.text);
-    const col = (w, text, color = t.dim) =>
+    const col = (
+      /** @type {any} */ w,
+      /** @type {any} */ text,
+      color = t.dim,
+    ) =>
       div()
         .w(w)
         .flex_none()
@@ -637,14 +702,18 @@ export default class Tickets extends View {
         .text_size(11)
         .text_color(color)
         .child(text);
-    const dot = (on) =>
+    const dot = (/** @type {any} */ on) =>
       div()
         .w(12)
         .flex_none()
         .text_color(on ? t.accent : t.muted)
         .child(on ? "●" : "○");
 
-    const line = (r, i, cells) =>
+    const line = (
+      /** @type {any} */ r,
+      /** @type {any} */ i,
+      /** @type {any} */ cells,
+    ) =>
       h_flex()
         .id(`tk-${i}-${r.kind}`)
         .mx(4)
@@ -658,30 +727,37 @@ export default class Tickets extends View {
         // it reads apart from the mouse's (hover); a marked ticket is tinted.
         .border_l_2()
         .border_color(r === sel ? t.accent : "#00000000")
-        .when(r.kind === "ticket" && this.marked.has(r.ticket.key), (el) =>
-          el.bg(t.selected ?? t.hover),
+        .when(
+          r.kind === "ticket" && this.marked.has(r.ticket.key),
+          (/** @type {any} */ el) => el.bg(t.selected ?? t.hover),
         )
-        .hover((s) => s.bg(t.hover))
-        .on_click((_e, cx) => this.choose(r, cx))
+        .hover((/** @type {any} */ s) => s.bg(t.hover))
+        .on_click((/** @type {any} */ _e, /** @type {any} */ cx) =>
+          this.choose(r, cx),
+        )
         .children(cells.filter(Boolean));
 
     // A ticket row's cells besides its summary. The columns are as wide as
     // their widest entry among the rows shown (the same in every row, so they
     // line up), and one with nothing in it is left out: the summary gets the
     // rest of the row instead of space held for empty columns.
-    const ticketCells = (r) => {
-      const where = [...new Set(r.work.map((w) => w.repo.name))];
+    const ticketCells = (/** @type {any} */ r) => {
+      const where = [
+        ...new Set(r.work.map((/** @type {any} */ w) => w.repo.name)),
+      ];
       return {
-        pr: r.work.map((w) => prLabel(w.pr)).find(Boolean),
+        pr: r.work.map((/** @type {any} */ w) => prLabel(w.pr)).find(Boolean),
         repos: where.length > 2 ? `${where.length} repos` : where.join(", "),
       };
     };
-    const tickets = rows.filter((r) => r.kind === "ticket");
-    const cells = new Map(tickets.map((r) => [r, ticketCells(r)]));
+    const tickets = rows.filter((/** @type {any} */ r) => r.kind === "ticket");
+    const cells = new Map(
+      tickets.map((/** @type {any} */ r) => [r, ticketCells(r)]),
+    );
     const all = [...cells.values()];
     const widths = {
       label: columnWidth(
-        tickets.map((r) => r.ticket.label),
+        tickets.map((/** @type {any} */ r) => r.ticket.label),
         8,
         100,
       ),
@@ -696,20 +772,24 @@ export default class Tickets extends View {
         190,
       ),
       status: columnWidth(
-        tickets.map((r) => r.ticket.status),
+        tickets.map((/** @type {any} */ r) => r.ticket.status),
         6.5,
         90,
       ),
     };
-    const ticketCol = (w, text, color) => (w ? col(w, text, color) : null);
+    const ticketCol = (
+      /** @type {any} */ w,
+      /** @type {any} */ text,
+      /** @type {any} */ color,
+    ) => (w ? col(w, text, color) : null);
 
-    const row = (r, i) => {
+    const row = (/** @type {any} */ r, /** @type {any} */ i) => {
       if (r.kind === "ticket") {
         const { pr, repos } = cells.get(r);
         return line(r, i, [
           this.marked.has(r.ticket.key)
             ? div().w(12).flex_none().text_color(t.accent).child("✓")
-            : dot(r.work.some((w) => w.worktree)),
+            : dot(r.work.some((/** @type {any} */ w) => w.worktree)),
           widths.label
             ? div()
                 .w(widths.label)
@@ -793,21 +873,24 @@ export default class Tickets extends View {
       .id("tickets")
       .track_focus(this.handle)
       .key_context("Tickets")
-      .on_action("tickets::mark", (_e, cx) => this.mark(sel, cx))
+      .on_action(
+        "tickets::mark",
+        (/** @type {any} */ _e, /** @type {any} */ cx) => this.mark(sel, cx),
+      )
       .w_full()
       .min_h(0)
       .p(18)
       .gap(10)
       .bg(t.popover)
       .text_size(13)
-      .on_key_down((e, cx) => {
+      .on_key_down((/** @type {any} */ e, /** @type {any} */ cx) => {
         if (this.onKey(e, rows, sel, cx)) cx.stop_propagation();
       })
       .child(
         h_flex()
           .gap(10)
           .items_center()
-          .when(!onList, (el) =>
+          .when(!onList, (/** @type {any} */ el) =>
             el.child(
               div()
                 .id("tk-back")
@@ -817,8 +900,10 @@ export default class Tickets extends View {
                 .text_size(15)
                 .text_color(t.dim)
                 .cursor_pointer()
-                .hover((s) => s.bg(t.hover).text_color(t.foreground))
-                .on_click((_e, cx) => {
+                .hover((/** @type {any} */ s) =>
+                  s.bg(t.hover).text_color(t.foreground),
+                )
+                .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
                   if (!this.running) this.back(cx);
                 })
                 .tooltip("Back (⌫)")
@@ -838,7 +923,7 @@ export default class Tickets extends View {
               .text_color(t.foreground)
               .child(title),
           )
-          .when(this.running, (el) =>
+          .when(this.running, (/** @type {any} */ el) =>
             el.child(
               svg("mods/workspace-chrome/spinner.svg")
                 .size(11)
@@ -879,7 +964,7 @@ export default class Tickets extends View {
               .text_color(t.foreground),
           ),
       )
-      .when(Boolean(empty), (el) =>
+      .when(Boolean(empty), (/** @type {any} */ el) =>
         el.child(
           div()
             .px(14)
@@ -889,7 +974,7 @@ export default class Tickets extends View {
             .child(empty?.[0] ?? ""),
         ),
       )
-      .when(rows.length > 0, (el) =>
+      .when(rows.length > 0, (/** @type {any} */ el) =>
         el.child(
           v_flex()
             .h(Math.min(420, 6 + rows.length * 32))

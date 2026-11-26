@@ -28,7 +28,7 @@ export const SHORT = 340;
 
 // The band a width falls in: "rail", "glyph", "short" or "full" (not
 // measured yet: "full").
-export const fit = (width) =>
+export const fit = (/** @type {any} */ width) =>
   band(width, [
     ["rail", RAIL],
     ["glyph", GLYPH],
@@ -36,11 +36,11 @@ export const fit = (width) =>
   ]);
 
 // A repo's rail monogram: its name's first letter or digit, upper-cased.
-export const monogram = (name) =>
+export const monogram = (/** @type {any} */ name) =>
   (name.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
 
 // A stage group's key in the folded set (repo groups use the repo's path).
-export const stageKey = (stage) => `stage:${stage}`;
+export const stageKey = (/** @type {any} */ stage) => `stage:${stage}`;
 
 // How long a step's success note stays.
 export const NOTE_MS = 60_000;
@@ -52,7 +52,11 @@ const GLYPHS = { blocked: "!", done: "✓" };
 // without a space, a row with a PR shows the PR's glyph, so rows tell apart
 // at a glance (on the rail too). `pr`: the row's (its tone already a
 // theme colour). { glyph, tone, spin, tip }.
-function statusOf(space, failed, pr) {
+function statusOf(
+  /** @type {any} */ space,
+  /** @type {any} */ failed,
+  /** @type {any} */ pr,
+) {
   if (failed) return { glyph: "✕", tone: "blocked", spin: false, tip: null };
   if (!space)
     return {
@@ -66,7 +70,7 @@ function statusOf(space, failed, pr) {
   if (space.status === "working")
     return { glyph: null, tone: "working", spin: true, tip: null };
   return {
-    glyph: GLYPHS[space.status] ?? "●",
+    glyph: /** @type {Record<string, string>} */ (GLYPHS)[space.status] ?? "●",
     tone: space.status ?? "accent",
     spin: false,
     tip: null,
@@ -95,13 +99,13 @@ function statusOf(space, failed, pr) {
 // Returns { span, by, groups: [{ key, repo, name, monogram, count, size,
 // open, hub, worktrees, more, fewer }] (more: how many worktrees the cap
 // hides; fewer: expanded past the cap) (by stage: repo and hub are null), rows (in order: what the keys move through), at, step }.
-export function workView(input) {
+export function workView(/** @type {any} */ input) {
   const span = fit(input.width);
   const narrow = span === "short" || span === "glyph";
   const now = input.now ?? Date.now();
 
   const by = input.by === "stage" ? "stage" : "repo";
-  const rowOf = (w) => {
+  const rowOf = (/** @type {any} */ w) => {
     const space = input.spaceOf(w);
     const last0 = input.steps.get(w.path) ?? null;
     const state = stepState(last0);
@@ -150,7 +154,7 @@ export function workView(input) {
       .filter(Boolean)
       .map((p) => p.number)
       .sort((a, b) => a - b);
-    const stack = others.map((p) =>
+    const stack = others.map((/** @type {any} */ p) =>
       stackItem(w, p, span, order.indexOf(p.number) + 1, order.length),
     );
     const extras =
@@ -163,23 +167,25 @@ export function workView(input) {
         : null;
     const steps = running
       ? []
-      : input.stepsOf(w, space).map((s, i) => {
-          const confirming = input.armed(`${w.path}:${s.id}`);
-          // A step button's label is never cut: narrow, it takes its short
-          // label (and the buttons wrap).
-          const name = narrow ? s.short : s.label;
-          return {
-            ...s,
-            confirming,
-            // Steps come most pressing first (nextSteps): the first is the
-            // row's next step, drawn solid; the rest are quiet.
-            primary: i === 0,
-            chosen: false,
-            text: confirming
-              ? `${name}? ${input.confirm.byKey ? "Press" : "Click"} again`
-              : name,
-          };
-        });
+      : input
+          .stepsOf(w, space)
+          .map((/** @type {any} */ s, /** @type {any} */ i) => {
+            const confirming = input.armed(`${w.path}:${s.id}`);
+            // A step button's label is never cut: narrow, it takes its short
+            // label (and the buttons wrap).
+            const name = narrow ? s.short : s.label;
+            return {
+              ...s,
+              confirming,
+              // Steps come most pressing first (nextSteps): the first is the
+              // row's next step, drawn solid; the rest are quiet.
+              primary: i === 0,
+              chosen: false,
+              text: confirming
+                ? `${name}? ${input.confirm.byKey ? "Press" : "Click"} again`
+                : name,
+            };
+          });
     const cost = input.costOf(w);
     const costText = cost === null ? null : dollars(cost);
     // On the rail, a ticket's number tells rows apart without a hover:
@@ -190,12 +196,13 @@ export function workView(input) {
       w.hub ? `${w.repo.name} hub: ${title}` : title,
       sub,
       pr?.text,
-      stack.length && `also ${stack.map((p) => p.head).join(" · ")}`,
+      stack.length &&
+        `also ${stack.map((/** @type {any} */ p) => p.head).join(" · ")}`,
       costText && `agents ${costText}`,
       running
         ? last.text
         : steps.length
-          ? `Next: ${steps.map((s) => s.label).join(", ")}`
+          ? `Next: ${steps.map((/** @type {any} */ s) => s.label).join(", ")}`
           : null,
     ]
       .filter(Boolean)
@@ -235,18 +242,18 @@ export function workView(input) {
   const groups =
     by === "stage" ? stageGroups(input, rowOf) : repoGroups(input, rowOf);
   // What the keys move through: each row, then its stack's sub-items.
-  const rows = groups.flatMap((g) =>
+  const rows = groups.flatMap((/** @type {any} */ g) =>
     (g.hub ? [g.hub] : []).concat(g.worktrees).flatMap((r) => [r, ...r.stack]),
   );
 
   // The selected row and step: the one the keys moved to, else the focused
   // space's row, else the first.
   let at = input.picked
-    ? rows.findIndex((r) => r.key === input.picked.path)
+    ? rows.findIndex((/** @type {any} */ r) => r.key === input.picked.path)
     : -1;
   let step = at >= 0 ? input.picked.step : 0;
   if (at < 0) {
-    at = rows.findIndex((r) => r.space?.active);
+    at = rows.findIndex((/** @type {any} */ r) => r.space?.active);
     if (at < 0 && rows.length) at = 0;
     step = 0;
   }
@@ -263,7 +270,13 @@ export function workView(input) {
 // (its stack position `at` of `of`, number, state, title or branch), no
 // steps, no space of its own; activating it opens the PR. Merged or closed:
 // dimmed.
-function stackItem(w, p, span, at, of) {
+function stackItem(
+  /** @type {any} */ w,
+  /** @type {any} */ p,
+  /** @type {any} */ span,
+  /** @type {any} */ at,
+  /** @type {any} */ of,
+) {
   const label = /** @type {NonNullable<ReturnType<typeof prLabel>>} */ (
     prLabel(p, "short")
   );
@@ -296,23 +309,30 @@ function stackItem(w, p, span, at, of) {
 
 // The worktrees a repo group shows under a cap of `cap`: the `cap` most
 // recently changed (`at`), and any whose space is focused, in their order.
-export function capped(worktrees, cap, isActive) {
+export function capped(
+  /** @type {any} */ worktrees,
+  /** @type {any} */ cap,
+  /** @type {any} */ isActive,
+) {
   if (!cap || worktrees.length <= cap) return worktrees;
   const recent = new Set(
     [...worktrees].sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, cap),
   );
-  return worktrees.filter((w) => recent.has(w) || isActive(w));
+  return worktrees.filter(
+    (/** @type {any} */ w) => recent.has(w) || isActive(w),
+  );
 }
 
 // One group per repo, headed by its hub's row.
-function repoGroups(input, rowOf) {
-  return input.groups.map((g) => {
+function repoGroups(/** @type {any} */ input, /** @type {any} */ rowOf) {
+  return input.groups.map((/** @type {any} */ g) => {
     const open = !input.folded.has(g.repo.path);
     const n = g.worktrees.length;
     const cappedTo = capped(
       g.worktrees,
       input.cap ?? 0,
-      (w) => input.spaceOf({ ...w, repo: g.repo })?.active ?? false,
+      (/** @type {any} */ w) =>
+        input.spaceOf({ ...w, repo: g.repo })?.active ?? false,
     );
     const expanded = input.expanded?.has(g.repo.path) ?? false;
     const shown = expanded ? g.worktrees : cappedTo;
@@ -326,7 +346,9 @@ function repoGroups(input, rowOf) {
       open,
       hub: rowOf({ ...g.hub, repo: g.repo }),
       // Folded, the group keeps only its header (the hub's row).
-      worktrees: open ? shown.map((w) => rowOf({ ...w, repo: g.repo })) : [],
+      worktrees: open
+        ? shown.map((/** @type {any} */ w) => rowOf({ ...w, repo: g.repo }))
+        : [],
       more: open ? n - shown.length : 0,
       // Expanded past a cap that would hide some: it offers "Show fewer".
       fewer: open && expanded && cappedTo.length < n,
@@ -336,7 +358,7 @@ function repoGroups(input, rowOf) {
 
 // One group per stage with any rows, in the flow's order (LADDER), after the
 // hubs that have a space. A stage group has no hub: its header is a label.
-function stageGroups(input, rowOf) {
+function stageGroups(/** @type {any} */ input, /** @type {any} */ rowOf) {
   const hubs = [];
   /** @type {Record<string, any[]>} */
   const by = Object.fromEntries(Object.keys(LADDER).map((id) => [id, []]));
@@ -348,7 +370,12 @@ function stageGroups(input, rowOf) {
       by[stageOf(input.prOf(w))].push(w);
     }
   }
-  const group = (key, name, ws, noun) => {
+  const group = (
+    /** @type {any} */ key,
+    /** @type {any} */ name,
+    /** @type {any} */ ws,
+    /** @type {any} */ noun,
+  ) => {
     const open = !input.folded.has(key);
     const n = ws.length;
     return {

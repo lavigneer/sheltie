@@ -69,7 +69,7 @@ export const LADDER = {
 };
 
 // pr: prDetails() (`unresolved`: a count, or null when unknown).
-export function stageOf(pr) {
+export function stageOf(/** @type {any} */ pr) {
   if (!pr) return "no-pr";
   if (pr.state === "MERGED") return "merged";
   if (pr.state === "CLOSED") return "closed";
@@ -84,7 +84,7 @@ export function stageOf(pr) {
 // matters most as a word ("#881 CI failed"), with no tail; at glyph width,
 // that state's glyph alone. `text` is the whole label at any width (for a
 // tooltip), `glyph` the state's glyph, `tone` "bad" | "good" | null.
-export function prLabel(pr, span = "full") {
+export function prLabel(/** @type {any} */ pr, span = "full") {
   if (!pr) return null;
   const parts = [`#${pr.number}`];
   const tail = [];
@@ -98,7 +98,11 @@ export function prLabel(pr, span = "full") {
     else if (!pr.draft) parts.push("in review");
     if (pr.checks) {
       // GitHub's icon and count of passed checks: "✗ 2/5".
-      const icon = { failed: "✗", pending: "◌", passed: "✓" }[pr.checks];
+      const icon = /** @type {Record<string, string>} */ ({
+        failed: "✗",
+        pending: "◌",
+        passed: "✓",
+      })[pr.checks];
       tail.push(
         pr.checksTotal ? `${icon} ${pr.checksPassed}/${pr.checksTotal}` : icon,
       );
@@ -149,7 +153,7 @@ export function prLabel(pr, span = "full") {
 }
 
 // The theme key for a prLabel's tone: "blocked" | "done" | "muted".
-export const toneKey = (tone) =>
+export const toneKey = (/** @type {any} */ tone) =>
   tone === "bad" ? "blocked" : tone === "good" ? "done" : "muted";
 
 // Whether a PR is offered Merge: CI passed (not failed, pending or missing) on
@@ -158,7 +162,7 @@ export const toneKey = (tone) =>
 // is empty) unless the workflow's mergeWithoutReview is false. The stages it's
 // offered from are the Merge step's (STEPS). `workflow`: the repo's
 // (settingsOf(repo).workflow).
-export function canMerge(pr, workflow = C.workflow) {
+export function canMerge(/** @type {any} */ pr, workflow = C.workflow) {
   if (pr.checks !== "passed" || pr.mergeable !== "MERGEABLE") return false;
   if (pr.unresolved > 0 || pr.autoMerge) return false;
   if (pr.review === "APPROVED") return true;
@@ -171,9 +175,14 @@ export function canMerge(pr, workflow = C.workflow) {
 // out), so it's told once, not again after every push that doesn't fix it.
 // A move along LADDER is told by the stage it enters (`told`); CI, comments,
 // conflicts and reviews are told from the field that changed.
-export function prEvents(was, pr) {
-  const events = [];
-  const add = (title, level, body) => events.push({ title, level, body });
+export function prEvents(/** @type {any} */ was, /** @type {any} */ pr) {
+  /** @type {{ title: string, level: "success" | "error" | "warning" | "info", body?: string }[]} */ const events =
+    [];
+  const add = (
+    /** @type {any} */ title,
+    /** @type {any} */ level,
+    /** @type {any} */ body = undefined,
+  ) => events.push({ title, level, body });
   const from = stageOf(was);
   const to = stageOf(pr);
   const entered = LADDER[from].next.includes(to) ? LADDER[to].told : undefined;
@@ -226,8 +235,10 @@ export function prEvents(was, pr) {
 //   run(w, pr, work)  for direct steps: does it, returns a note
 // A PR that conflicts with its base offers only Resolve conflicts: GitHub
 // runs no CI on it, so nothing else can get it green.
-const confirmFinish = ({ workflow }) => workflow.confirmFinish !== false;
+const confirmFinish = (/** @type {any} */ { workflow }) =>
+  workflow.confirmFinish !== false;
 const OPEN = ["draft", "in-review", "approved"];
+/** @type {any[]} */
 export const STEPS = [
   {
     id: "draft-pr",
@@ -242,28 +253,29 @@ export const STEPS = [
     label: "Resolve conflicts",
     short: "Conflicts",
     from: OPEN,
-    when: (_pr, x) => x.conflicts,
+    when: (/** @type {any} */ _pr, /** @type {any} */ x) => x.conflicts,
   },
   {
     id: "fix-ci",
     kind: "agent",
     label: "Fix CI",
     from: OPEN,
-    when: (pr, x) => !x.conflicts && pr.checks === "failed",
+    when: (/** @type {any} */ pr, /** @type {any} */ x) =>
+      !x.conflicts && pr.checks === "failed",
   },
   {
     id: "address-comments",
     kind: "agent",
-    label: (pr) =>
+    label: (/** @type {any} */ pr) =>
       pr.unresolved > 0
         ? `Address ${pr.unresolved} comment${pr.unresolved === 1 ? "" : "s"}`
         : "Address review",
-    short: (pr) =>
+    short: (/** @type {any} */ pr) =>
       pr.unresolved > 0
         ? `${pr.unresolved} comment${pr.unresolved === 1 ? "" : "s"}`
         : "Review",
     from: OPEN,
-    when: (pr, x) =>
+    when: (/** @type {any} */ pr, /** @type {any} */ x) =>
       !x.conflicts && (pr.unresolved > 0 || pr.review === "CHANGES_REQUESTED"),
   },
   {
@@ -272,7 +284,7 @@ export const STEPS = [
     label: "Ready",
     from: ["draft"],
     to: ["in-review", "approved"],
-    when: (pr, x) =>
+    when: (/** @type {any} */ pr, /** @type {any} */ x) =>
       x.green &&
       !pr.unresolved &&
       (x.workflow.readyWhen !== "agent" || x.agentDone) &&
@@ -285,9 +297,11 @@ export const STEPS = [
     label: "Merge",
     from: ["in-review", "approved"],
     to: ["merged"],
-    when: (pr, x) => !x.working && canMerge(pr, x.workflow),
-    confirm: ({ workflow }) => workflow.confirmMerge !== false,
-    run: async (w, pr) => {
+    when: (/** @type {any} */ pr, /** @type {any} */ x) =>
+      !x.working && canMerge(pr, x.workflow),
+    confirm: (/** @type {any} */ { workflow }) =>
+      workflow.confirmMerge !== false,
+    run: async (/** @type {any} */ w, /** @type {any} */ pr) => {
       await mergePr(w.repo.slug, pr.number);
       return "merged";
     },
@@ -299,7 +313,11 @@ export const STEPS = [
     from: ["merged"],
     to: [],
     confirm: confirmFinish,
-    run: (w, pr, work) => finish(w, pr, work, true),
+    run: (
+      /** @type {any} */ w,
+      /** @type {any} */ pr,
+      /** @type {any} */ work,
+    ) => finish(w, pr, work, true),
   },
   {
     id: "clean-up",
@@ -308,7 +326,11 @@ export const STEPS = [
     from: ["closed"],
     to: [],
     confirm: confirmFinish,
-    run: (w, pr, work) => finish(w, pr, work, false),
+    run: (
+      /** @type {any} */ w,
+      /** @type {any} */ pr,
+      /** @type {any} */ work,
+    ) => finish(w, pr, work, false),
   },
 ];
 
@@ -319,7 +341,7 @@ export const STEPS = [
 // agent says the PR is done (see agentDone in spaces.js), which Ready waits for with
 // readyWhen "agent". `repo`: whose workflow settings apply (settingsOf).
 export function nextSteps(
-  pr,
+  /** @type {any} */ pr,
   { working = false, agentDone = false, repo = null } = {},
 ) {
   const stage = stageOf(pr);
@@ -336,10 +358,16 @@ export function nextSteps(
   const steps = [];
   for (const s of STEPS) {
     if (!s.from.includes(stage)) continue;
-    if (s.kind === "agent" && (working || !C.agent.steps?.[s.id])) continue;
+    if (
+      s.kind === "agent" &&
+      (working ||
+        !(/** @type {Record<string, string>} */ (C.agent.steps)[s.id]))
+    )
+      continue;
     if (s.when && !s.when(pr, x)) continue;
     const label = typeof s.label === "function" ? s.label(pr) : s.label;
     const short = typeof s.short === "function" ? s.short(pr) : s.short;
+    /** @type {{ id: string, label: string, short: string, kind: string, confirm?: any }} */
     const step = { id: s.id, label, short: short ?? label, kind: s.kind };
     if (s.confirm) step.confirm = s.confirm(x);
     steps.push(step);
@@ -353,8 +381,11 @@ export const START_MS = 30_000;
 // Whether a new space's agent still counts as starting (`bornAt`: when its
 // space appeared, null if it didn't while we run): until it first works or
 // START_MS passes, so it isn't offered Draft PR before it has begun.
-export const stillStarting = (bornAt, status, now) =>
-  bornAt != null && status !== "working" && now - bornAt < START_MS;
+export const stillStarting = (
+  /** @type {any} */ bornAt,
+  /** @type {any} */ status,
+  /** @type {any} */ now,
+) => bornAt != null && status !== "working" && now - bornAt < START_MS;
 
 // A worktree's last step (WorkModel.steps: { phase, text, at, staleAt }) is in
 // one of these states. This is the one place they're named: rowSteps, the
@@ -374,7 +405,7 @@ export const STEP = Object.freeze({
 });
 
 // The state of `last` (a worktree's last step), or null when none has run.
-export function stepState(last) {
+export function stepState(/** @type {any} */ last) {
   if (!last) return null;
   if (last.phase === "running") return STEP.RUNNING;
   if (last.phase === "failed") return STEP.FAILED;
@@ -382,24 +413,32 @@ export function stepState(last) {
 }
 
 // Whether a state is a step that succeeded (its note is a success note).
-export const succeeded = (state) => state === STEP.DONE || state === STEP.STALE;
+export const succeeded = (/** @type {any} */ state) =>
+  state === STEP.DONE || state === STEP.STALE;
 
 // The steps the runner writes: running, then done (stale until the PR is
 // looked up again) or failed. `at`: when the step answered.
-export const stepRunning = (text) => ({ phase: "running", text });
-export const stepDone = (text, at) => ({
+export const stepRunning = (/** @type {any} */ text) => ({
+  phase: "running",
+  text,
+});
+export const stepDone = (/** @type {any} */ text, /** @type {any} */ at) => ({
   phase: "done",
   text,
   at,
   staleAt: at,
 });
-export const stepFailed = (text, at) => ({ phase: "failed", text, at });
+export const stepFailed = (/** @type {any} */ text, /** @type {any} */ at) => ({
+  phase: "failed",
+  text,
+  at,
+});
 
 // Clears a stale step's mark when a PR lookup started at `asked` lands: a lookup
 // started after the step answered (staleAt <= asked) counts as a refresh. A
 // failed lookup counts too, so a row isn't held back for a retry. True when it
 // cleared.
-export function clearStale(last, asked) {
+export function clearStale(/** @type {any} */ last, /** @type {any} */ asked) {
   if (stepState(last) !== STEP.STALE || last.staleAt > asked) return false;
   delete last.staleAt;
   return true;
@@ -438,8 +477,8 @@ export function rowSteps({
 // --- The agent --------------------------------------------------------------
 
 // Sends a step's message to the worktree's agent, or starts one with it.
-async function tellAgent(w, id) {
-  const text = C.agent.steps[id];
+async function tellAgent(/** @type {any} */ w, /** @type {any} */ id) {
+  const text = /** @type {Record<string, string>} */ (C.agent.steps)[id];
   const live = herdrSpaces();
   const space = live.spaceOf(w.path);
   const address = live.agentIn(space);
@@ -476,7 +515,12 @@ async function tellAgent(w, id) {
 // `pr`. `work`: the ticket's work (WorkItem[], joinWork: worktrees, branches
 // and tracker-linked PRs, checked out here or not), to tell whether the
 // ticket still has open work. Returns a short note, or throws.
-export async function runStep(id, w, pr, work = []) {
+export async function runStep(
+  /** @type {any} */ id,
+  /** @type {any} */ w,
+  /** @type {any} */ pr,
+  /** @type {any} */ work = [],
+) {
   const step = STEPS.find((s) => s.id === id);
   if (!step) throw new Error(`unknown step ${id}`);
   return step.run ? step.run(w, pr, work) : tellAgent(w, id);
@@ -484,7 +528,7 @@ export async function runStep(id, w, pr, work = []) {
 
 // Ready: out of draft; with autoMerge "when-reviews-required", auto-merge
 // while reviews are still required; tracker step "review".
-async function ready(w, pr) {
+async function ready(/** @type {any} */ w, /** @type {any} */ pr) {
   await markReady(w.repo.slug, pr.number);
   const notes = ["ready for review"];
   // Auto-merge only waits for what the repo requires; without required
@@ -511,7 +555,12 @@ async function ready(w, pr) {
 // Finish (`merged`) / Clean up: close its spaces, remove the worktree and
 // branch; after a merge, tracker step "done" unless other work on the ticket
 // (any branch or PR not merged or closed, wherever it is) is still open.
-async function finish(w, pr, work, merged) {
+async function finish(
+  /** @type {any} */ w,
+  /** @type {any} */ pr,
+  /** @type {any} */ work,
+  /** @type {any} */ merged,
+) {
   await assertClean(w.path, pr?.head ?? null);
   // Its spaces end with it (the agent's work is in the PR by now).
   closeSpacesIn(w.path);

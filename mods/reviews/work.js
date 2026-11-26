@@ -101,6 +101,7 @@ function ticketOfWork(branch, repo, pr, t = trackerOf(repo)) {
 }
 
 // Where a PR lookup's result lives in joinWork's `details`: by branch or number.
+/** @param {string} slug @param {string | number | null} ref */
 export const prRef = (slug, ref) => `${slug}#${ref}`;
 
 // Whether a work item is open work (GLOSSARY.md): its branch or PR hasn't
@@ -277,6 +278,7 @@ export const prMaxAge = (pr) =>
 // `repoState(repo)` and `prDetailsMany(slug, items, { requiredOnly })`; trackers (view,
 // linkedPRs) come with the keys asked about.
 // What a scan found, as text to compare with the last scan's.
+/** @param {any[]} states */
 const statesKey = (states) =>
   JSON.stringify(
     states.map((s) => [
@@ -289,6 +291,9 @@ const statesKey = (states) =>
   );
 
 export class WorkStore {
+  /** @type {string | undefined} */
+  statesKey;
+
   constructor({
     sources = { repoState, prDetailsMany },
     now = Date.now,
@@ -329,7 +334,7 @@ export class WorkStore {
     if (repos !== this.repos || key !== this.statesKey) this.version++;
     this.repos = repos;
     this.states = states;
-    this.statesKey = key;
+    this.statesKey = /** @type {string} */ (key);
   }
 
   // The PRs trackers link to each key, as last looked up.
@@ -602,6 +607,7 @@ export function suggestRepos(ticket, repos, here, remembered) {
   };
   if (remembered) push(findRepo(remembered, repos), "last used");
   for (const r of ticket.homes ?? []) push(r, REPO_FILE);
+  /** @param {any[]} list @param {unknown} v */
   const has = (list, v) =>
     v != null &&
     list.some((x) => String(x).toLowerCase() === String(v).toLowerCase());

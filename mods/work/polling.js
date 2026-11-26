@@ -15,6 +15,7 @@ export const REPOS_MS = 300_000;
 
 // The last localRepos(), found again when forced, when stale, or never found.
 export class RepoCache {
+  /** @param {{ find?: () => Promise<any>, maxAge?: number, now?: () => number }} [opts] */
   constructor({ find = localRepos, maxAge = REPOS_MS, now = Date.now } = {}) {
     this.find = find;
     this.maxAge = maxAge;
@@ -26,7 +27,7 @@ export class RepoCache {
     return this.last?.list ?? [];
   }
 
-  /** @param {boolean} [force] */
+  /** @param {boolean} [force] @returns {Promise<any[]>} */
   async get(force = false) {
     if (force || !this.last || this.now() - this.last.at >= this.maxAge)
       this.last = { list: await this.find(), at: this.now() };
@@ -35,6 +36,7 @@ export class RepoCache {
 }
 
 // A failed action: recorded for diagnostics and told as an error.
+/** @param {{ mod: string, what: string, title: string, error: unknown, context?: Record<string, unknown> }} args @param {{ record?: typeof recordFailure, notify?: typeof herdrNotify }} [deps] */
 export function reportFailure(
   { mod, what, title, error, context = {} },
   { record = recordFailure, notify = herdrNotify } = {},

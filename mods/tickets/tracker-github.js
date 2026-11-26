@@ -9,14 +9,17 @@ import { fill, firstLine, must, NOT_FOUND, pool, tool } from "./lib.js";
 export function create(s) {
   const name = "github";
 
+  /** @param {string} key */
   const parse = (key) => {
     const m = /^(.+)#(\d+)$/.exec(key);
     return m ? { slug: m[1], number: Number(m[2]) } : null;
   };
 
+  /** @param {string} slug @param {string | number} number */
   const keyOf = (slug, number) => `${slug.toLowerCase()}#${number}`;
   // "#12" when s.github.repos names one repo, else "repo#12" (issue numbers
   // repeat across repos).
+  /** @param {string} key */
   function labelOf(key) {
     const k = parse(key);
     if (!k) return key;
@@ -24,8 +27,10 @@ export function create(s) {
       ? `#${k.number}`
       : `${k.slug.split("/").pop()}#${k.number}`;
   }
-  const refOf = (number) => fill(s.github.ref, { number });
+  /** @param {number} number */
+  const refOf = (number) => fill(s.github.ref, { number: String(number) });
 
+  /** @param {any} i @param {string | null} [slug] */
   const ticketOf = (i, slug) => {
     const repo = slug ?? i.repository?.nameWithOwner;
     return {
@@ -35,7 +40,7 @@ export function create(s) {
       summary: i.title ?? "",
       status: (i.state ?? "").toUpperCase() === "OPEN" ? "Open" : "Closed",
       components: [],
-      labels: (i.labels ?? []).map((l) => l.name),
+      labels: (i.labels ?? []).map((/** @type {any} */ l) => l.name),
       project: repo.toLowerCase(),
       repo,
     };
@@ -55,11 +60,12 @@ export function create(s) {
       "--json",
       "number,title,state,labels,repository",
     );
-    return JSON.parse(await must("gh", args, "gh search issues")).map((i) =>
-      ticketOf(i),
+    return JSON.parse(await must("gh", args, "gh search issues")).map(
+      (/** @type {any} */ i) => ticketOf(i),
     );
   }
 
+  /** @param {string} key */
   async function view(key) {
     const k = parse(key);
     if (!k) return null;
@@ -82,6 +88,7 @@ export function create(s) {
 
   // Only "done" does anything: close the issue if it's still open (merging a PR
   // that says "Closes #12" usually did already) and s.github.closeOnFinish.
+  /** @param {string} key @param {string} step */
   async function move(key, step) {
     if (step !== "done" || !s.github.closeOnFinish) return null;
     const k = parse(key);
@@ -103,20 +110,24 @@ export function create(s) {
     return `${labelOf(key)} closed`;
   }
 
+  /** @param {string} key */
   const url = async (key) => {
     const k = parse(key);
     return k ? `https://github.com/${k.slug}/issues/${k.number}` : null;
   };
 
+  /** @param {string} key */
   const viewCommand = (key) => {
     const k = parse(key);
     return k ? `gh issue view ${k.number} --repo ${k.slug} --comments` : key;
   };
 
+  /** @param {string} s */
   const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
   // Issues a branch name or PR text in repo `slug` mentions: the branch part
   // (s.github.ref), "#12" and "owner/repo#12".
+  /** @param {string | null | undefined} text @param {string | null} [slug] */
   function keysIn(text, slug = null) {
     const t = text || "";
     const out = new Set();
@@ -136,7 +147,9 @@ export function create(s) {
   }
 
   // PRs GitHub links to each issue (that close it): Map key -> [{ slug, number }].
+  /** @param {string[]} keys */
   async function linkedPRs(keys) {
+    /** @type {Map<string, { slug: string, number: number }[]>} */
     const out = new Map(keys.map((k) => [k, []]));
     const found = await pool(
       keys.map((key) => async () => {
@@ -161,14 +174,15 @@ export function create(s) {
         };
       }),
     );
-    for (const f of found.filter(Boolean))
+    for (const f of /** @type {any[]} */ (found.filter(Boolean)))
       for (const p of f.prs) {
         const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(p.url ?? "");
-        if (m) out.get(f.key).push({ slug: m[1], number: Number(m[2]) });
+        if (m) out.get(f.key)?.push({ slug: m[1], number: Number(m[2]) });
       }
     return out;
   }
 
+  /** @param {{ repo: string | null }} ticket */
   const suggest = (ticket) =>
     ticket.repo ? [{ target: ticket.repo, why: "issue's repo" }] : [];
 

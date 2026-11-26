@@ -17,6 +17,7 @@ const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 
 // The fields prDetails reads, for a pullRequest in GitHub's GraphQL API. A
 // check's isRequired needs the PR's number, so it's only asked by number.
+/** @param {boolean} required @param {string | number} [number] */
 const prFields = (
   required,
   number,
@@ -30,10 +31,12 @@ const prFields = (
 // PRs looked up per GraphQL query. Each lookup is an alias in it: p<i> for a
 // PR by number, b<i> for a branch (its name in the variable $b<i>).
 export const PRS_PER_QUERY = 10;
+/** @param {unknown} ref */
 const isNumber = (ref) => /^\d+$/.test(String(ref));
 
 // The query for `lookups` ({ alias, ref, number, required }). A number is
 // only ever digits, so it goes in as a literal.
+/** @param {any[]} lookups */
 function batchQuery(lookups) {
   const vars = lookups
     .filter((l) => !l.number)
@@ -52,6 +55,7 @@ function batchQuery(lookups) {
 // Each lookup's pullRequest node (null for none), or an Error for one that
 // failed, from one query's answer (`r`, the gh result). A query that failed as
 // a whole fails each of its lookups; "not found" is none.
+/** @param {any} r @param {any[]} lookups */
 function answers(r, lookups) {
   let body = null;
   try {
@@ -69,7 +73,8 @@ function answers(r, lookups) {
   }
   for (const l of lookups) {
     const err = body.errors?.find(
-      (e) => e.path?.[1] === l.alias && !NOT_FOUND.test(e.message),
+      (/** @type {any} */ e) =>
+        e.path?.[1] === l.alias && !NOT_FOUND.test(e.message),
     );
     if (err) {
       out.set(l.ref, new Error(err.message));
@@ -80,7 +85,9 @@ function answers(r, lookups) {
       l.ref,
       l.number
         ? (v ?? null)
-        : ((v?.nodes ?? []).find((p) => p?.state === "OPEN") ??
+        : ((v?.nodes ?? []).find(
+            (/** @type {any} */ p) => p?.state === "OPEN",
+          ) ??
             (v?.nodes ?? []).find(Boolean) ??
             null),
     );
@@ -146,16 +153,16 @@ export function parsePR(
   if (!pr) return null;
   const contexts = (
     pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes ?? []
-  ).filter((c) => !requiredOnly || c.isRequired);
+  ).filter((/** @type {any} */ c) => !requiredOnly || c.isRequired);
   const results = contexts.map(
-    (c) => c.conclusion || c.state || c.status || "",
+    (/** @type {any} */ c) => c.conclusion || c.state || c.status || "",
   );
   // A result we don't recognise counts as still running, never as passed.
   const checks = !results.length
     ? null
-    : results.some((x) => BAD.includes(x))
+    : results.some((/** @type {any} */ x) => BAD.includes(x))
       ? "failed"
-      : results.every((x) => OK.includes(x))
+      : results.every((/** @type {any} */ x) => OK.includes(x))
         ? "passed"
         : "pending";
   const mergeable = MERGE_STATES.includes(pr.mergeable)
@@ -171,7 +178,8 @@ export function parsePR(
     draft: pr.isDraft,
     review: pr.reviewDecision || null,
     checks,
-    checksPassed: results.filter((x) => OK.includes(x)).length,
+    checksPassed: results.filter((/** @type {any} */ x) => OK.includes(x))
+      .length,
     checksTotal: results.length,
     branch: pr.headRefName,
     base: pr.baseRefName ?? null,
@@ -187,7 +195,9 @@ export function parsePR(
         : mergeable,
     unresolved:
       pr.state === "OPEN"
-        ? (pr.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).length
+        ? (pr.reviewThreads?.nodes ?? []).filter(
+            (/** @type {any} */ t) => !t.isResolved,
+          ).length
         : null,
   };
 }
@@ -247,11 +257,14 @@ export async function prDetails(slug, ref, previous = null, opts = {}) {
   return pr ?? null;
 }
 
-export const markReady = (slug, number) =>
-  must("gh", ["pr", "ready", String(number), "--repo", slug], "gh pr ready");
+export const markReady = (
+  /** @type {string} */ slug,
+  /** @type {number} */ number,
+) => must("gh", ["pr", "ready", String(number), "--repo", slug], "gh pr ready");
 
 // The merge method GitHub's web UI offers you first for this repo.
 const mergeMethods = new Map();
+/** @param {string} slug */
 async function defaultMergeMethod(slug) {
   if (!mergeMethods.has(slug)) {
     const out = await must(
@@ -274,6 +287,7 @@ async function defaultMergeMethod(slug) {
 
 // Merges a PR now, or with `auto` once its requirements (reviews, checks) are
 // met, using the web UI's default merge method.
+/** @param {string} slug @param {number} number @param {{ auto?: boolean }} [opts] */
 export async function mergePr(slug, number, { auto = false } = {}) {
   const method = await defaultMergeMethod(slug);
   await must(
@@ -326,18 +340,22 @@ export function reviewQueue(data, slugs) {
   const me = data?.viewer?.login?.toLowerCase();
   const known = new Set(slugs.map((s) => s.toLowerCase()));
   return (data?.search?.nodes ?? [])
-    .filter((pr) => known.has(pr?.repository?.nameWithOwner?.toLowerCase()))
-    .map((pr) => {
+    .filter((/** @type {any} */ pr) =>
+      known.has(pr?.repository?.nameWithOwner?.toLowerCase()),
+    )
+    .map((/** @type {any} */ pr) => {
       const asked = (pr.timelineItems?.nodes ?? [])
-        .filter((e) => {
+        .filter((/** @type {any} */ e) => {
           const r = e?.requestedReviewer;
           return r?.__typename === "Team" || r?.login?.toLowerCase() === me;
         })
-        .map((e) => e.createdAt)
+        .map((/** @type {any} */ e) => e.createdAt)
         .sort();
       const reviewed = (pr.latestReviews?.nodes ?? [])
-        .filter((r) => r?.author?.login?.toLowerCase() === me)
-        .map((r) => r.submittedAt)
+        .filter(
+          (/** @type {any} */ r) => r?.author?.login?.toLowerCase() === me,
+        )
+        .map((/** @type {any} */ r) => r.submittedAt)
         .sort();
       return {
         slug: pr.repository.nameWithOwner,
@@ -352,10 +370,15 @@ export function reviewQueue(data, slugs) {
         deletions: pr.deletions ?? 0,
       };
     })
-    .filter((r) => !r.reviewedAt || r.reviewedAt < r.requestedAt)
-    .map(({ reviewedAt: _, ...r }) => r)
+    .filter(
+      (/** @type {any} */ r) => !r.reviewedAt || r.reviewedAt < r.requestedAt,
+    )
+    .map((/** @type {any} */ x) => {
+      const { reviewedAt: _, ...r } = x;
+      return r;
+    })
     .sort(
-      (a, b) =>
+      (/** @type {any} */ a, /** @type {any} */ b) =>
         a.requestedAt.localeCompare(b.requestedAt) ||
         a.slug.localeCompare(b.slug) ||
         a.number - b.number,

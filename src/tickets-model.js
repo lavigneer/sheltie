@@ -15,6 +15,7 @@
 // Action: idle -> running -> idle | failed, and failed -> running. While
 // running, nothing else starts; going to another screen clears `failed`.
 
+/** @type {Record<string, string[]>} */
 const NEXT = {
   tickets: ["listed", "failed"],
   listed: ["local", "failed"],
@@ -25,10 +26,12 @@ const NEXT = {
 };
 
 // The data a reload starts with: nothing known, the list loading.
+/** @param {number} gen */
 export const reloading = (gen) => ({ phase: "tickets", gen });
 
 // `data` moved to `phase`, with `fields` added. A move the table doesn't allow
 // is a bug, so it throws (the load's catch turns it into `failed`).
+/** @param {any} data @param {string} phase @param {Record<string, any>} [fields] */
 export function advance(data, phase, fields = {}) {
   if (!NEXT[data.phase]?.includes(phase))
     throw new Error(`tickets: ${data.phase} -> ${phase}`);
@@ -37,6 +40,7 @@ export function advance(data, phase, fields = {}) {
 
 // The data after a load fails. `shown`: the tickets on screen before a reload,
 // kept on screen (the list is what it was). Each of what the load had is kept.
+/** @param {any} data @param {{ shown?: any[], error: unknown }} opts */
 export function loadFailed(data, { shown, error }) {
   return advance(data, "failed", {
     tickets: data.tickets ?? shown ?? [],
@@ -52,11 +56,13 @@ const LOCAL_KNOWN = ["local", "linked", "ready"];
 
 // Whether each ticket's local work is known, so its screens can open: the
 // load has got that far, or failed after it.
+/** @param {any} d */
 export const localKnown = (d) =>
   LOCAL_KNOWN.includes(d.phase === "failed" ? d.from : d.phase);
 
 // No work on `key`, known for sure: from its local branches and the PRs its
 // tracker links while PR details are still loading, or, once ready, none at all.
+/** @param {any} d @param {string} key */
 export function noWork(d, key) {
   if (d.work?.get(key)?.length) return false;
   if (d.phase === "ready") return true;
@@ -64,5 +70,7 @@ export function noWork(d, key) {
 }
 
 export const idleAction = () => ({ phase: "idle" });
+/** @param {string} message */
 export const runningAction = (message) => ({ phase: "running", message });
+/** @param {unknown} error */
 export const failedAction = (error) => ({ phase: "failed", error });

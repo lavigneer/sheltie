@@ -17,6 +17,7 @@ export const TIGHT = 220;
 export const SHORT = 300;
 
 // The band a width falls in: "rail", "tight", "short" or "full".
+/** @param {number | null} width */
 export const fit = (width) =>
   band(width, [
     ["rail", RAIL],
@@ -30,6 +31,7 @@ export const WARN_MS = 4 * HOUR;
 export const LATE_MS = 24 * HOUR;
 
 // "3d", "5h", "12m": how long ago `iso` was.
+/** @param {string} iso @param {number} [now] */
 export function age(iso, now = Date.now()) {
   const m = Math.max(0, Math.floor((now - Date.parse(iso)) / 60_000));
   return m >= 1440
@@ -40,15 +42,18 @@ export function age(iso, now = Date.now()) {
 }
 
 // The theme colour for a wait of `ms`: "dim", "working", then "blocked".
+/** @param {number} ms */
 export const waitTone = (ms) =>
   ms >= LATE_MS ? "blocked" : ms >= WARN_MS ? "working" : "dim";
 
 // `input`: queue (reviewQueue's PRs), reviewed (review worktrees whose PR
 // left the queue), worktreeOf(pr), width, now. Returns { span, rows }; a
 // row: { key, pr, reviewed, title, sub, age, ageTone, done, tip }.
+/** @param {{ width: number | null, now?: number, queue: any[], reviewed: any[], worktreeOf: (pr: any) => any }} input */
 export function reviewsView(input) {
   const span = fit(input.width);
   const now = input.now ?? Date.now();
+  /** @param {any} r @param {string | null} author */
   const subOf = (r, author) =>
     [
       `${r.slug.split("/")[1]} #${r.number}`,

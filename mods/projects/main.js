@@ -55,21 +55,21 @@ async function scan() {
 
 export default class Projects extends View {
   /** @type {number} */
-  at;
+  at = /** @type {any} */ (undefined);
   /** @type {string[] | null} */
-  repos;
+  repos = /** @type {any} */ (undefined);
   /** @type {Map<string, string[]>} */
-  linked;
+  linked = /** @type {any} */ (undefined);
   /** @type {string[]} */
-  problems;
-  init(_props, cx) {
+  problems = /** @type {any} */ (undefined);
+  init(/** @type {any} */ _props, /** @type {any} */ cx) {
     this.filter = "";
     this.at = 0;
     this.repos = null; // null while the first scan runs
     this.linked = new Map(); // repo path -> its worktrees' paths
     this.problems = [];
     this.input = InputState.new({ placeholder: "Open a project…" });
-    this.input.on("change", (_e, cx) => {
+    this.input.on("change", (/** @type {any} */ _e, /** @type {any} */ cx) => {
       this.filter = this.input.value();
       this.at = 0;
       cx.notify();
@@ -78,7 +78,7 @@ export default class Projects extends View {
     this.input.focus();
     cx.timer.after(600, () => this.input.focus());
     this.handle = cx.focus_handle();
-    cx.spawn(async (cx) => {
+    cx.spawn(async (/** @type {any} */ cx) => {
       const { repos, problems } = await scan();
       this.repos = repos;
       this.problems = problems;
@@ -100,7 +100,7 @@ export default class Projects extends View {
   // The space open on repo `path` (its main checkout), not one of its
   // worktrees' (they live inside it). Until its worktrees are listed, only
   // C.worktreeDir is left out. `live`: the pass's snapshot (spaces.js).
-  spaceAt(path, live) {
+  spaceAt(/** @type {any} */ path, /** @type {any} */ live) {
     return live.spaceOf(path, hubExcept(path, this.linked.get(path) ?? []));
   }
 
@@ -129,7 +129,7 @@ export default class Projects extends View {
     return rows;
   }
 
-  go(r) {
+  go(/** @type {any} */ r) {
     if (!r) return;
     this.dismiss();
     const open = this.spaceAt(r.path, herdrSpaces());
@@ -142,10 +142,10 @@ export default class Projects extends View {
     const rows = this.rows();
     this.at = Math.max(0, Math.min(this.at, rows.length - 1));
     const sel = rows[this.at];
-    const tilde = (p) =>
+    const tilde = (/** @type {any} */ p) =>
       p.startsWith(home()) ? `~${p.slice(home().length)}` : p;
 
-    const row = (r) =>
+    const row = (/** @type {any} */ r) =>
       h_flex()
         .id(`pj-${r.path}`)
         .mx(4)
@@ -155,8 +155,8 @@ export default class Projects extends View {
         .gap(10)
         .items_center()
         .cursor_pointer()
-        .when(r === sel, (el) => el.bg(t.hover))
-        .hover((s) => s.bg(t.hover))
+        .when(r === sel, (/** @type {any} */ el) => el.bg(t.hover))
+        .hover((/** @type {any} */ s) => s.bg(t.hover))
         .on_click(() => this.go(r))
         .child(
           div()
@@ -166,7 +166,9 @@ export default class Projects extends View {
             .truncate()
             // An open space tints the name; the active one is bold too.
             .text_color(r.space ? t.accent : t.foreground)
-            .when(Boolean(r.space?.active), (d) => d.font_semibold())
+            .when(Boolean(r.space?.active), (/** @type {any} */ d) =>
+              d.font_semibold(),
+            )
             .child(r.name),
         )
         .child(
@@ -200,7 +202,7 @@ export default class Projects extends View {
       .gap(10)
       .bg(t.popover)
       .text_size(13)
-      .on_key_down((e, cx) => {
+      .on_key_down((/** @type {any} */ e, /** @type {any} */ cx) => {
         if (!moveKey(e, this, rows.length, () => this.dismiss())) return;
         cx.stop_propagation();
         cx.notify();
