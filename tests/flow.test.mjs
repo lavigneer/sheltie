@@ -8,12 +8,15 @@ import { afterEach, test } from "node:test";
 import { live } from "herdr";
 import { C, useConfig } from "../src/config.js";
 import {
+  LADDER,
   nextSteps,
   prEvents,
   prLabel,
   rowSteps,
   runStep,
   START_MS,
+  STEPS,
+  stageOf,
   toneKey,
 } from "../src/flow.js";
 import { fixtureSpaces } from "../src/spaces.js";
@@ -424,6 +427,42 @@ test("prEvents: each transition from was to now", () => {
       want,
       name,
     );
+});
+
+// The ladder is declared once: every step is offered from stages the ladder
+// has, and each move it makes is one the ladder allows from there.
+test("LADDER: each step's stages and moves are ladder stages and moves", () => {
+  for (const s of STEPS) {
+    for (const from of s.from) {
+      assert.ok(LADDER[from], `${s.id} is offered from unknown stage ${from}`);
+      for (const to of s.to ?? [])
+        assert.ok(
+          LADDER[from].next.includes(to),
+          `${s.id} moves ${from} to ${to}, which the ladder doesn't allow`,
+        );
+    }
+  }
+});
+
+test("nextSteps: a step is offered only from the stages it names", () => {
+  const states = [
+    null,
+    draft,
+    approved,
+    { ...draft, mergeable: "CONFLICTING" },
+    { ...draft, state: "MERGED" },
+    { ...draft, state: "CLOSED" },
+    { ...approved, checks: "failed", unresolved: 2 },
+    { ...draft, draft: false, review: "CHANGES_REQUESTED" },
+  ];
+  for (const pr of states) {
+    const stage = stageOf(pr);
+    for (const step of nextSteps(pr))
+      assert.ok(
+        STEPS.find((s) => s.id === step.id).from.includes(stage),
+        `${step.id} offered from ${stage}`,
+      );
+  }
 });
 
 test("a PR's short word and glyph: the state that matters most", () => {
