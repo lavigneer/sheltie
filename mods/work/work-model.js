@@ -6,7 +6,7 @@
 // and the store (WorkStore, work.js). The View draws view()'s rows, handles
 // keys and clicks, and schedules scans and lookups.
 
-import { rowSteps, stillStarting } from "./flow.js";
+import { clearStale, rowSteps, stillStarting } from "./flow.js";
 import { hubExcept, sameSlug } from "./git.js";
 import { trackerOf } from "./tracker.js";
 import { costIn } from "./usage.js";
@@ -55,7 +55,7 @@ export class WorkModel {
     this.mainCheckouts = new Set();
     this.store = store; // repo state, tickets and PRs (work.js)
     this.tickets = store.tickets; // by ticket key
-    this.steps = new Map(); // worktree path -> { phase, text, at, staleAt }
+    this.steps = new Map(); // worktree path -> its last step (flow.js: STEP)
     // Folders of spaces that appeared while we run, and when: their agent is
     // starting until it first works (or START_MS passes), so it isn't offered
     // Draft PR before it has begun the ticket.
@@ -147,11 +147,7 @@ export class WorkModel {
         for (const w of all) {
           if (!this.store.ownsPR(w, ref, pr)) continue;
           if (entry.state === "found" && was) tell(w, was, pr);
-          const last = this.steps.get(w.path);
-          if (last?.staleAt <= asked) {
-            delete last.staleAt;
-            this.edits++;
-          }
+          if (clearStale(this.steps.get(w.path), asked)) this.edits++;
         }
         moved();
       },

@@ -71,7 +71,16 @@ import {
 } from "herdr";
 import { C, configReady } from "./config.js";
 import { recordFailure } from "./diagnostics.js";
-import { prEvents, runStep, START_MS } from "./flow.js";
+import {
+  prEvents,
+  runStep,
+  START_MS,
+  STEP,
+  stepDone,
+  stepFailed,
+  stepRunning,
+  stepState,
+} from "./flow.js";
 import { basename, openUrl } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
 import { RepoCache } from "./polling.js";
@@ -321,14 +330,14 @@ export default class Work extends View {
   step(cx, w, step, byKey = false) {
     const path = w.path;
     const steps = this.model.steps;
-    if (steps.get(path)?.phase === "running") return;
+    if (stepState(steps.get(path)) === STEP.RUNNING) return;
     const id = `${path}:${step.id}`;
     if (!this.nav.press(id, Boolean(step.confirm), byKey, Date.now())) {
       // Redraws once it expires.
       cx.timer.after(CONFIRM_MS, (cx) => this.wake(cx, "timer"));
       return this.wake(cx, "step");
     }
-    steps.set(path, { phase: "running", text: `${step.label}…` });
+    steps.set(path, stepRunning(`${step.label}…`));
     this.wake(cx, "step");
     const pr = this.model.prOf(w);
     // The ticket's work everywhere: worktrees and branches here, and the PRs
@@ -339,7 +348,7 @@ export default class Work extends View {
       try {
         const note = await runStep(step.id, w, pr, work);
         const at = Date.now();
-        steps.set(path, { phase: "done", text: note, at, staleAt: at });
+        steps.set(path, stepDone(note, at));
         // The note fades after NOTE_MS: nothing else may re-render by then.
         cx.timer.after(NOTE_MS + 50, (cx) => this.wake(cx, "timer"));
         if (step.kind === "direct")
@@ -350,7 +359,7 @@ export default class Work extends View {
           });
       } catch (e) {
         const text = `${e?.message ?? e}`.split("\n")[0];
-        steps.set(path, { phase: "failed", text, at: Date.now() });
+        steps.set(path, stepFailed(text, Date.now()));
         recordFailure("work", step.label, e, { path });
         notify({
           title: `${who}: ${step.label} failed`,

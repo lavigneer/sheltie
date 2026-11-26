@@ -6,7 +6,14 @@
 // Tones name theme colours ("blocked", "done", "muted", "dim", "working",
 // or a space status, which falls back to "accent" when the theme has none).
 
-import { prLabel, stageOf, toneKey } from "./flow.js";
+import {
+  prLabel,
+  STEP,
+  stageOf,
+  stepState,
+  succeeded,
+  toneKey,
+} from "./flow.js";
 import { band, RAIL } from "./sidebar.js";
 import { dollars } from "./usage.js";
 
@@ -104,10 +111,10 @@ export function workView(input) {
   const rowOf = (w) => {
     const space = input.spaceOf(w);
     const last0 = input.steps.get(w.path) ?? null;
-    const running = last0?.phase === "running";
+    const state = stepState(last0);
+    const running = state === STEP.RUNNING;
     // A success note fades after a minute; a failure stays until the next step.
-    const last =
-      last0?.phase === "done" && now - last0.at > NOTE_MS ? null : last0;
+    const last = succeeded(state) && now - last0.at > NOTE_MS ? null : last0;
     const entry = w.handle ? input.ticketOf(w) : null;
     const ticket = entry?.value ?? null;
     const prValue = input.prOf(w);
@@ -157,7 +164,7 @@ export function workView(input) {
       prValue?.state === "OPEN" && prValue.autoMerge ? ["auto-merge"] : [];
     // The row's third line: the last step's note, else these extras.
     const note = last
-      ? { text: last.text, tone: last.phase === "failed" ? "blocked" : "dim" }
+      ? { text: last.text, tone: state === STEP.FAILED ? "blocked" : "dim" }
       : extras.length
         ? { text: extras.join(" · "), tone: "dim" }
         : null;
@@ -217,7 +224,7 @@ export function workView(input) {
       pr,
       prValue,
       stack,
-      status: statusOf(space, last?.phase === "failed", pr),
+      status: statusOf(space, state === STEP.FAILED, pr),
       steps,
       last,
       note,

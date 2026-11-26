@@ -159,6 +159,13 @@ test("a success note fades after a minute; a running step hides the steps", () =
       .note;
   assert.equal(done(1_000_000 - 1000).text, "ok");
   assert.equal(done(0), null);
+  // Stale (its PR not looked up since) is still a success: it fades too.
+  const stale = (at) =>
+    view({
+      steps: new Map([[one, { phase: "done", text: "ok", at, staleAt: at }]]),
+    }).rows[1].note;
+  assert.equal(stale(1_000_000 - 1000).text, "ok");
+  assert.equal(stale(0), null);
   const running = view({
     steps: new Map([[one, { phase: "running", text: "Fix CI…" }]]),
   });
