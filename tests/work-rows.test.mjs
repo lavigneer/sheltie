@@ -46,6 +46,7 @@ const view = (over = {}) => {
     width: 400,
     steps: new Map(),
     confirm: null,
+    armed: () => false,
     picked: null,
     now: 1_000_000,
     spaceOf: (w) => spaces[w.path] ?? null,
@@ -180,7 +181,11 @@ test("selection: the focused space's row, picked steps clamp, confirming", () =>
   assert.equal(v.at, 1);
   assert.equal(v.step, 1);
   assert.equal(v.rows[1].steps[1].chosen, true);
-  const c = view({ confirm: { id: `${one}:finish`, byKey: true } }).rows[1];
+  const armed = `${one}:finish`;
+  const c = view({
+    confirm: { id: armed, byKey: true },
+    armed: (id) => id === armed,
+  }).rows[1];
   assert.equal(c.steps[1].confirming, true);
   assert.equal(c.steps[1].text, "Finish? Press again");
 });

@@ -51,9 +51,11 @@
 //   nav                    folded groups, the row and step the keys moved to
 //                          (dropped when the focused space changes) and the
 //                          step waiting for its second press (Nav, nav.js)
-//   watched                folders of spaces not yet listed as worktrees,
-//                          rechecked a few times (the tickets popup makes the
-//                          worktree first; an agent may make it later)
+//   arrivals               (work-model.js) the folders of new spaces: watched
+//                          until listed as worktrees, rechecked a few times
+//                          (the tickets popup makes the worktree first; an
+//                          agent may make it later), and their agent's
+//                          starting window
 // Git refreshes every 30 s and at once for a new space; PRs every 2 min (20 s
 // while CI runs or a merge is pending), tickets and their linked PRs every
 // 10 min (the rules live in work.js).
@@ -97,7 +99,6 @@ const GIT_MS = 30_000;
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
 const USAGE_MS = 120_000; // agent costs (see usage.js)
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
-const WATCH_TRIES = 3;
 const LINKS_W = 18; // a row's ↗ button
 
 export default class Work extends View {
@@ -106,7 +107,6 @@ export default class Work extends View {
     this.model = new WorkModel();
     this.nav = new Nav(); // folds, picked row and step, confirm (nav.js)
     this.by = null; // "repo" | "stage"; null: C.workGroupBy (once loaded)
-    this.watched = new Map(); // space folder -> tries
     this.repos = new RepoCache(); // the local repos (polling.js)
     this.hovered = null; // the path of the row under the pointer
     this.linksOpen = null; // the path of the row whose ↗ menu is open
@@ -180,6 +180,7 @@ export default class Work extends View {
       expanded: this.nav.expanded,
       width: this.width,
       confirm: this.nav.confirming(now),
+      armed: (id) => this.nav.armed(id, now),
       picked: this.nav.picked(active),
     });
   }
@@ -260,8 +261,7 @@ export default class Work extends View {
   // The local repos, found again when forced, when a watched space folder is
   // still unknown (it may be a new clone), or every REPOS_MS.
   localRepos(force) {
-    const pending = [...this.watched.values()].some((t) => t < WATCH_TRIES);
-    return this.repos.get(force || pending);
+    return this.repos.get(force || this.model.watching());
   }
 
   // The ticket and PR lookups that are due (WorkModel.lookups).
@@ -278,17 +278,7 @@ export default class Work extends View {
   // a little later.
   watchSpaces(cx, live) {
     this.model.settle(live, Date.now());
-    if (!this.model.groups) return;
-    const known = this.model.knownFolders();
-    const fresh = live.local
-      .filter((s) => s.folder)
-      .map((s) => s.folder.replace(/\/+$/, ""))
-      .filter((f) => !known.has(f) && !this.watched.has(f));
-    if (!fresh.length) return;
-    for (const f of fresh) {
-      this.watched.set(f, 0);
-      this.model.starting.set(f, Date.now());
-    }
+    if (!this.model.arrive(live, Date.now()).length) return;
     // Shows its steps once it's no longer starting, even if nothing changes.
     cx.timer.after(START_MS, (cx) => this.wake(cx, "timer"));
     cx.timer.after(0, (cx) => this.refresh(cx));
@@ -296,16 +286,8 @@ export default class Work extends View {
 
   // After a scan: folders now listed are done; the rest get another try soon.
   recheckWatched(cx) {
-    const known = this.model.knownFolders();
-    let again = false;
-    for (const [f, tries] of this.watched) {
-      if (known.has(f)) this.watched.delete(f);
-      else if (tries + 1 < WATCH_TRIES) {
-        this.watched.set(f, tries + 1);
-        again = true;
-      } else this.watched.set(f, WATCH_TRIES); // given up: the 30 s poll covers it
-    }
-    if (again && !this.watchTimer) {
+    this.model.recheck();
+    if (this.model.watching() && !this.watchTimer) {
       this.watchTimer = true;
       cx.timer.after(WATCH_MS, (cx) => {
         this.watchTimer = false;

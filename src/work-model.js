@@ -2,7 +2,7 @@
 // no View, timers or cx, so tests reach the real path.
 //
 // Owns the groups (repo -> hub + worktrees, from the store's scans), each
-// row's last step, the folders of spaces still starting, the agents' costs
+// row's last step, the new spaces' folders (arrivals, below), the agents' costs
 // and the store (WorkStore, work.js). The View draws view()'s rows, handles
 // keys and clicks, and schedules scans and lookups.
 
@@ -16,6 +16,10 @@ import { workView } from "./work-rows.js";
 // A row's space: a hub's leaves out its worktrees' folders (see spaceOf in
 // spaces.js). `live`: the pass's snapshot (herdrSpaces).
 export const spaceOf = (w, live) => live.spaceOf(w.path, w.except);
+
+// Rechecks of a new space's folder before we give up on it (the 30 s poll
+// still lists it later).
+export const WATCH_TRIES = 3;
 
 // What the rows show of the agents' costs (usage groups): each folder's.
 export const costsKey = (usage) =>
@@ -56,10 +60,14 @@ export class WorkModel {
     this.store = store; // repo state, tickets and PRs (work.js)
     this.tickets = store.tickets; // by ticket key
     this.steps = new Map(); // worktree path -> its last step (flow.js: STEP)
-    // Folders of spaces that appeared while we run, and when: their agent is
-    // starting until it first works (or START_MS passes), so it isn't offered
-    // Draft PR before it has begun the ticket.
-    this.starting = new Map();
+    // The new spaces' folders: folder -> { watch, tries, bornAt }. `watch` is
+    // "watching" (not yet a listed worktree; rechecked after each scan, up to
+    // WATCH_TRIES times), "gave up" (still not listed after that; the 30 s
+    // poll covers it) or "listed". `bornAt`: when its space appeared, while its
+    // agent is starting (until it first works or START_MS passes), so it isn't
+    // offered Draft PR before it has begun the ticket; null once it isn't.
+    // An entry goes once it is listed and no longer starting.
+    this.arrivals = new Map();
     this.usage = null; // usage groups (usage.js), for each row's agent cost
     // Bumped by what the store's versions don't cover: an adoption, a step's
     // stale mark clearing, a cost moving.
@@ -221,7 +229,7 @@ export class WorkModel {
       lookup: w.hub ? null : this.store.prEntry(w.repo, w.branch),
       last: this.steps.get(w.path),
       status: space?.status,
-      bornAt: this.starting.get(w.path),
+      bornAt: this.arrivals.get(w.path)?.bornAt ?? null,
       agentDone: live.agentDone(space),
       repo: w.repo,
     });
@@ -242,11 +250,51 @@ export class WorkModel {
     ]);
   }
 
-  // Forgets folders whose agent is no longer starting.
+  // Folders of local spaces that are neither known worktrees nor already
+  // arrivals: they start watching now, and their agent starts. Returns them
+  // (the View schedules the timers). `live`: spaces.js; `now`: ms.
+  arrive(live, now) {
+    if (!this.groups) return [];
+    const known = this.knownFolders();
+    const fresh = live.local
+      .filter((s) => s.folder)
+      .map((s) => s.folder.replace(/\/+$/, ""))
+      .filter((f) => !known.has(f) && !this.arrivals.has(f));
+    for (const f of fresh)
+      this.arrivals.set(f, { watch: "watching", tries: 0, bornAt: now });
+    return fresh;
+  }
+
+  // Whether any folder is still being watched (the next scan lists local repos
+  // again for it: they may be a new clone).
+  watching() {
+    return [...this.arrivals.values()].some((a) => a.watch === "watching");
+  }
+
+  // After a scan: a listed folder is listed; a watched one that still isn't
+  // gets another try, or gives up after WATCH_TRIES.
+  recheck() {
+    const known = this.knownFolders();
+    for (const [f, a] of this.arrivals) {
+      if (a.watch === "listed") continue;
+      if (known.has(f)) a.watch = "listed";
+      else if (a.watch === "gave up") continue;
+      else if (a.tries + 1 < WATCH_TRIES) a.tries++;
+      else a.watch = "gave up";
+    }
+  }
+
+  // Ends each arrival's starting window once its agent works or START_MS has
+  // passed, and forgets the listed ones that are no longer starting.
   settle(live, now) {
-    for (const [f, born] of this.starting)
-      if (!stillStarting(born, live.spaceOf(f)?.status, now))
-        this.starting.delete(f);
+    for (const [f, a] of this.arrivals) {
+      if (
+        a.bornAt != null &&
+        !stillStarting(a.bornAt, live.spaceOf(f)?.status, now)
+      )
+        a.bornAt = null;
+      if (a.watch === "listed" && a.bornAt == null) this.arrivals.delete(f);
+    }
   }
 
   // What the sidebar shows (work-rows.js) for Herdr's live data `live`

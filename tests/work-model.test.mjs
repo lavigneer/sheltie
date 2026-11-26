@@ -7,6 +7,8 @@ const { WorkStore } = await import("../src/work.js");
 const { WorkModel, stackOrder } = await import("../src/work-model.js");
 const { fixtureSpaces } = await import("../src/spaces.js");
 const { STEP, stepDone, stepState } = await import("../src/flow.js");
+const { START_MS } = await import("../src/flow.js");
+const { WATCH_TRIES } = await import("../src/work-model.js");
 
 const tracker = {
   name: "GitHub",
@@ -381,4 +383,73 @@ test("WorkModel.view and report: a row shows its ticket's other PRs in the repo 
     ],
   );
   assert.deepEqual(report.rows[0].stack, []);
+});
+
+// A new space's folder, arrived and then watched through the scans: it is
+// listed by the `appearsAt`-th scan (1-based), or never when 0.
+async function watchNew(appearsAt) {
+  const { m, repo, state } = model(["issue-1"]);
+  const folder = "/wt/new";
+  const live = (status = "idle") => ({
+    local: [{ folder }],
+    spaceOf: () => ({ status }),
+  });
+  await m.scan([repo]);
+  assert.deepEqual(m.arrive(live(), 0), [folder]);
+  assert.equal(m.watching(), true);
+  for (let scan = 1; scan <= (appearsAt || WATCH_TRIES); scan++) {
+    if (scan === appearsAt) state.branches.push("new");
+    await m.scan([repo]);
+    m.recheck();
+  }
+  return { m, folder, live };
+}
+
+test("arrivals: a folder listed on the first recheck stops being watched", async () => {
+  const { m, folder } = await watchNew(1);
+  assert.equal(m.arrivals.get(folder).watch, "listed");
+  assert.equal(m.watching(), false);
+});
+
+test("arrivals: a folder listed on a middle recheck stops being watched", async () => {
+  const { m, folder } = await watchNew(2);
+  assert.equal(m.arrivals.get(folder).watch, "listed");
+  assert.equal(m.watching(), false);
+});
+
+test("arrivals: a folder listed on the last recheck stops being watched", async () => {
+  const { m, folder } = await watchNew(3);
+  assert.equal(m.arrivals.get(folder).watch, "listed");
+  assert.equal(m.watching(), false);
+});
+
+test("arrivals: a folder that never appears gives up after WATCH_TRIES, and isn't re-watched", async () => {
+  const { m, folder, live } = await watchNew(0);
+  assert.equal(m.arrivals.get(folder).watch, "gave up");
+  assert.equal(m.arrivals.get(folder).tries, 2);
+  assert.equal(m.watching(), false);
+  assert.deepEqual(m.arrive(live(), 99), []);
+});
+
+test("arrivals: a space whose agent works inside the window leaves it at once", async () => {
+  const { m, folder, live } = await watchNew(0);
+  assert.equal(m.arrivals.get(folder).bornAt, 0);
+  m.settle(live("working"), START_MS - 1);
+  assert.equal(m.arrivals.get(folder).bornAt, null);
+});
+
+test("arrivals: the starting window ends at START_MS, else when the agent works", async () => {
+  const { m, folder, live } = await watchNew(0);
+  m.settle(live("idle"), START_MS - 1);
+  assert.equal(m.arrivals.get(folder).bornAt, 0);
+  m.settle(live("idle"), START_MS);
+  assert.equal(m.arrivals.get(folder).bornAt, null);
+});
+
+test("arrivals: a listed folder whose window has ended is forgotten", async () => {
+  const { m, folder, live } = await watchNew(1);
+  m.settle(live("idle"), START_MS - 1);
+  assert.ok(m.arrivals.has(folder));
+  m.settle(live("idle"), START_MS);
+  assert.equal(m.arrivals.has(folder), false);
 });
