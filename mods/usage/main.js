@@ -52,8 +52,8 @@ export default class Usage extends View {
   init(_props, cx) {
     this.state = LOADING;
     this.width = null;
-    // [{ home, windows }] once read; error: why the last read failed.
-    this.limits = { list: null, error: null };
+    // The plan limits, in settled()'s shape: list is [{ home, windows }].
+    this.limits = { phase: "idle", list: null, error: null };
     this.read(cx);
     this.readLimits(cx);
     cx.timer.every(REFRESH_MS, (cx) => this.load(cx));
@@ -68,16 +68,17 @@ export default class Usage extends View {
   }
 
   readLimits(cx) {
-    if (this.limitsLoading) return;
-    this.limitsLoading = true;
+    if (this.limits.phase === "loading") return;
+    this.limits = { ...this.limits, phase: "loading" };
     cx.spawn(async (cx) => {
-      try {
-        await configReady();
-        this.limits = { list: await planLimits(), error: null };
-      } catch (e) {
-        this.limits = { ...this.limits, error: `${e.message ?? e}` };
-      }
-      this.limitsLoading = false;
+      this.limits = await settled(
+        this.limits,
+        async () => {
+          await configReady();
+          return planLimits();
+        },
+        "list",
+      );
       cx.notify();
     });
   }
@@ -175,7 +176,8 @@ export default class Usage extends View {
             .child(amount(s)),
         );
 
-    const refreshing = this.state.phase === "loading" || this.limitsLoading;
+    const refreshing =
+      this.state.phase === "loading" || this.limits.phase === "loading";
     const header = h_flex()
       .h(30)
       .flex_none()

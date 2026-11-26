@@ -244,14 +244,15 @@ export async function usageGroups(maxAge = SHARE_MS) {
 // error }. groups is null until a read succeeds; a failed read keeps the last.
 export const LOADING = { phase: "loading", groups: null, error: null };
 
-// The state after `read` (which resolves to groups) finishes.
-export async function settled(state, read) {
+// The state after `read` (which resolves to the payload stored under `key`)
+// finishes. The plan limits use the same shape with key "list".
+export async function settled(state, read, key = "groups") {
   try {
-    return { phase: "ready", groups: await read(), error: null };
+    return { phase: "ready", [key]: await read(), error: null };
   } catch (e) {
     return {
       phase: "failed",
-      groups: state.groups,
+      [key]: state[key],
       error: e?.message ?? String(e),
     };
   }
