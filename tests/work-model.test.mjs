@@ -6,6 +6,7 @@ import { perRef } from "./fake-tools.mjs";
 const { WorkStore } = await import("../src/work.js");
 const { WorkModel, stackOrder } = await import("../src/work-model.js");
 const { fixtureSpaces } = await import("../src/spaces.js");
+const { STEP, stepDone, stepState } = await import("../src/flow.js");
 const { START_MS } = await import("../src/flow.js");
 const { WATCH_TRIES } = await import("../src/work-model.js");
 
@@ -17,11 +18,13 @@ const tracker = {
 };
 const LIVE = fixtureSpaces({});
 
-// A model over one repo whose worktrees are `branches` (changeable).
-function model(branches) {
+// A model over one repo whose worktrees are `branches` (changeable). `now`:
+// the store's clock (its caches' too).
+function model(branches, { now = Date.now } = {}) {
   const repo = { slug: "me/app", path: "/src/app", name: "app", tracker };
   const state = { branches };
   const store = new WorkStore({
+    now,
     sources: {
       repoState: async () => ({
         worktrees: state.branches.map((branch) => ({
@@ -156,6 +159,48 @@ test("WorkModel.lookups: a linked PR found wakes before its lookup lands", async
   assert.notEqual(m.revision, was);
   land();
   await done;
+  delete tracker.linkedPRs;
+});
+
+// A step's stale mark (flow.js: STEP.STALE) is cleared by a PR lookup asked
+// after the step answered; the lookups below run at the clock's `clock.t`.
+test("WorkModel.lookups: a step answered during a lookup is refreshed by the next", async () => {
+  const clock = { t: 100 };
+  const { m, repo } = model(["issue-1"], { now: () => clock.t });
+  tracker.linkedPRs = async () => new Map();
+  await m.scan([repo]);
+  await m.store.tickets.refresh("#1", async () => ({ title: "One" }));
+  const path = "/wt/issue-1";
+  m.store.sources.prDetailsMany = perRef(async () => {
+    // Answers at 150, while this lookup (asked at 100) is in flight.
+    m.steps.set(path, stepDone("ok", 150));
+    return null;
+  });
+  await m.lookups(false);
+  assert.equal(stepState(m.steps.get(path)), STEP.STALE);
+  // Due again (its PR entry is older than PR_MS), asked after the answer.
+  clock.t = 1_000_000;
+  m.store.sources.prDetailsMany = perRef(async () => null);
+  await m.lookups(false);
+  assert.equal(stepState(m.steps.get(path)), STEP.DONE);
+  delete tracker.linkedPRs;
+});
+
+test("WorkModel.lookups: a failed PR lookup still refreshes a stale step", async () => {
+  const clock = { t: 100 };
+  const { m, repo } = model(["issue-1"], { now: () => clock.t });
+  tracker.linkedPRs = async () => new Map();
+  await m.scan([repo]);
+  await m.store.tickets.refresh("#1", async () => ({ title: "One" }));
+  const path = "/wt/issue-1";
+  m.steps.set(path, stepDone("ok", 50));
+  m.store.sources.prDetailsMany = perRef(async () => {
+    throw new Error("gh unreachable");
+  });
+  await m.lookups(false);
+  assert.equal(m.store.prEntry(repo, "issue-1").state, "failed");
+  // Not held back for a retry: the row is no longer stale.
+  assert.equal(stepState(m.steps.get(path)), STEP.DONE);
   delete tracker.linkedPRs;
 });
 

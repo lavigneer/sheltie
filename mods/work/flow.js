@@ -356,13 +356,62 @@ export const START_MS = 30_000;
 export const stillStarting = (bornAt, status, now) =>
   bornAt != null && status !== "working" && now - bornAt < START_MS;
 
+// A worktree's last step (WorkModel.steps: { phase, text, at, staleAt }) is in
+// one of these states. This is the one place they're named: rowSteps, the
+// rows' display (work-rows.js), the step runner (work/main.js) and the PR
+// refresh that clears a stale mark (WorkModel.lookups) all read them here.
+//   running  a step is being run: no steps are offered meanwhile
+//   stale    done, and its PR not looked up since (staleAt): no steps are
+//            offered, or the same one would be offered again; the next PR
+//            lookup started after the step answered (clearStale) makes it done
+//   done     done, its PR current: its note fades after NOTE_MS
+//   failed   the step failed: its note stays until the next step
+export const STEP = Object.freeze({
+  RUNNING: "running",
+  STALE: "stale",
+  DONE: "done",
+  FAILED: "failed",
+});
+
+// The state of `last` (a worktree's last step), or null when none has run.
+export function stepState(last) {
+  if (!last) return null;
+  if (last.phase === "running") return STEP.RUNNING;
+  if (last.phase === "failed") return STEP.FAILED;
+  return last.staleAt != null ? STEP.STALE : STEP.DONE;
+}
+
+// Whether a state is a step that succeeded (its note is a success note).
+export const succeeded = (state) => state === STEP.DONE || state === STEP.STALE;
+
+// The steps the runner writes: running, then done (stale until the PR is
+// looked up again) or failed. `at`: when the step answered.
+export const stepRunning = (text) => ({ phase: "running", text });
+export const stepDone = (text, at) => ({
+  phase: "done",
+  text,
+  at,
+  staleAt: at,
+});
+export const stepFailed = (text, at) => ({ phase: "failed", text, at });
+
+// Clears a stale step's mark when a PR lookup started at `asked` lands: a lookup
+// started after the step answered (staleAt <= asked) counts as a refresh. A
+// failed lookup counts too, so a row isn't held back for a retry. True when it
+// cleared.
+export function clearStale(last, asked) {
+  if (stepState(last) !== STEP.STALE || last.staleAt > asked) return false;
+  delete last.staleAt;
+  return true;
+}
+
 // A worktree row's next steps, or none while they'd mislead. `hub`: the row is
 // a repo's hub. `pr`, `lookup`: its PR and the store's lookup entry for it (no
 // PR before the lookup answers means "not known yet", not "no PR": guessing
-// Draft PR would flash a wrong, clickable button). `last`: its last step
-// ({ phase, staleAt }): none while one runs, nor while its PR is stale after
-// one (it would offer that step once more). `status`: its space's agent
-// status. `bornAt`, `now`: see stillStarting. `agentDone`, `repo`: see nextSteps.
+// Draft PR would flash a wrong, clickable button). `last`: its last step (see
+// STEP): none while it runs or while its PR is stale after it. `status`: its
+// space's agent status. `bornAt`, `now`: see stillStarting. `agentDone`, `repo`:
+// see nextSteps.
 /** @param {{ hub?: boolean, pr?: any, lookup?: { state: string } | null, last?: { phase: string, staleAt?: number } | null, status?: string | null, bornAt?: number | null, now?: number, agentDone?: boolean, repo?: any }} row */
 export function rowSteps({
   hub = false,
@@ -377,7 +426,8 @@ export function rowSteps({
 }) {
   if (hub) return [];
   if (!pr && (!lookup || lookup.state === "failed")) return [];
-  if (last?.phase === "running" || last?.staleAt) return [];
+  const state = stepState(last);
+  if (state === STEP.RUNNING || state === STEP.STALE) return [];
   return nextSteps(pr, {
     working: status === "working" || stillStarting(bornAt, status, now),
     agentDone,

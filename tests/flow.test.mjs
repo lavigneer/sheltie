@@ -8,6 +8,7 @@ import { afterEach, test } from "node:test";
 import { live } from "herdr";
 import { C, useConfig } from "../src/config.js";
 import {
+  clearStale,
   LADDER,
   nextSteps,
   prEvents,
@@ -15,8 +16,14 @@ import {
   rowSteps,
   runStep,
   START_MS,
+  STEP,
   STEPS,
   stageOf,
+  stepDone,
+  stepFailed,
+  stepRunning,
+  stepState,
+  succeeded,
   toneKey,
 } from "../src/flow.js";
 import { fixtureSpaces } from "../src/spaces.js";
@@ -532,6 +539,37 @@ test("rowSteps: none while a step runs or its PR is stale after one", () => {
     [],
   );
   assert.deepEqual(rowIds({ pr: draft, last: { phase: "done" } }), ["ready"]);
+});
+
+test("rowSteps: a failed step holds no steps back", () => {
+  const last = stepFailed("boom", 1);
+  assert.deepEqual(rowIds({ pr: draft, last }), ["ready"]);
+});
+
+test("stepState: names each state of a worktree's last step", () => {
+  assert.equal(stepState(null), null);
+  assert.equal(stepState(stepRunning("Fix CI…")), STEP.RUNNING);
+  assert.equal(stepState(stepDone("ok", 5)), STEP.STALE);
+  assert.equal(stepState({ phase: "done", text: "ok", at: 5 }), STEP.DONE);
+  assert.equal(stepState(stepFailed("boom", 5)), STEP.FAILED);
+  assert.equal(succeeded(STEP.STALE), true);
+  assert.equal(succeeded(STEP.DONE), true);
+  assert.equal(succeeded(STEP.FAILED), false);
+  assert.equal(succeeded(STEP.RUNNING), false);
+});
+
+test("clearStale: a lookup started after the step answered clears it", () => {
+  // The step answered at 5: a lookup asked at 4 (before) doesn't count.
+  const last = stepDone("ok", 5);
+  assert.equal(clearStale(last, 4), false);
+  assert.equal(stepState(last), STEP.STALE);
+  // One asked at 5 or later does (a step's own refresh is asked at once).
+  assert.equal(clearStale(last, 5), true);
+  assert.equal(stepState(last), STEP.DONE);
+  assert.equal(clearStale(last, 9), false);
+  // Nothing stale: nothing to clear.
+  assert.equal(clearStale(null, 9), false);
+  assert.equal(clearStale(stepFailed("boom", 5), 9), false);
 });
 
 test("rowSteps: a new space's agent gets START_MS to start working", () => {
