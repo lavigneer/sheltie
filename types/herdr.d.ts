@@ -43,8 +43,11 @@ export function run(action: string, args?: Record<string, unknown>): unknown;
 export function notify(n: {
   title: string;
   body?: string;
-  level?: "info" | "warning" | "error";
-}): void;
+  level?: "info" | "success" | "warning" | "error";
+  timeout?: number;
+  icon?: string;
+  action?: { name: string; args?: Record<string, unknown> };
+}): string;
 export function shared(key: string): any;
 export function setShared(key: string, value: unknown): void;
 export function readTextFile(path: string): Promise<string | null>;
@@ -53,3 +56,11 @@ export function writeTextFile(
   text: string,
   expected: string | null,
 ): Promise<null>;
+
+// The rest of the mods' Herdr imports, typed loosely (the mods' check doesn't
+// type the UI API). The kinds follow Herdr's SDK: functions are functions.
+export function theme(): any;
+export function props(): any;
+export function focused(): any;
+export function nextCommand(): Promise<string>;
+export function closeOverlay(id: string): any;

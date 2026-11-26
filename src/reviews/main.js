@@ -26,6 +26,14 @@ import { serial } from "./watch.js";
 export { age } from "./reviews-rows.js";
 
 export default class Reviews extends View {
+  /** @type {ReturnType<typeof serial>} */
+  refresh;
+  /** @type {ReviewsModel} */
+  model;
+  /** @type {Nav} */
+  confirm;
+  /** @type {(cx: any, r: any) => any} */
+  start;
   init(_props, cx) {
     this.width = null;
     this.model = new ReviewsModel(); // queue, worktrees, actions (reviews-model.js)

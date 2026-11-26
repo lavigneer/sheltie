@@ -1,0 +1,10 @@
+{
+  // Type checks the built mods (see scripts/typecheck-mods.mjs): the staged
+  // copy under node_modules/.cache, plus loose typings for Herdr's UI.
+  "extends": "./tsconfig.json",
+  "include": [
+    "node_modules/.cache/typecheck-mods/*/*.js",
+    "mods-typings/*.d.ts",
+    "types/*.d.ts"
+  ]
+}

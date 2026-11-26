@@ -93,6 +93,14 @@ const SCREENS = {
 };
 
 export default class Tickets extends View {
+  /** @type {Record<string, any>} */
+  inputs;
+  /** @type {any} */
+  input;
+  /** @type {number} */
+  at;
+  /** @type {Set<string>} */
+  marked;
   init(_props, cx) {
     this.screen = { name: "list" }; // | { name: "ticket" | "pick", ticket } | { name: "adhoc", description } (see SCREENS)
     this.data = reloading(0); // tickets-model.js: each phase's shape
@@ -877,7 +885,7 @@ export default class Tickets extends View {
             .px(14)
             .py(10)
             .text_size(12)
-            .text_color(empty[1] ? t.blocked : t.dim)
+            .text_color(empty?.[1] ? t.blocked : t.dim)
             .child(empty?.[0] ?? ""),
         ),
       )
