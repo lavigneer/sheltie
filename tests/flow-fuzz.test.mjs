@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { useConfig } from "../src/config.js";
-import { nextSteps, stageOf } from "../src/flow.js";
+import { LADDER, nextSteps, STEPS, stageOf } from "../src/flow.js";
 
 const SEED = Number(process.env.FUZZ_SEED ?? Date.now() % 2 ** 32) >>> 0;
 const RUNS = 2000;
@@ -62,8 +62,14 @@ test(`nextSteps/stageOf invariants hold over random PR states (FUZZ_SEED=${SEED}
     const ctx = `FUZZ_SEED=${SEED} run ${i}: ${JSON.stringify({ pr, flags, workflow })}`;
     useConfig({ workflow });
     const stage = stageOf(pr);
+    assert.ok(LADDER[stage], `stage ${stage} not on the ladder; ${ctx}`);
     const steps = nextSteps(pr, flags);
     const ids = steps.map((s) => s.id);
+    for (const id of ids)
+      assert.ok(
+        STEPS.find((s) => s.id === id).from.includes(stage),
+        `${id} offered from ${stage}; ${ctx}`,
+      );
 
     assert.equal(
       new Set(ids).size,
