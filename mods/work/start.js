@@ -46,11 +46,14 @@ import {
 
 const REMEMBER = "tickets.repo"; // shared: ticket key -> repo slug or path
 
+/** @param {import("./types.js").Repo} repo */
 export const repoId = (repo) => repo.slug || repo.path;
 
 // The repo last used for a ticket (a slug or path), for suggestRepos.
+/** @param {string} key */
 export const rememberedRepo = (key) => shared(REMEMBER)?.[key];
 
+/** @param {import("./types.js").Ticket} ticket @param {import("./types.js").Repo} repo */
 export function remember(ticket, repo) {
   setShared(REMEMBER, {
     ...(shared(REMEMBER) ?? {}),
@@ -59,6 +62,7 @@ export function remember(ticket, repo) {
 }
 
 // What the agent's first messages can say about a ticket.
+/** @param {import("./types.js").Ticket} ticket @param {{ repo?: import("./types.js").Repo }} [extra] */
 export function taskValues(ticket, extra = {}) {
   return {
     key: ticket.key,
@@ -72,6 +76,7 @@ export function taskValues(ticket, extra = {}) {
 }
 
 // The space's name: the ticket, plus the repo when it has work in others too.
+/** @param {import("./types.js").Ticket} ticket @param {import("./types.js").Repo} repo @param {any[]} [work] */
 export function spaceName(ticket, repo, work = []) {
   const others = work.filter((w) => repoId(w.repo) !== repoId(repo));
   return others.length ? `${ticket.label} ${repo.name}` : ticket.label;
@@ -79,6 +84,7 @@ export function spaceName(ticket, repo, work = []) {
 
 // A repo cloned in place of `target` in `repos` (or added), so later choices
 // find it local.
+/** @param {import("./types.js").Repo[]} repos @param {import("./types.js").Repo} target @param {import("./types.js").Repo} cloned */
 export function learnClone(repos, target, cloned) {
   const at = repos.indexOf(target);
   if (at >= 0) repos[at] = cloned;
@@ -99,7 +105,7 @@ export async function prepareStart(
   let repo = target;
   if (!repo.path) {
     onStep(`Cloning ${repo.slug}…`);
-    repo = await cloneRepo(repo.slug);
+    repo = await cloneRepo(/** @type {string} */ (repo.slug));
     learnClone(repos, target, repo);
   }
   const branch = branchFor(ticket, repo);
@@ -107,7 +113,12 @@ export async function prepareStart(
     (w) => w.repo.path === repo.path && w.branch === branch && w.worktree,
   );
   const path =
-    existing?.worktree ?? (await addWorktree(repo, branch, { create: true }));
+    existing?.worktree ??
+    (await addWorktree(
+      /** @type {import("./git.js").LocalRepo} */ (repo),
+      branch,
+      { create: true },
+    ));
   remember(ticket, repo);
   // Work has started: the tracker's "start" step (a Jira transition, if
   // configured). A failure is reported and stops nothing.
@@ -146,10 +157,12 @@ export function openSpaces(list) {
 }
 
 // A review's space name: "Review web#12".
+/** @param {any} review */
 export const reviewSpaceName = (review) =>
   `Review ${review.slug.split("/")[1]}#${review.number}`;
 
 // What agent.reviewTask can say about a review.
+/** @param {any} review */
 export const reviewValues = (review) => ({
   number: review.number,
   slug: review.slug,
@@ -188,7 +201,11 @@ export async function allReviewWorktrees(repos) {
     repos
       .filter((r) => r.path && r.slug)
       .map(async (repo) =>
-        (await reviewWorktrees(repo)).map((w) => ({
+        (
+          await reviewWorktrees(
+            /** @type {import("./git.js").LocalRepo} */ (repo),
+          )
+        ).map((w) => ({
           ...w,
           repo: /** @type {Repo & { path: string }} */ (repo),
           slug: /** @type {string} */ (repo.slug),
@@ -205,6 +222,7 @@ export async function allReviewWorktrees(repos) {
 /**
  * @param {Awaited<ReturnType<typeof allReviewWorktrees>>} worktrees
  * @param {{ slug: string, number: number }[]} queue
+ * @param {(slug: string, number: number) => Promise<any>} [state]
  */
 export async function sweepReviews(
   worktrees,

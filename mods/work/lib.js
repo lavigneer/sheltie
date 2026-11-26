@@ -4,10 +4,12 @@
 import { exec, run as herdrRun, spaces } from "herdr";
 import { C } from "./config.js";
 
+/** @param {string | null | undefined} text */
 export const firstLine = (text) => (text || "").trim().split("\n")[0];
 // "{name}" placeholders filled from `values`; unknown ones are left as they are.
+/** @param {string} template @param {Record<string, unknown>} values */
 export const fill = (template, values) =>
-  template.replace(/\{(\w+)\}/g, (m, k) => values[k] ?? m);
+  template.replace(/\{(\w+)\}/g, (m, k) => String(values[k] ?? m));
 
 // Runs one of the configured programs (C.programs: git, gh, jira, hc).
 // Calls to the APIs behind gh and jira go through `limits` below. `urgent`:
@@ -19,7 +21,9 @@ export const tool = (name, args, opts) =>
     ? limited(limits[name], name, args, opts)
     : run(name, args, opts);
 
-const run = (name, args, opts) => exec(C.programs[name], args, opts);
+/** @param {string} name @param {string[]} args @param {{ cwd?: string, urgent?: boolean }} [opts] */
+const run = (name, args, opts) =>
+  exec(/** @type {Record<string, string>} */ (C.programs)[name], args, opts);
 
 // GitHub and Jira rate-limit callers. At most `max` of their calls run at once
 // (GitHub's secondary limits punish bursts). When one answers "rate limited",
@@ -31,11 +35,20 @@ export const RATE_LIMITED =
   /rate limit|too many requests|\b429\b|abuse detection/i;
 const BACKOFF_MS = 60_000;
 const MAX_BACKOFF_MS = 15 * 60_000;
+
+/**
+ * @typedef {{
+ *   max: number, active: number, waiting: ((v?: any) => void)[], urgent: ((v?: any) => void)[],
+ *   until: number, backoff: number,
+ * }} Limit
+ */
+/** @type {Record<string, Limit>} */
 const limits = {
   gh: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
   jira: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
 };
 
+/** @param {Limit} l @param {string} name @param {string[]} args @param {{ cwd?: string, urgent?: boolean }} [opts] */
 async function limited(l, name, args, opts) {
   if (l.active >= l.max)
     await new Promise((go) => (opts?.urgent ? l.urgent : l.waiting).push(go));
@@ -82,6 +95,7 @@ export const NOT_FOUND =
 // gives null.
 /** @template T @param {(() => Promise<T>)[]} tasks @param {number} [size] @returns {Promise<(T | null)[]>} */
 export async function pool(tasks, size = 4) {
+  /** @type {(T | null)[]} */
   const out = new Array(tasks.length);
   let next = 0;
   const worker = async () => {
@@ -97,6 +111,7 @@ export async function pool(tasks, size = 4) {
 }
 
 // Opens a URL in the browser (xdg-open on Linux, open on macOS).
+/** @param {string} url */
 export async function openUrl(url) {
   try {
     const r = await exec("xdg-open", [url]);
@@ -107,11 +122,14 @@ export async function openUrl(url) {
   await exec("open", [url]).catch(() => {});
 }
 
-export const basename = (p) => p.replace(/\/+$/, "").split("/").pop();
+/** @param {string} p */
+export const basename = (p) => p.replace(/\/+$/, "").split("/").pop() ?? "";
+/** @param {string} dir @param {string} root */
 export const inside = (dir, root) => dir === root || dir.startsWith(`${root}/`);
 
 // Subsequence match ("dtf" matches "dotfiles"); a lower score is a better match,
 // null is no match.
+/** @param {string} text @param {string} query @returns {number | null} */
 export function score(text, query) {
   if (!query) return 0;
   const t = text.toLowerCase();
@@ -130,6 +148,7 @@ export function score(text, query) {
 }
 
 // Closes every local space started inside `dir` (its work is done there).
+/** @param {string} dir */
 export function closeSpacesIn(dir) {
   for (const s of spaces())
     if (!s.machine && s.folder && inside(s.folder, dir))
@@ -138,6 +157,7 @@ export function closeSpacesIn(dir) {
 
 // Up/Down and Ctrl+N/Ctrl+P move a selection through `n` rows; Esc calls `close`.
 // Returns true when it handled the key.
+/** @param {{ key: string, modifiers: { control?: boolean } }} e @param {{ at: number }} view @param {number} n @param {() => void} close */
 export function moveKey(e, view, n, close) {
   const k = e.key;
   if (k === "escape") {
@@ -153,11 +173,13 @@ export function moveKey(e, view, n, close) {
 }
 
 // The index `delta` steps from `at` among `n` items, wrapping around.
+/** @param {number} n @param {number} at @param {number} delta */
 export const cycle = (n, at, delta) => (((at + delta) % n) + n) % n;
 
 // A column's width for the longest of `texts`, estimated at `perChar` px a
 // character (text can't be measured from a mod) and capped at `max`: 0 when
 // they're all empty, so the column can go and give its space to the rest.
+/** @param {(string | null | undefined)[]} texts @param {number} perChar @param {number} max */
 export const columnWidth = (texts, perChar, max) => {
   const longest = Math.max(0, ...texts.map((s) => (s ?? "").length));
   return longest ? Math.min(max, Math.ceil(longest * perChar)) : 0;

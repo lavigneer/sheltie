@@ -15,20 +15,21 @@ import { workView } from "./work-rows.js";
 
 // A row's space: a hub's leaves out its worktrees' folders (see spaceOf in
 // spaces.js). `live`: the pass's snapshot (herdrSpaces).
-export const spaceOf = (w, live) => live.spaceOf(w.path, w.except);
+export const spaceOf = (/** @type {any} */ w, /** @type {any} */ live) =>
+  live.spaceOf(w.path, w.except);
 
 // Rechecks of a new space's folder before we give up on it (the 30 s poll
 // still lists it later).
 export const WATCH_TRIES = 3;
 
 // What the rows show of the agents' costs (usage groups): each folder's.
-export const costsKey = (usage) =>
-  JSON.stringify(usage?.map((g) => [g.dir, g.cost]) ?? null);
+export const costsKey = (/** @type {any} */ usage) =>
+  JSON.stringify(usage?.map((/** @type {any} */ g) => [g.dir, g.cost]) ?? null);
 
 // `prs` in stack order, bottom first: each PR after the one whose head branch
 // it is based on (its base). A PR whose base is none of them starts a chain;
 // siblings keep number order, and a cycle (none starts it) is walked by number.
-export function stackOrder(prs) {
+export function stackOrder(/** @type {any} */ prs) {
   const sorted = [...prs].sort((a, b) => a.number - b.number);
   const byBranch = new Map(sorted.map((p) => [p.branch, p]));
   const above = new Map(); // PR number -> the PRs based on it
@@ -39,9 +40,10 @@ export function stackOrder(prs) {
       above.set(under.number, [...(above.get(under.number) ?? []), p]);
     else roots.push(p);
   }
+  /** @type {any[]} */
   const out = [];
   const seen = new Set();
-  const walk = (p) => {
+  const walk = (/** @type {any} */ p) => {
     if (seen.has(p.number)) return;
     seen.add(p.number);
     out.push(p);
@@ -83,10 +85,10 @@ export class WorkModel {
 
   // Scans the repos' git state; true when it changed what is shown (the
   // groups are rebuilt only then: most scans find what the last one did).
-  async scan(repos) {
+  async scan(/** @type {any} */ repos) {
     const was = this.store.version;
     await this.store.scan(repos);
-    this.mainCheckouts = new Set(repos.map((r) => r.path));
+    this.mainCheckouts = new Set(repos.map((/** @type {any} */ r) => r.path));
     // The groups follow the scan only; lookups move the revision themselves.
     const changed = this.groups === null || this.store.version !== was;
     if (changed)
@@ -99,7 +101,7 @@ export class WorkModel {
             path: s.repo.path,
             branch: s.mainBranch,
             hub: true,
-            except: hubExcept(s.repo.path, s.linked),
+            except: hubExcept(/** @type {string} */ (s.repo.path), s.linked),
           },
           worktrees: s.worktrees.map((w) => {
             const row = { ...w, repo: s.repo };
@@ -112,7 +114,7 @@ export class WorkModel {
 
   // Gives worktrees whose branch names no ticket the one their PR (just
   // looked up as `ref`) names (WorkStore.adopt). True when one changed.
-  adopt(ref, pr) {
+  adopt(/** @type {any} */ ref, /** @type {any} */ pr) {
     if (!this.groups) return false;
     const changed = this.store.adopt(
       this.groups.flatMap((g) => g.worktrees),
@@ -163,19 +165,19 @@ export class WorkModel {
   }
 
   // A worktree's PR (WorkStore.rowFor); null for a hub or none known.
-  prOf(w) {
+  prOf(/** @type {any} */ w) {
     return w.hub ? null : this.store.rowFor(w).pr;
   }
 
   // The ticket's work everywhere (worktrees, branches, linked PRs), for a step.
-  workOf(w) {
+  workOf(/** @type {any} */ w) {
     return w.handle ? this.store.rowFor(w).items : [];
   }
 
   // The ticket's other PRs in `w`'s repo (a gh stack, or earlier PRs from
   // the same worktree), in stack order (stackOrder), the row's own PR
   // placed among them: the row shows them beside its own.
-  stackOf(w) {
+  stackOf(/** @type {any} */ w) {
     const own = this.prOf(w);
     const seen = new Map();
     for (const p of [own, ...this.workOf(w).map((i) => i.pr)])
@@ -188,24 +190,24 @@ export class WorkModel {
   // Whether `w`'s branch names a ticket: only one the tracker says it doesn't
   // know (e.g. "UTF-8" in "fix-utf-8") isn't. Not looked up yet, or
   // unreachable: still a ticket.
-  isTicket(w) {
+  isTicket(/** @type {any} */ w) {
     return (
       Boolean(w.handle) && this.tickets.get(w.handle.key)?.state !== "none"
     );
   }
 
   // Where `w`'s ticket is in the browser; null when its branch isn't a ticket.
-  async ticketUrl(w) {
+  async ticketUrl(/** @type {any} */ w) {
     return this.isTicket(w) ? await w.handle.url() : null;
   }
 
   // What the agents started in a row's folder have cost, in $, or null.
-  costOf(w) {
+  costOf(/** @type {any} */ w) {
     return this.usage ? costIn(this.usage, w.path) : null;
   }
 
   // Takes new usage groups; true when a row's cost moved.
-  setUsage(usage) {
+  setUsage(/** @type {any} */ usage) {
     const was = costsKey(this.usage);
     this.usage = usage;
     if (costsKey(usage) === was) return false;
@@ -214,7 +216,7 @@ export class WorkModel {
   }
 
   // The last step run on a row (unfaded: a report keeps its note), or null.
-  lastOf(w) {
+  lastOf(/** @type {any} */ w) {
     const last = this.steps.get(w.path);
     return last
       ? { phase: last.phase, text: last.text, at: last.at ?? null }
@@ -222,7 +224,11 @@ export class WorkModel {
   }
 
   // A row's next steps (rowSteps).
-  stepsOf(w, space, live) {
+  stepsOf(
+    /** @type {any} */ w,
+    /** @type {any} */ space,
+    /** @type {any} */ live,
+  ) {
     return rowSteps({
       hub: w.hub,
       pr: this.prOf(w),
@@ -236,7 +242,7 @@ export class WorkModel {
   }
 
   // The groups shown: repos with worktrees, or whose hub has a space.
-  shownGroups(live) {
+  shownGroups(/** @type {any} */ live) {
     return (this.groups ?? []).filter(
       (g) => g.worktrees.length || spaceOf(g.hub, live),
     );
@@ -253,13 +259,13 @@ export class WorkModel {
   // Folders of local spaces that are neither known worktrees nor already
   // arrivals: they start watching now, and their agent starts. Returns them
   // (the View schedules the timers). `live`: spaces.js; `now`: ms.
-  arrive(live, now) {
+  arrive(/** @type {any} */ live, /** @type {any} */ now) {
     if (!this.groups) return [];
     const known = this.knownFolders();
     const fresh = live.local
-      .filter((s) => s.folder)
-      .map((s) => s.folder.replace(/\/+$/, ""))
-      .filter((f) => !known.has(f) && !this.arrivals.has(f));
+      .filter((/** @type {any} */ s) => s.folder)
+      .map((/** @type {any} */ s) => s.folder.replace(/\/+$/, ""))
+      .filter((/** @type {any} */ f) => !known.has(f) && !this.arrivals.has(f));
     for (const f of fresh)
       this.arrivals.set(f, { watch: "watching", tries: 0, bornAt: now });
     return fresh;
@@ -286,7 +292,7 @@ export class WorkModel {
 
   // Ends each arrival's starting window once its agent works or START_MS has
   // passed, and forgets the listed ones that are no longer starting.
-  settle(live, now) {
+  settle(/** @type {any} */ live, /** @type {any} */ now) {
     for (const [f, a] of this.arrivals) {
       if (
         a.bornAt != null &&
@@ -301,7 +307,7 @@ export class WorkModel {
   // (spaces.js) at `now`, one pass over it; `ui` is the View's part: by,
   // folded, cap, expanded, width, confirm, picked. Adds active: the focused
   // space's id.
-  view(live, now, ui = {}) {
+  view(/** @type {any} */ live, /** @type {any} */ now, ui = {}) {
     const active = live.active;
     const view = workView({
       folded: new Set(),
@@ -309,13 +315,14 @@ export class WorkModel {
       groups: this.shownGroups(live),
       steps: this.steps,
       now,
-      spaceOf: (w) => spaceOf(w, live),
-      stepsOf: (w, space) => this.stepsOf(w, space, live),
-      prOf: (w) => this.prOf(w),
-      stackOf: (w) => (w.hub ? [] : this.stackOf(w)),
-      ticketOf: (w) => this.tickets.get(w.handle.key),
-      isTicket: (w) => this.isTicket(w),
-      costOf: (w) => this.costOf(w),
+      spaceOf: (/** @type {any} */ w) => spaceOf(w, live),
+      stepsOf: (/** @type {any} */ w, /** @type {any} */ space) =>
+        this.stepsOf(w, space, live),
+      prOf: (/** @type {any} */ w) => this.prOf(w),
+      stackOf: (/** @type {any} */ w) => (w.hub ? [] : this.stackOf(w)),
+      ticketOf: (/** @type {any} */ w) => this.tickets.get(w.handle.key),
+      isTicket: (/** @type {any} */ w) => this.isTicket(w),
+      costOf: (/** @type {any} */ w) => this.costOf(w),
     });
     return { ...view, active };
   }
@@ -323,14 +330,20 @@ export class WorkModel {
   // The report of the view's rows (view()), without the ticket URLs (null
   // until the View adds them, see ticketUrl). `extra`: the View's own fields
   // (renders).
-  report(rows, live, now, extra = {}) {
+  report(
+    /** @type {any} */ rows,
+    /** @type {any} */ live,
+    /** @type {any} */ now,
+    extra = {},
+  ) {
     return {
       at: now,
       loaded: this.groups !== null,
       ...extra,
-      rows: rows.map((r) => {
+      rows: rows.map((/** @type {any} */ r) => {
         const pr = r.prValue;
-        const confirming = r.steps.find((s) => s.confirming)?.id ?? null;
+        const confirming =
+          r.steps.find((/** @type {any} */ s) => s.confirming)?.id ?? null;
         return {
           path: r.w.path,
           hub: r.hub,
@@ -351,10 +364,10 @@ export class WorkModel {
           step: r.selected
             ? Math.max(
                 0,
-                r.steps.findIndex((s) => s.chosen),
+                r.steps.findIndex((/** @type {any} */ s) => s.chosen),
               )
             : null,
-          steps: r.steps.map((s) => ({
+          steps: r.steps.map((/** @type {any} */ s) => ({
             id: s.id,
             label: s.label,
             confirm: Boolean(s.confirm),
@@ -374,7 +387,7 @@ export class WorkModel {
             mergeable: pr.mergeable,
             unresolved: pr.unresolved ?? null,
           },
-          stack: r.stack.map((p) => ({
+          stack: r.stack.map((/** @type {any} */ p) => ({
             number: p.number,
             label: p.text,
             state: p.state,

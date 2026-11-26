@@ -26,15 +26,18 @@ import { serial } from "./watch.js";
 export { age } from "./reviews-rows.js";
 
 export default class Reviews extends View {
+  /** @type {number | null} */
+  width = null;
   /** @type {ReturnType<typeof serial>} */
-  refresh;
+  refresh = /** @type {any} */ (undefined);
   /** @type {ReviewsModel} */
-  model;
+  model = /** @type {any} */ (undefined);
   /** @type {Nav} */
-  confirm;
+  confirm = /** @type {any} */ (undefined);
   /** @type {(cx: any, r: any) => any} */
-  start;
-  init(_props, cx) {
+  start = /** @type {any} */ (undefined);
+  init(/** @type {any} */ _props, /** @type {any} */ cx) {
+    /** @type {number | null} */
     this.width = null;
     this.model = new ReviewsModel(); // queue, worktrees, actions (reviews-model.js)
     // Done reviewing closes a space and removes a worktree: like Work's Finish,
@@ -49,15 +52,15 @@ export default class Reviews extends View {
       cx.notify();
     });
     this.refresh(cx);
-    cx.timer.every(PR_MS, (cx) => this.refresh(cx));
+    cx.timer.every(PR_MS, (/** @type {any} */ cx) => this.refresh(cx));
   }
 
-  async doneReviewing(w, cx) {
+  async doneReviewing(/** @type {any} */ w, /** @type {any} */ cx) {
     await this.model.done(w);
     cx.notify();
   }
 
-  render(_cx) {
+  render(/** @type {any} */ _cx) {
     const t = theme();
     const { queue, failed, entry } = this.model;
     const view = reviewsView({
@@ -67,10 +70,15 @@ export default class Reviews extends View {
       width: this.width,
     });
     const rail = view.span === "rail";
-    const tone = (name) => t[name] ?? t.accent;
-    const message = (text, color) =>
+    const tone = (/** @type {any} */ name) => t[name] ?? t.accent;
+    const message = (/** @type {any} */ text, /** @type {any} */ color) =>
       div().px(14).py(4).text_size(11).text_color(color).child(text);
-    const button = (id, tip, glyph, onClick) =>
+    const button = (
+      /** @type {any} */ id,
+      /** @type {any} */ tip,
+      /** @type {any} */ glyph,
+      /** @type {any} */ onClick,
+    ) =>
       div()
         .id(id)
         .flex_none()
@@ -78,25 +86,27 @@ export default class Reviews extends View {
         .rounded(4)
         .text_size(11)
         .text_color(t.dim)
-        .hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .hover((/** @type {any} */ s) => s.bg(t.hover).text_color(t.foreground))
         .tooltip(tip)
-        .on_click((_e, cx) => {
+        .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
           cx.stop_propagation();
           onClick(cx);
         })
         .child(glyph);
 
     // Two lines: the title and its age; then the dim sub-line and the buttons.
-    const row = (v) => {
+    const row = (/** @type {any} */ v) => {
       const r = v.pr;
       return v_flex()
         .id(`review-${v.key}`)
         .px(14)
         .py(3)
         .cursor_pointer()
-        .hover((s) => s.bg(t.hover))
+        .hover((/** @type {any} */ s) => s.bg(t.hover))
         .tooltip(v.tip)
-        .on_click((_e, cx) => this.start(cx, r))
+        .on_click((/** @type {any} */ _e, /** @type {any} */ cx) =>
+          this.start(cx, r),
+        )
         .child(
           h_flex()
             .gap(6)
@@ -115,8 +125,9 @@ export default class Reviews extends View {
                 .flex_none()
                 .text_size(11)
                 .text_color(tone(v.ageTone))
-                .when(!v.reviewed && v.ageTone !== "dim", (d) =>
-                  d.font_semibold(),
+                .when(
+                  !v.reviewed && v.ageTone !== "dim",
+                  (/** @type {any} */ d) => d.font_semibold(),
                 )
                 .child(v.age),
             ),
@@ -139,7 +150,7 @@ export default class Reviews extends View {
                 openUrl(r.url),
               ),
             )
-            .when(v.done, (el) => {
+            .when(v.done, (/** @type {any} */ el) => {
               const w = this.model.worktreeOf(r);
               const armed =
                 Boolean(w) && this.confirm.armed(w.path, Date.now());
@@ -151,23 +162,29 @@ export default class Reviews extends View {
                   .rounded(4)
                   .text_size(11)
                   .text_color(armed ? t.blocked : t.dim)
-                  .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                  .hover((/** @type {any} */ s) =>
+                    s.bg(t.hover).text_color(t.foreground),
+                  )
                   .tooltip(
                     armed
                       ? "Click again: close its space, remove the worktree"
                       : "Done reviewing: close its space, remove the worktree",
                   )
-                  .on_click((_e, cx) => {
+                  .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
                     cx.stop_propagation();
                     // The first click arms it; the second, within CONFIRM_MS, runs.
                     const confirm = C.workflow.confirmFinish !== false;
                     if (
                       !this.confirm.press(w.path, confirm, false, Date.now())
                     ) {
-                      cx.timer.after(CONFIRM_MS, (cx) => cx.notify());
+                      cx.timer.after(CONFIRM_MS, (/** @type {any} */ cx) =>
+                        cx.notify(),
+                      );
                       return cx.notify();
                     }
-                    cx.spawn((cx) => this.doneReviewing(w, cx));
+                    cx.spawn((/** @type {any} */ cx) =>
+                      this.doneReviewing(w, cx),
+                    );
                   })
                   .child(armed ? "Done?" : "✓"),
               );
@@ -203,9 +220,11 @@ export default class Reviews extends View {
           .text_size(12.5)
           .text_color(t.dim)
           .cursor_pointer()
-          .hover((s) => s.bg(t.hover).text_color(t.foreground))
+          .hover((/** @type {any} */ s) =>
+            s.bg(t.hover).text_color(t.foreground),
+          )
           .tooltip(refreshing ? "Refreshing…" : "Refresh now")
-          .on_click((_e, cx) => {
+          .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
             cx.stop_propagation();
             this.refresh(cx, true);
           })
@@ -223,10 +242,10 @@ export default class Reviews extends View {
         : v_flex()
             .pb(6)
             .children(view.rows.map(row))
-            .when(!queue.length && !failed, (el) =>
+            .when(!queue.length && !failed, (/** @type {any} */ el) =>
               el.child(message("Nothing awaits your review", t.dim)),
             )
-            .when(failed, (el) =>
+            .when(failed, (/** @type {any} */ el) =>
               el.child(message("Couldn't ask GitHub; retrying", t.blocked)),
             );
 
@@ -234,7 +253,7 @@ export default class Reviews extends View {
       .id("reviews")
       .size_full()
       .min_h(0)
-      .on_size_change((size, cx) => {
+      .on_size_change((/** @type {any} */ size, /** @type {any} */ cx) => {
         if (resize(this, size.width, fit)) cx.notify();
       })
       .child(

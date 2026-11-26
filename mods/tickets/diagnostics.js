@@ -23,6 +23,7 @@ export const scrub = (text) =>
   SECRETS.reduce((t, re) => t.replace(re, "<redacted>"), text);
 
 // console isn't in the es2022 lib the type check uses; Herdr has it.
+/** @param {string} m */
 const logError = (m) => /** @type {any} */ (globalThis).console?.error(m);
 
 /**
@@ -63,6 +64,7 @@ export async function recordFailure(mod, what, error, context = {}) {
 }
 
 // Removes all but the newest KEEP records (names sort by time).
+/** @param {string} dir */
 async function prune(dir) {
   const ls = await exec("ls", ["-1", dir]);
   const old = ls.stdout

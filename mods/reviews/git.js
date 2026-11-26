@@ -13,9 +13,13 @@ import { errorMessage } from "./errors.js";
 import { basename, fill, firstLine, must, pool, tool } from "./lib.js";
 import { tracker } from "./tracker.js";
 
+/** @typedef {import("./types.js").Repo & { path: string }} LocalRepo */
+
+/** @param {string} cwd @param {...string} args */
 const git = (cwd, ...args) => tool("git", args, { cwd });
 
 // "owner/repo" from a GitHub remote URL, or null.
+/** @param {string} url */
 export function slugOf(url) {
   const m = (url || "")
     .trim()
@@ -88,6 +92,7 @@ export async function localRepos() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** @param {string} repoPath */
 async function ownSettings(repoPath) {
   const file = `${repoPath}/${REPO_FILE}`;
   const read = await readSettings(file);
@@ -108,6 +113,7 @@ async function ownSettings(repoPath) {
 }
 
 // The main checkout of the repo containing `dir` (also from inside a worktree), or null.
+/** @param {string} dir */
 export async function repoRoot(dir) {
   if (!dir) return null;
   const r = await git(
@@ -144,6 +150,7 @@ export function parseWorktrees(porcelain, repoPath) {
   };
 }
 
+/** @param {string} repoPath */
 export async function listWorktrees(repoPath) {
   const r = await git(repoPath, "worktree", "list", "--porcelain").catch(
     () => null,
@@ -154,6 +161,7 @@ export async function listWorktrees(repoPath) {
 // What a repo's main checkout (its hub) leaves out when matching its space:
 // the worktree folder and every listed worktree (`linked` paths), which live
 // inside it (e.g. <repo>/.worktrees/x, <repo>/.claude/worktrees/y).
+/** @param {string} repoPath @param {string[]} linked */
 export const hubExcept = (repoPath, linked) => [
   `${repoPath}/${C.worktreeDir}`,
   ...linked,
@@ -210,11 +218,13 @@ export async function repoState(repo) {
 // --- Worktrees --------------------------------------------------------------
 
 // A ticket's branch in `repo` (its `branch` setting, e.g. "{ref}" or "me/{ref}").
+/** @param {import("./types.js").Ticket} ticket @param {import("./types.js").Repo | null | undefined} repo */
 export const branchFor = (ticket, repo) =>
   fill(settingsOf(repo).branch, { ref: ticket.ref, key: ticket.key });
 
 // An ad-hoc branch (not tied to a ticket) in `repo`: its `branch` setting with a short kebab-case
 // slug of the description as its {ref}, or null when nothing's left of it.
+/** @param {string} description @param {import("./types.js").Repo | null | undefined} repo */
 export function adhocBranch(description, repo) {
   const slug = description
     .toLowerCase()
@@ -226,6 +236,7 @@ export function adhocBranch(description, repo) {
 
 // Where `branch`'s worktree goes: <repo>/<worktreeDir>/<its last part>. A
 // branch whose last part would step out of worktreeDir ("", ".", "..") throws.
+/** @param {import("./types.js").Repo} repo @param {string} branch */
 export function worktreePath(repo, branch) {
   const name = branch.split("/").pop() ?? "";
   if (name === "" || name === "." || name === "..")
@@ -234,6 +245,7 @@ export function worktreePath(repo, branch) {
 }
 
 // Keeps worktrees (`path` is one) out of the main checkout's `git status`.
+/** @param {LocalRepo} repo @param {string} path */
 async function excludeWorktrees(repo, path) {
   const rel = path.slice(repo.path.length + 1);
   if ((await git(repo.path, "check-ignore", "-q", rel)).code === 0) return;
@@ -255,6 +267,7 @@ async function excludeWorktrees(repo, path) {
 }
 
 // Where a review of PR #`number` is checked out: <repo>/<worktreeDir>/review-<number>.
+/** @param {import("./types.js").Repo} repo @param {number} number */
 export const reviewPath = (repo, number) =>
   `${repo.path}/${C.worktreeDir}/review-${number}`;
 
@@ -262,6 +275,7 @@ export const reviewPath = (repo, number) =>
 // worktree (reviewPath) and returns { path, existing }: an existing one is
 // left as it is. Only a click starts one, so the checkout is urgent (lib.js):
 // it doesn't wait behind the PR lookups the sidebars have queued.
+/** @param {LocalRepo} repo @param {number} number */
 export async function addReviewWorktree(repo, number) {
   const path = reviewPath(repo, number);
   const { linked } = await listWorktrees(repo.path);
@@ -282,6 +296,7 @@ export async function addReviewWorktree(repo, number) {
 }
 
 // `repo`'s review worktrees (see reviewPath): { number, path, branch }.
+/** @param {LocalRepo} repo */
 export async function reviewWorktrees(repo) {
   const prefix = `${repo.path}/${C.worktreeDir}/review-`;
   const { linked } = await listWorktrees(repo.path);
@@ -299,6 +314,7 @@ export async function reviewWorktrees(repo) {
 //   4. with `create`: a new branch from origin's default branch (new work).
 // Anything else is an error: an existing PR or branch never silently becomes an
 // empty look-alike branch cut from main.
+/** @param {LocalRepo} repo @param {string} branch @param {{ create?: boolean, pr?: any }} [opts] */
 export async function addWorktree(
   repo,
   branch,
@@ -309,8 +325,10 @@ export async function addWorktree(
   // Best effort: offline, local branches still work and new ones start from
   // the last fetched default branch.
   await git(repo.path, "fetch", "--quiet", "origin");
+  /** @param {string} ref */
   const has = async (ref) =>
     (await git(repo.path, "show-ref", "--verify", "--quiet", ref)).code === 0;
+  /** @param {...string} args */
   const add = (...args) => git(repo.path, "worktree", "add", ...args);
   let r;
   if (await has(`refs/heads/${branch}`)) r = await add(path, branch);
@@ -351,6 +369,7 @@ export async function addWorktree(
 }
 
 // Clones a repo that isn't local yet into the first root.
+/** @param {string} slug */
 export async function cloneRepo(slug) {
   const path = `${C.roots[0]}/${slug.split("/").pop()}`;
   await must("gh", ["repo", "clone", slug, path], `gh repo clone ${slug}`);
@@ -359,6 +378,7 @@ export async function cloneRepo(slug) {
 
 // After a merge: refuses if the worktree has uncommitted changes or commits
 // that aren't in the PR (its head is `prHead`), so nothing unpushed is lost.
+/** @param {string} path @param {string | null} [prHead] */
 export async function assertClean(path, prHead) {
   const status = await git(path, "status", "--porcelain");
   if (status.code !== 0)
@@ -374,6 +394,7 @@ export async function assertClean(path, prHead) {
 
 // Removes the worktree and deletes its local branch, if any (after
 // assertClean). GitHub has already deleted the remote branch.
+/** @param {LocalRepo} repo @param {string} path @param {string | null} branch @param {string | null} [prHead] */
 export async function removeWorktree(repo, path, branch, prHead) {
   await assertClean(path, prHead);
   const rm = await git(repo.path, "worktree", "remove", path);

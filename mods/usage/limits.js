@@ -15,6 +15,7 @@ import { C } from "./config.js";
 
 // The windows in /usage's text: [{ key, label, used (percent), resets
 // (text, or null) }]. key is "session" for the 5-hour window.
+/** @param {string} text */
 export function windows(text) {
   return [
     ...`${text ?? ""}`.matchAll(
@@ -34,10 +35,12 @@ export function windows(text) {
   }));
 }
 
+/** @param {string} p */
 const expandHome = (p) => p.replace(/^~(?=\/|$)/, home());
 
 // CLAUDE_CONFIG_DIR for a Claude Code home: "" (unset, even if Herdr has it)
 // for the default.
+/** @param {string} h */
 export const configDir = (h) => {
   const dir = expandHome(h).replace(/\/+$/, "");
   return dir === `${home()}/.claude` ? "" : dir;
@@ -77,6 +80,7 @@ const MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
 
 // A window's reset as a label: "resets 9:39pm" today, else "resets Nov 14,
 // 5:59pm". resets is windows()'s text ("Nov 8, 4:39pm"); null gives "".
+/** @param {string | null | undefined} resets @param {Date} [now] */
 export function resetsLabel(resets, now = new Date()) {
   if (!resets) return "";
   const today = `${MONTHS[now.getMonth()]} ${now.getDate()}, `;

@@ -18,9 +18,11 @@ export const SETTINGS_FILE = "sheltie.json";
 /** @type {Settings} */
 export const C = JSON.parse(JSON.stringify(DEFAULTS));
 
+/** @param {unknown} v */
 const isObject = (v) => v && typeof v === "object" && !Array.isArray(v);
 
 // `over` merged into `base`: objects key by key, everything else replaced.
+/** @param {any} base @param {any} over @returns {any} */
 export function merge(base, over) {
   if (!isObject(base) || !isObject(over))
     return over === undefined ? base : over;
@@ -88,6 +90,7 @@ export const REPO_SETTINGS = [
 // The settings for a repo whose REPO_FILE holds `over`, or null when it sets
 // none of REPO_SETTINGS (the global ones apply). `problem` names keys that
 // don't apply in a repo.
+/** @param {Record<string, any>} over @param {string} path */
 export function repoSettings(over, path) {
   const picked = Object.fromEntries(
     REPO_SETTINGS.filter((k) => k in over).map((k) => [k, over[k]]),
@@ -110,16 +113,19 @@ export const settingsOf = (repo) => repo?.settings ?? C;
 // Replaces the settings in use (for tests, and after loading).
 /** @param {Settings} settings @param {string | null} [problem] */
 export function useConfig(settings, problem = null) {
-  for (const k of Object.keys(C)) delete C[k];
+  for (const k of Object.keys(C))
+    delete (/** @type {Record<string, any>} */ (C)[k]);
   Object.assign(C, merge(DEFAULTS, settings), { problem });
   C.roots = C.roots.map(expandHome);
 }
 
+/** @param {string} p */
 const expandHome = (p) => p.replace(/^~(?=\/|$)/, home());
 
 // Program names to absolute paths via your login shell, which has the PATH a
 // terminal would (an app started from a launcher may not). Absolute paths and
 // names not found are kept as given.
+/** @param {Settings["programs"]} programs @returns {Promise<Record<string, string>>} */
 async function resolvePrograms(programs) {
   const names = Object.values(programs).filter((p) => !p.startsWith("/"));
   if (!names.length) return programs;

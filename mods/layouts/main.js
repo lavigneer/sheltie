@@ -9,11 +9,11 @@ import { props, run, shared, theme } from "herdr";
 import { REVIEW_COUNT, switcherTabs } from "./switcher.js";
 
 export default class Layouts extends View {
-  render(_cx) {
+  render(/** @type {any} */ _cx) {
     const t = theme();
     // The count pill: tinted ink on the hover fill, so it reads on both the
     // active tab (whose fill is also t.hover, hence the border) and the idle one.
-    const badge = (b) =>
+    const badge = (/** @type {any} */ b) =>
       div()
         .flex_none()
         .px(5)
@@ -28,7 +28,7 @@ export default class Layouts extends View {
         .font_semibold()
         .text_color(t[b.tone] ?? t.dim)
         .child(b.text);
-    const tab = (x) =>
+    const tab = (/** @type {any} */ x) =>
       div()
         .id(`layout-${x.layout}`)
         .flex_1()
@@ -41,14 +41,18 @@ export default class Layouts extends View {
         .rounded(5)
         .text_size(12)
         .text_color(x.active ? t.foreground : t.dim)
-        .when(x.active, (el) => el.bg(t.hover).font_semibold())
+        .when(x.active, (/** @type {any} */ el) =>
+          el.bg(t.hover).font_semibold(),
+        )
         .cursor_pointer()
-        .hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .hover((/** @type {any} */ s) => s.bg(t.hover).text_color(t.foreground))
         .on_click(() => {
           if (!x.active) run("layout.switch", { name: x.layout });
         })
         .child(div().min_w(0).truncate().child(x.label))
-        .when(Boolean(x.badge), (el) => el.child(badge(x.badge)));
+        .when(Boolean(x.badge), (/** @type {any} */ el) =>
+          el.child(badge(x.badge)),
+        );
     return h_flex()
       .id("layouts")
       .size_full()

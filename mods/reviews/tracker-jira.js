@@ -8,13 +8,16 @@ import { firstLine, must, NOT_FOUND, pool, tool } from "./lib.js";
 export function create(s) {
   const name = "jira";
 
+  /** @param {any} i */
   const ticketOf = (i) => ({
     key: i.key,
     label: i.key,
     ref: i.key,
     summary: i.fields?.summary ?? "",
     status: i.fields?.status?.name ?? "",
-    components: (i.fields?.components ?? []).map((c) => c.name),
+    components: (i.fields?.components ?? []).map(
+      (/** @type {any} */ c) => c.name,
+    ),
     labels: i.fields?.labels ?? [],
     project: i.key.split("-")[0],
     repo: null,
@@ -39,6 +42,7 @@ export function create(s) {
     return JSON.parse(out || "[]").map(ticketOf);
   }
 
+  /** @param {string} key */
   async function view(key) {
     const r = await tool("jira", ["issue", "view", key, "--raw"]);
     if (r.code !== 0) {
@@ -52,6 +56,7 @@ export function create(s) {
   // Moves the ticket for workflow step "start" | "review" | "done" (the
   // transitions in s.jira), unless it's already in that state. Returns a note,
   // or null when there's nothing to do.
+  /** @param {string} key @param {"start" | "review" | "done"} step @param {string | null} [status] */
   async function move(key, step, status = null) {
     const to = s.jira.transitions?.[step];
     if (!to || status === to) return null;
@@ -70,6 +75,7 @@ export function create(s) {
     return `${key} → ${to}`;
   }
 
+  /** @param {string} key */
   async function url(key) {
     const r = await tool("jira", ["open", key, "--no-browser"]).catch(
       () => null,
@@ -77,10 +83,13 @@ export function create(s) {
     return r?.code === 0 ? r.stdout.trim() || null : null;
   }
 
+  /** @param {string} key */
   const viewCommand = (key) => `jira issue view ${key} --plain --comments 20`;
+  /** @param {string} key */
   const labelOf = (key) => key;
 
   // Jira keys in a branch name or PR text: "me/WEB-142-fix" -> ["WEB-142"].
+  /** @param {string | null | undefined} text */
   const keysIn = (text) => [
     ...new Set(
       (text || "").toUpperCase().match(/\b[A-Z][A-Z0-9]+-\d+\b/g) ?? [],
@@ -88,6 +97,7 @@ export function create(s) {
   ];
 
   // The orgs/users to search for PRs: s.githubOwners plus owners of known repos.
+  /** @param {{ slug?: string | null }[]} repos */
   function owners(repos) {
     const all = new Set(s.githubOwners);
     for (const r of repos) if (r.slug) all.add(r.slug.split("/")[0]);
@@ -99,10 +109,13 @@ export function create(s) {
 
   // PRs that mention each key (title or body), across those owners:
   // Map key -> [{ slug, number }].
+  /** @param {string[]} keys @param {{ slug?: string | null }[]} repos */
   async function linkedPRs(keys, repos) {
+    /** @type {Map<string, { slug: string, number: number }[]>} */
     const out = new Map(keys.map((k) => [k, []]));
     const who = owners(repos);
     if (!keys.length || !who.length) return out;
+    /** @type {string[][]} */
     const chunks = [];
     for (let i = 0; i < keys.length; i += 6) chunks.push(keys.slice(i, i + 6));
     const found = await pool(
@@ -127,7 +140,7 @@ export function create(s) {
         if (mentioned.includes(k))
           out
             .get(k)
-            .push({ slug: p.repository?.nameWithOwner, number: p.number });
+            ?.push({ slug: p.repository?.nameWithOwner, number: p.number });
     }
     return out;
   }

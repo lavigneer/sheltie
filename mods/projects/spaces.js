@@ -37,12 +37,15 @@ export const fixtureSpaces = (data) =>
 function snapshot(source) {
   /** @type {any} */
   const got = {};
+  /** @template T @param {string} k @param {() => T} f @returns {T} */
   const once = (k, f) => {
     if (!(k in got)) got[k] = f();
     return got[k];
   };
+  /** @returns {any[]} */
   const local = () =>
     once("local", () => source.spaces().filter((s) => !s.machine));
+  /** @param {{ tabs: { id: string }[] }} space @returns {any[]} */
   const panesOf = (space) => {
     const byTab = once("byTab", () => {
       const m = new Map();
@@ -54,6 +57,7 @@ function snapshot(source) {
     });
     return space.tabs.flatMap((t) => byTab.get(t.id) ?? []);
   };
+  /** @param {string} address */
   const terminal = (address) =>
     once(
       "byAddress",
@@ -87,6 +91,7 @@ function snapshot(source) {
     // The agent terminal in a space: one reporting its status (Claude Code
     // does), else one running the configured agent program, else one
     // labelled agent=… (`hc label`; the demo's fake agent does that).
+    /** @param {any} space */
     agentIn(space) {
       if (!space) return null;
       const reported = once("agents", () => source.agents()).find(
@@ -104,6 +109,7 @@ function snapshot(source) {
 
     // Whether the agent terminal in a space says its PR is done: it has the
     // label pr=ready.
+    /** @param {any} space */
     agentDone(space) {
       const address = s.agentIn(space);
       if (!address) return false;
@@ -111,13 +117,16 @@ function snapshot(source) {
     },
   };
 
+  /** @param {string} dir @param {string[]} except */
   function find(dir, except) {
+    /** @param {string | null | undefined} p */
     const ok = (p) =>
-      Boolean(p) && inside(p, dir) && !except.some((e) => inside(p, e));
+      !!p && inside(p, dir) && !except.some((e) => inside(p, e));
     const byFolder = local().find((x) => ok(x.folder));
     if (byFolder) return byFolder;
+    /** @param {string | null | undefined} f */
     const elsewhere = (f) =>
-      Boolean(f) &&
+      !!f &&
       ((f !== dir && inside(dir, f)) || except.some((e) => inside(f, e)));
     return local().find(
       (x) => !elsewhere(x.folder) && panesOf(x).some((p) => ok(p.cwd)),
