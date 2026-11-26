@@ -4,6 +4,7 @@
 // Recording never throws: a failure to record is only logged.
 
 import { appHome, exec, writeTextFile } from "herdr";
+import { errorMessage } from "./errors.js";
 
 export const DIAGNOSTICS_DIR = "sheltie-diagnostics";
 export const KEEP = 50;
@@ -33,7 +34,7 @@ const logError = (m) => /** @type {any} */ (globalThis).console?.error(m);
  * @param {Record<string, unknown>} [context] anything else that helps (paths, keys)
  */
 export async function recordFailure(mod, what, error, context = {}) {
-  const message = `${/** @type {any} */ (error)?.message ?? error}`;
+  const message = errorMessage(error);
   const app = appHome();
   if (!app) return;
   try {
@@ -57,7 +58,7 @@ export async function recordFailure(mod, what, error, context = {}) {
     );
     await prune(dir);
   } catch (e) {
-    logError(`diagnostics: couldn't record: ${e?.message ?? e}`);
+    logError(`diagnostics: couldn't record: ${errorMessage(e)}`);
   }
 }
 

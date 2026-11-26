@@ -5,6 +5,7 @@
 
 import { appHome, exec, home } from "herdr";
 import { DEFAULTS } from "./defaults.js";
+import { errorMessage } from "./errors.js";
 
 export { DEFAULTS };
 
@@ -67,7 +68,7 @@ export async function readSettings(path) {
   } catch (e) {
     return {
       over: {},
-      problem: `${path}: ${e.message ?? e}; using the defaults`,
+      problem: `${path}: ${errorMessage(e)}; using the defaults`,
     };
   }
 }

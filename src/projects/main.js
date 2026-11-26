@@ -11,6 +11,7 @@ import { h_flex, Input, InputState, v_flex } from "gpui-base";
 import { div, svg, View } from "gpui-kit";
 import { closeOverlay, exec, home, props, run, theme } from "herdr";
 import { C, configReady } from "./config.js";
+import { errorMessage } from "./errors.js";
 import { hubExcept, listWorktrees } from "./git.js";
 import { basename, moveKey, pool, score } from "./lib.js";
 import { herdrSpaces } from "./spaces.js";
@@ -43,7 +44,7 @@ async function scan() {
           (r.stderr || "").trim().split("\n")[0] || `couldn't read ${root}`,
         );
     } catch (e) {
-      problems.push(`couldn't scan ${root}: ${e?.message ?? e}`);
+      problems.push(`couldn't scan ${root}: ${errorMessage(e)}`);
     }
   }
   return {

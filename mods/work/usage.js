@@ -20,6 +20,7 @@
 
 import { appHome, exec, home } from "herdr";
 import { C } from "./config.js";
+import { errorMessage } from "./errors.js";
 
 const PRICES_MS = 3_600_000;
 
@@ -253,7 +254,7 @@ export async function settled(state, read, key = "groups") {
     return {
       phase: "failed",
       [key]: state[key],
-      error: e?.message ?? String(e),
+      error: errorMessage(e),
     };
   }
 }
