@@ -5,7 +5,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
 const dir = mkdtempSync(join(tmpdir(), "sheltie-coverage-"));
@@ -79,4 +79,20 @@ const fmt = (r) =>
 console.log(`\n${fmt(head)}\n${w.map((n) => "-".repeat(n)).join("-|-")}`);
 for (const r of rows) console.log(fmt(r));
 
-process.exit(run.status ?? 1);
+// The gate: the shared modules (top-level src/*.js) that the unit tests load must
+// keep SHARED_LINE_MIN % of their lines covered. The mod entrypoints
+// (src/<mod>/main.js) are left out: the e2e suite runs them. types.js is typedefs
+// only, so no test loads it and it's left out too.
+const SHARED_LINE_MIN = 95;
+const shared = srcFiles.filter((f) => dirname(f) === "src" && covered.has(f));
+const sharedLF = shared.reduce((n, f) => n + covered.get(f).LF, 0);
+const sharedLH = shared.reduce((n, f) => n + covered.get(f).LH, 0);
+const sharedPct = sharedLF ? (100 * sharedLH) / sharedLF : 100;
+console.log(
+  `\nshared src/ modules: ${sharedPct.toFixed(2)}% of lines (gate: ${SHARED_LINE_MIN}%)`,
+);
+if (run.status !== 0) process.exit(run.status ?? 1);
+if (sharedPct < SHARED_LINE_MIN) {
+  console.error("coverage is below the gate");
+  process.exit(1);
+}

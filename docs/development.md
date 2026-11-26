@@ -3,7 +3,7 @@
 ```sh
 npm run build      # src/ -> mods/, types/settings.d.ts -> sheltie.schema.json (commit both)
 npm test           # node --test against throwaway demos
-npm run coverage   # npm test with coverage; lists every src file (unloaded ones at 0%)
+npm run coverage   # npm test with coverage; lists every src file (unloaded ones at 0%). CI fails when the shared src/ modules (top-level src/*.js) drop below 95% of lines
 npm run e2e        # the real Herdr with the mods, on throwaway demos
 npm run e2e:shots  # screenshots of the mods at a few sizes, in e2e-results/shots/
 npm run ci:lint    # Biome lint and format check, exactly as CI runs it
