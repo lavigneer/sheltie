@@ -12,8 +12,9 @@ export const fill = (template, values) =>
 // Runs one of the configured programs (C.programs: git, gh, jira, hc).
 // Calls to the APIs behind gh and jira go through `limits` below. `urgent`:
 // a person is waiting on the call (a click), so it takes the next free slot
-// ahead of the background lookups queued for one.
-/** @param {string} name @param {string[]} args @param {{ cwd?: string, urgent?: boolean }} [opts] @returns {Promise<import("herdr").ExecResult>} */
+// ahead of the background lookups queued for one. `timeoutMs`: how long a gh or
+// jira call may take (CALL_MS by default).
+/** @param {string} name @param {string[]} args @param {{ cwd?: string, urgent?: boolean, timeoutMs?: number }} [opts] @returns {Promise<import("herdr").ExecResult>} */
 export const tool = (name, args, opts) =>
   limits[name]
     ? limited(limits[name], name, args, opts)
@@ -31,6 +32,11 @@ export const RATE_LIMITED =
   /rate limit|too many requests|\b429\b|abuse detection/i;
 const BACKOFF_MS = 60_000;
 const MAX_BACKOFF_MS = 15 * 60_000;
+// A gh or jira call that hasn't answered by then counts as failed. A wedged one
+// would otherwise hold its slot forever, and with it every lookup queued behind
+// it (the Work and Reviews refreshes, and their ↻ spinners). exec can't kill
+// the process, so it may still finish later; its answer is dropped.
+const CALL_MS = 120_000;
 const limits = {
   gh: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
   jira: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
@@ -48,7 +54,12 @@ async function limited(l, name, args, opts) {
         stdout: "",
         stderr: `${name}: rate limited, retrying in ${Math.ceil(wait / 1000)} s`,
       };
-    const r = await run(name, args, opts);
+    const ms = opts?.timeoutMs ?? CALL_MS;
+    const r = await answerWithin(
+      run(name, args, opts),
+      ms,
+      `${name}: no answer after ${Math.round(ms / 1000)} s`,
+    );
     if (r.code !== 0 && RATE_LIMITED.test(`${r.stderr}\n${r.stdout}`)) {
       l.backoff = Math.min(
         l.backoff ? l.backoff * 2 : BACKOFF_MS,
@@ -61,6 +72,22 @@ async function limited(l, name, args, opts) {
     l.active--;
     (l.urgent.shift() ?? l.waiting.shift())?.();
   }
+}
+
+// `p`, or a failed result (with `why` as its stderr) if it hasn't settled in `ms`.
+// Timers come from the runtime's global (the mods' own, cx.timer, isn't in reach
+// here); without one the call just waits, as it did before.
+/** @type {any} */
+const timers = globalThis;
+/** @param {Promise<import("herdr").ExecResult>} p @param {number} ms @param {string} why @returns {Promise<import("herdr").ExecResult>} */
+function answerWithin(p, ms, why) {
+  const { setTimeout: later, clearTimeout: cancel } = timers;
+  if (!later) return p;
+  let timer;
+  const late = new Promise((done) => {
+    timer = later(() => done({ code: 1, stdout: "", stderr: why }), ms);
+  });
+  return Promise.race([p, late]).finally(() => cancel?.(timer));
 }
 
 // Runs a program and returns its stdout, or throws with its first error line.
