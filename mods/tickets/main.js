@@ -23,8 +23,8 @@
 // Opened with mod.open:tickets (prefix+t).
 //
 // State, each in one field and changed only through its setter (which redraws):
-//   screen  list -> ticket -> pick; list -> adhoc (a repo for ad-hoc work)
-//                                                                 go(); back() goes back one
+//   screen  list -> ticket -> pick; list -> adhoc (a repo for ad-hoc work);
+//           the moves are declared in SCREENS. go() moves on, back() goes back one
 //   data    tickets -> listed -> local -> linked -> ready | failed (tickets-model.js
 //           says what each knows and the moves between them); load(); a reload
 //           supersedes an older load, whose results are then dropped (gen)
@@ -81,9 +81,20 @@ import { listTickets, suggestRepos, workFor } from "./work.js";
 
 const repoLabel = (repo) => repo.slug || repo.name;
 
+// The popup's screens and every move between them. `to`: the screens a screen
+// can move to, back included; `back`: where ⌫ and the header's ‹ go (none on
+// the list: that closes the popup). go() throws on any other move, so a wrong
+// one fails loudly instead of landing on a screen.
+const SCREENS = {
+  list: { to: ["ticket", "adhoc"] },
+  ticket: { to: ["pick", "list"], back: "list" },
+  pick: { to: ["ticket"], back: "ticket" },
+  adhoc: { to: ["list"], back: "list" },
+};
+
 export default class Tickets extends View {
   init(_props, cx) {
-    this.screen = { name: "list" }; // | { name: "ticket" | "pick", ticket } | { name: "adhoc", description }
+    this.screen = { name: "list" }; // | { name: "ticket" | "pick", ticket } | { name: "adhoc", description } (see SCREENS)
     this.data = reloading(0); // tickets-model.js: each phase's shape
     this.action = idleAction();
     this.filter = "";
@@ -125,6 +136,10 @@ export default class Tickets extends View {
   // --- State --------------------------------------------------------------
 
   go(screen, cx) {
+    if (!SCREENS[this.screen.name].to.includes(screen.name))
+      throw new Error(
+        `Tickets: no move from ${this.screen.name} to ${screen.name}`,
+      );
     this.screen = screen;
     this.filter = "";
     this.input.set_value("");
@@ -137,11 +152,13 @@ export default class Tickets extends View {
   }
 
   back(cx) {
-    if (this.screen.name === "list") return this.dismiss();
+    const back = SCREENS[this.screen.name].back;
+    if (!back) return this.dismiss();
+    // A ticket's screen keeps its ticket.
     this.go(
-      this.screen.name === "pick"
-        ? { name: "ticket", ticket: this.screen.ticket }
-        : { name: "list" },
+      back === "ticket"
+        ? { name: back, ticket: this.screen.ticket }
+        : { name: back },
       cx,
     );
   }

@@ -3,7 +3,9 @@
 //   no PR ─► draft (CI …/✗/✓, comments, conflicts) ─► ready ─► approved ─► merged ─► finished
 //
 // A worktree's stage is derived from its pull request every time (nothing is
-// stored), and each stage offers its next steps:
+// stored). The stages and the moves between them are declared once, in LADDER;
+// STEPS names the stages each step is offered from, and the moves it makes.
+// Each stage offers its next steps:
 //   Draft PR / Fix CI / Address comments / Resolve conflicts
 //             sent to the space's agent (C.agent.steps: /draft-pr, /fix-ci,
 //             /address-comments, /resolve-conflicts by default). A PR that
@@ -34,6 +36,37 @@ import { herdrSpaces } from "./spaces.js";
 import { openWork, workName } from "./work.js";
 
 // --- Stage ------------------------------------------------------------------
+
+// Every stage a PR can be in (stageOf), in the order the Work sidebar groups
+// them, with `name` and the stages a PR can move to from it (`next`). A move is
+// made by a step (STEPS' `to`) or by hand on GitHub. `told`: the notice when a
+// PR enters the stage (prEvents).
+/** @type {Record<string, { name: string, next: string[], told?: { title: string, level: string, body?: string } }>} */
+export const LADDER = {
+  "no-pr": { name: "No PR", next: ["draft", "in-review", "approved"] },
+  draft: {
+    name: "Draft",
+    next: ["in-review", "approved", "merged", "closed"],
+  },
+  "in-review": {
+    name: "In review",
+    next: ["draft", "approved", "merged", "closed"],
+  },
+  approved: {
+    name: "Approved",
+    next: ["draft", "in-review", "merged", "closed"],
+  },
+  merged: {
+    name: "Merged",
+    next: [],
+    told: {
+      title: "merged",
+      level: "success",
+      body: "Finish removes the worktree and resolves the ticket.",
+    },
+  },
+  closed: { name: "Closed", next: ["draft", "in-review", "approved"] },
+};
 
 // pr: prDetails() (`unresolved`: a count, or null when unknown).
 export function stageOf(pr) {
@@ -119,14 +152,13 @@ export function prLabel(pr, span = "full") {
 export const toneKey = (tone) =>
   tone === "bad" ? "blocked" : tone === "good" ? "done" : "muted";
 
-// Whether a PR is offered Merge: open, ready, CI passed (not failed, pending
-// or missing) on a PR GitHub says can merge, nothing unresolved, auto-merge
-// off, and approved, or needing no review at all (a repo without required
-// reviews: reviewDecision is empty) unless the workflow's mergeWithoutReview
-// is false. `workflow`: the repo's (settingsOf(repo).workflow).
+// Whether a PR is offered Merge: CI passed (not failed, pending or missing) on
+// a PR GitHub says can merge, nothing unresolved, auto-merge off, and approved,
+// or needing no review at all (a repo without required reviews: reviewDecision
+// is empty) unless the workflow's mergeWithoutReview is false. The stages it's
+// offered from are the Merge step's (STEPS). `workflow`: the repo's
+// (settingsOf(repo).workflow).
 export function canMerge(pr, workflow = C.workflow) {
-  const stage = stageOf(pr);
-  if (stage !== "approved" && stage !== "in-review") return false;
   if (pr.checks !== "passed" || pr.mergeable !== "MERGEABLE") return false;
   if (pr.unresolved > 0 || pr.autoMerge) return false;
   if (pr.review === "APPROVED") return true;
@@ -137,9 +169,14 @@ export function canMerge(pr, workflow = C.workflow) {
 // (`pr`): [{ title, level: "success" | "error" | "warning", body? }]. A
 // conflict compares against `was.settled` (the last mergeable GitHub worked
 // out), so it's told once, not again after every push that doesn't fix it.
+// A move along LADDER is told by the stage it enters (`told`); CI, comments,
+// conflicts and reviews are told from the field that changed.
 export function prEvents(was, pr) {
   const events = [];
   const add = (title, level, body) => events.push({ title, level, body });
+  const from = stageOf(was);
+  const to = stageOf(pr);
+  const entered = LADDER[from].next.includes(to) ? LADDER[to].told : undefined;
   if (was.checks === "pending" && pr.checks === "passed")
     add(
       "CI passed",
@@ -169,12 +206,7 @@ export function prEvents(was, pr) {
     );
   if (was.review !== pr.review && pr.review === "CHANGES_REQUESTED")
     add("changes requested", "warning");
-  if (was.state !== "MERGED" && pr.state === "MERGED")
-    add(
-      "merged",
-      "success",
-      "Finish removes the worktree and resolves the ticket.",
-    );
+  if (entered) add(entered.title, entered.level, entered.body);
   return events;
 }
 
@@ -184,33 +216,40 @@ export function prEvents(was, pr) {
 //   id, kind      "agent" steps send C.agent.steps[id] to the space's agent
 //                 (offered only when that's set and the agent isn't working);
 //                 "direct" ones run `run`
+//   from          the LADDER stages it's offered from
+//   to            the stages it moves the PR to (none: it leaves the ticket's
+//                 PR alone, or tears it down); each must be a LADDER move
 //   label         text, or a function of the PR
-//   when(pr, x)   whether it's offered now; x: { stage, open, conflicts,
+//   when(pr, x)   whether it's offered now, beyond `from`; x: { conflicts,
 //                 green, working, agentDone, workflow }
 //   confirm(x)    whether it asks for a second click (direct steps)
 //   run(w, pr, work)  for direct steps: does it, returns a note
 // A PR that conflicts with its base offers only Resolve conflicts: GitHub
 // runs no CI on it, so nothing else can get it green.
 const confirmFinish = ({ workflow }) => workflow.confirmFinish !== false;
-const STEPS = [
+const OPEN = ["draft", "in-review", "approved"];
+export const STEPS = [
   {
     id: "draft-pr",
     kind: "agent",
     label: "Draft PR",
-    when: (_pr, x) => x.stage === "no-pr",
+    from: ["no-pr"],
+    to: ["draft"],
   },
   {
     id: "resolve-conflicts",
     kind: "agent",
     label: "Resolve conflicts",
     short: "Conflicts",
-    when: (_pr, x) => x.open && x.conflicts,
+    from: OPEN,
+    when: (_pr, x) => x.conflicts,
   },
   {
     id: "fix-ci",
     kind: "agent",
     label: "Fix CI",
-    when: (pr, x) => x.open && !x.conflicts && pr.checks === "failed",
+    from: OPEN,
+    when: (pr, x) => !x.conflicts && pr.checks === "failed",
   },
   {
     id: "address-comments",
@@ -223,17 +262,17 @@ const STEPS = [
       pr.unresolved > 0
         ? `${pr.unresolved} comment${pr.unresolved === 1 ? "" : "s"}`
         : "Review",
+    from: OPEN,
     when: (pr, x) =>
-      x.open &&
-      !x.conflicts &&
-      (pr.unresolved > 0 || pr.review === "CHANGES_REQUESTED"),
+      !x.conflicts && (pr.unresolved > 0 || pr.review === "CHANGES_REQUESTED"),
   },
   {
     id: "ready",
     kind: "direct",
     label: "Ready",
+    from: ["draft"],
+    to: ["in-review", "approved"],
     when: (pr, x) =>
-      x.stage === "draft" &&
       x.green &&
       !pr.unresolved &&
       (x.workflow.readyWhen !== "agent" || x.agentDone) &&
@@ -244,6 +283,8 @@ const STEPS = [
     id: "merge",
     kind: "direct",
     label: "Merge",
+    from: ["in-review", "approved"],
+    to: ["merged"],
     when: (pr, x) => !x.working && canMerge(pr, x.workflow),
     confirm: ({ workflow }) => workflow.confirmMerge !== false,
     run: async (w, pr) => {
@@ -255,7 +296,8 @@ const STEPS = [
     id: "finish",
     kind: "direct",
     label: "Finish",
-    when: (_pr, x) => x.stage === "merged",
+    from: ["merged"],
+    to: [],
     confirm: confirmFinish,
     run: (w, pr, work) => finish(w, pr, work, true),
   },
@@ -263,7 +305,8 @@ const STEPS = [
     id: "clean-up",
     kind: "direct",
     label: "Clean up",
-    when: (_pr, x) => x.stage === "closed",
+    from: ["closed"],
+    to: [],
     confirm: confirmFinish,
     run: (w, pr, work) => finish(w, pr, work, false),
   },
@@ -281,8 +324,6 @@ export function nextSteps(
 ) {
   const stage = stageOf(pr);
   const x = {
-    stage,
-    open: ["draft", "in-review", "approved"].includes(stage),
     conflicts: pr?.mergeable === "CONFLICTING",
     // Green: CI ran and passed (no checks: not started yet, or it never will
     // because the PR conflicts) on a PR GitHub says can merge (not "UNKNOWN":
@@ -294,8 +335,9 @@ export function nextSteps(
   };
   const steps = [];
   for (const s of STEPS) {
+    if (!s.from.includes(stage)) continue;
     if (s.kind === "agent" && (working || !C.agent.steps?.[s.id])) continue;
-    if (!s.when(pr, x)) continue;
+    if (s.when && !s.when(pr, x)) continue;
     const label = typeof s.label === "function" ? s.label(pr) : s.label;
     const short = typeof s.short === "function" ? s.short(pr) : s.short;
     const step = { id: s.id, label, short: short ?? label, kind: s.kind };

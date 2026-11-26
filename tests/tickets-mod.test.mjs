@@ -96,6 +96,34 @@ test("Tickets: Backspace in an empty search goes back from a ticket's screen", a
   assert.match(d.text(), /Speed up search/);
 });
 
+test("Tickets: Backspace on the repo picker goes back to the ticket's screen, with its ticket", async () => {
+  const d = await ready();
+  enterOn(d, "Fix the login");
+  const { key, label } = d.view.screen.ticket;
+  d.type("another repo");
+  d.submit();
+  assert.equal(d.view.screen.name, "pick");
+  d.key("backspace");
+  assert.equal(d.view.screen.name, "ticket");
+  assert.equal(d.view.screen.ticket.key, key);
+  assert.equal(d.view.screen.ticket.label, label);
+});
+
+test("Tickets: a move the screen graph doesn't declare throws instead of landing", async () => {
+  const d = await ready();
+  const ticket = { key: "1", label: "#1" };
+  assert.throws(
+    () => d.view.go({ name: "pick", ticket }, d.cx),
+    /no move from list to pick/,
+  );
+  enterOn(d, "Fix the login");
+  assert.throws(
+    () => d.view.go({ name: "adhoc", description: "x" }, d.cx),
+    /no move from ticket to adhoc/,
+  );
+  assert.equal(d.view.screen.name, "ticket");
+});
+
 test("Tickets: a ticket's screen picks another repo from Start in another repo…", async () => {
   const d = await ready();
   enterOn(d, "Fix the login");
