@@ -12,7 +12,7 @@ import path from "node:path";
 // state.json: { issues: { "<n>": { title, state, repo } }, prs: { "<branch>": node } }
 // where node is a GraphQL pullRequest node (see prFields in prs.js), and
 // reviews: [searchNode] for the review-request search (see reviewNode;
-// searchFails makes it fail).
+// searchFails makes it fail), and issuesFails makes the issue search fail.
 const GH = `#!/usr/bin/env node
 const fs = require("node:fs");
 const dir = ${"__DIR__"};
@@ -39,6 +39,7 @@ if (args[0] === "api" && args[1] === "graphql" && arg(/^q=(.*)$/s) !== undefined
 } else if (args[0] === "pr" && args[1] === "checkout") {
   // Succeeds in place: the review worktree stays on its detached HEAD.
 } else if (args[0] === "search" && args[1] === "issues") {
+  if (st.issuesFails) { process.stderr.write("HTTP 502\\n"); process.exit(1); }
   const at = args.indexOf("--repo");
   const repo = at >= 0 ? args[at + 1] : "me/app";
   out(Object.entries(st.issues ?? {}).filter(([, i]) => (i.state ?? "OPEN") === "OPEN").map(([n, i]) => ({
