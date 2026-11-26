@@ -134,8 +134,7 @@ export default class Reviews extends View {
             .when(v.done, (el) => {
               const w = this.model.worktreeOf(r);
               const armed =
-                Boolean(w) &&
-                this.confirm.confirming(Date.now())?.id === w.path;
+                Boolean(w) && this.confirm.armed(w.path, Date.now());
               return el.child(
                 div()
                   .id(`review-done-${v.key}`)

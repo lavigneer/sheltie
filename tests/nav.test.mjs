@@ -103,6 +103,20 @@ test("press: a confirm step runs on its second press, until CONFIRM_MS", () => {
   assert.equal(nav.confirming(22 + CONFIRM_MS), null);
 });
 
+test("armed: an id is armed from its first press until CONFIRM_MS", () => {
+  const nav = new Nav();
+  nav.press("a:finish", true, false, 0);
+  assert.ok(nav.armed("a:finish", CONFIRM_MS - 1));
+  assert.ok(!nav.armed("a:finish", CONFIRM_MS)); // expires at exactly CONFIRM_MS
+  assert.ok(!nav.armed("b:finish", 1)); // a different id is not armed
+  nav.press("a:finish", true, false, 2);
+  assert.ok(!nav.armed("a:finish", 3)); // the second press ran it: disarmed
+  nav.press("a:finish", true, false, 4);
+  nav.press("b:finish", true, false, 5); // another id arms and takes over
+  assert.ok(!nav.armed("a:finish", 6));
+  assert.ok(nav.armed("b:finish", 6));
+});
+
 test("fold: a group with no hub (by stage) drops a pick it hides", () => {
   const nav = new Nav();
   const rows = [row("/r/w1"), row("/x/w2")];

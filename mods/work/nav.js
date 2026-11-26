@@ -65,7 +65,7 @@ export class Nav {
   // A press of step `id` (unique across rows); one that `asks` runs on its
   // second press within CONFIRM_MS. Whether to run it now.
   press(id, asks, byKey, now) {
-    if (asks && this.confirming(now)?.id !== id) {
+    if (asks && !this.armed(id, now)) {
       this.pending = { id, byKey, until: now + CONFIRM_MS };
       return false;
     }
@@ -73,7 +73,14 @@ export class Nav {
     return true;
   }
 
+  // Whether step `id` is armed at `now`: its first press is waiting for the
+  // second, so the next press of it runs.
+  armed(id, now) {
+    return this.confirming(now)?.id === id;
+  }
+
   // The step waiting for its second press at `now`: { id, byKey } or null.
+  // For the look of the wait (byKey: a key press, not a click); use armed().
   confirming(now) {
     return this.pending && now < this.pending.until ? this.pending : null;
   }

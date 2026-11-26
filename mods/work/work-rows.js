@@ -87,6 +87,8 @@ function statusOf(space, failed, pr) {
 //   width      the sidebar's, or null
 //   steps      worktree path -> the last step run ({ phase, text, at })
 //   confirm    the step waiting for its second click ({ id, byKey }) or null
+//              (its byKey: the look of the wait)
+//   armed(id)  whether step id is waiting for its second click (Nav.armed)
 //   picked     the row and step the keys moved to ({ path, step }) or null
 //   now        Date.now()
 //   spaceOf(w), stepsOf(w, space), prOf(w), stackOf(w) (the ticket's other
@@ -164,7 +166,7 @@ export function workView(input) {
     const steps = running
       ? []
       : input.stepsOf(w, space).map((s, i) => {
-          const confirming = input.confirm?.id === `${w.path}:${s.id}`;
+          const confirming = input.armed(`${w.path}:${s.id}`);
           // A step button's label is never cut: narrow, it takes its short
           // label (and the buttons wrap).
           const name = narrow ? s.short : s.label;

@@ -171,6 +171,7 @@ export default class Work extends View {
       expanded: this.nav.expanded,
       width: this.width,
       confirm: this.nav.confirming(now),
+      armed: (id) => this.nav.armed(id, now),
       picked: this.nav.picked(active),
     });
   }
