@@ -10,6 +10,7 @@
     "noEmit": true,
     "strict": false,
     "strictNullChecks": true,
+    "useUnknownInCatchVariables": true,
     "skipLibCheck": true,
     "lib": ["es2022"],
     "types": [],

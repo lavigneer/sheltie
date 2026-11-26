@@ -4,8 +4,8 @@
 
 import { notify as herdrNotify } from "herdr";
 import { recordFailure } from "./diagnostics.js";
+import { errorText } from "./errors.js";
 import { localRepos } from "./git.js";
-import { errorText } from "./lib.js";
 
 export const PR_MS = 120_000; // between PR lookups (and Reviews refreshes)
 export const RETRY_MS = 60_000; // before a failed lookup is retried

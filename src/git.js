@@ -9,6 +9,7 @@ import {
   repoSettings,
   settingsOf,
 } from "./config.js";
+import { errorMessage } from "./errors.js";
 import { basename, fill, firstLine, must, pool, tool } from "./lib.js";
 import { tracker } from "./tracker.js";
 
@@ -98,7 +99,11 @@ async function ownSettings(repoPath) {
       problem: read.problem ?? problem,
     };
   } catch (e) {
-    return { settings: null, tracker: null, problem: `${file}: ${e.message}` };
+    return {
+      settings: null,
+      tracker: null,
+      problem: `${file}: ${errorMessage(e)}`,
+    };
   }
 }
 

@@ -73,6 +73,7 @@ import {
 } from "herdr";
 import { C, configReady } from "./config.js";
 import { recordFailure } from "./diagnostics.js";
+import { errorMessage } from "./errors.js";
 import {
   prEvents,
   runStep,
@@ -125,7 +126,7 @@ export default class Work extends View {
     this.starts = serial(async (cx) => {
       await configReady();
       await drainRequests(`${appHome()}/work-start`).catch((e) => {
-        console.error(`work.start: ${e?.message ?? e}`);
+        console.error(`work.start: ${errorMessage(e)}`);
         recordFailure("work.start", "drain requests", e);
       });
       this.refresh(cx, true);
@@ -133,7 +134,7 @@ export default class Work extends View {
     this.costs = serial(async (cx) => {
       await configReady();
       const usage = await usageGroups().catch((e) => {
-        console.error(`work: ${e?.message ?? e}`);
+        console.error(`work: ${errorMessage(e)}`);
         recordFailure("work", "usage", e);
         return this.model.usage;
       });
@@ -148,7 +149,7 @@ export default class Work extends View {
         try {
           this.command(cx, c);
         } catch (e) {
-          console.error(`work.${c}: ${e?.message ?? e}`);
+          console.error(`work.${c}: ${errorMessage(e)}`);
           recordFailure(`work.${c}`, "command", e);
         }
         this.wake(cx, "command");
@@ -240,7 +241,7 @@ export default class Work extends View {
           writeTextFile(file, `${JSON.stringify(out, null, 2)}\n`, old),
         )
         .catch((e) => {
-          console.error(`work.report: ${e?.message ?? e}`);
+          console.error(`work.report: ${errorMessage(e)}`);
           recordFailure("work.report", "write report", e);
         });
     });
@@ -340,7 +341,7 @@ export default class Work extends View {
             level: "success",
           });
       } catch (e) {
-        const text = `${e?.message ?? e}`.split("\n")[0];
+        const text = `${errorMessage(e)}`.split("\n")[0];
         steps.set(path, stepFailed(text, Date.now()));
         recordFailure("work", step.label, e, { path });
         notify({

@@ -14,6 +14,7 @@ import {
 } from "herdr";
 import { C } from "./config.js";
 import { recordFailure } from "./diagnostics.js";
+import { errorMessage, errorText } from "./errors.js";
 import {
   addReviewWorktree,
   addWorktree,
@@ -24,7 +25,10 @@ import {
   removeWorktree,
   reviewWorktrees,
 } from "./git.js";
-import { closeSpacesIn, errorText, fill } from "./lib.js";
+import { closeSpacesIn, fill } from "./lib.js";
+
+export { errorText };
+
 import { prDetails } from "./prs.js";
 import { herdrSpaces } from "./spaces.js";
 import {
@@ -43,7 +47,6 @@ import {
 const REMEMBER = "tickets.repo"; // shared: ticket key -> repo slug or path
 
 export const repoId = (repo) => repo.slug || repo.path;
-export { errorText };
 
 // The repo last used for a ticket (a slug or path), for suggestRepos.
 export const rememberedRepo = (key) => shared(REMEMBER)?.[key];
@@ -377,7 +380,7 @@ export async function drainRequests(dir, start = startRequested) {
       if (text == null) throw new Error(`couldn't read ${file}`);
       out.results = await start(JSON.parse(text));
     } catch (e) {
-      out.error = `${e?.message ?? e}`;
+      out.error = `${errorMessage(e)}`;
       recordFailure("work.start", "start", e, { request: text });
       notify({ title: "work.start failed", body: out.error, level: "error" });
     }
