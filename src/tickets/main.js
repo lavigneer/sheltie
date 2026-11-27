@@ -468,7 +468,7 @@ export default class Tickets extends View {
 
   openInBrowser(/** @type {any} */ ticket, /** @type {any} */ cx) {
     cx.spawn(async () => {
-      const url = await ticket.tracker.url(ticket.key).catch(() => null);
+      const url = await ticket.tracker.url(ticket.key, true).catch(() => null);
       if (url) await openUrl(url);
     });
   }

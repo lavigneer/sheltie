@@ -87,6 +87,47 @@ echo ok`,
   }
 });
 
+test("tool: an urgent gh call goes ahead during a rate-limit backoff", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { C } = await import("../src/config.js");
+  const { tool } = await import("../src/lib.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sheltie-gh-"));
+  const log = path.join(dir, "log");
+  const gh = path.join(dir, "gh");
+  fs.writeFileSync(
+    gh,
+    `#!/bin/sh
+echo "start $1" >> ${log}
+if [ "$1" = limit ]; then echo "API rate limit exceeded" >&2; exit 1; fi
+echo ok`,
+  );
+  fs.chmodSync(gh, 0o755);
+  const was = C.programs.gh;
+  C.programs.gh = gh;
+  try {
+    // Opens the window (a call that is refused without a request, if one is
+    // already open, so this holds either way).
+    assert.equal((await tool("gh", ["limit"])).code, 1);
+    fs.writeFileSync(log, "");
+
+    // A background lookup waits out the window, as before...
+    const lookup = await tool("gh", ["lookup"]);
+    assert.match(lookup.stderr, /rate limited, retrying in \d+ s/);
+    assert.equal(fs.readFileSync(log, "utf8"), "");
+
+    // ...but a click asks GitHub and gets its answer.
+    const click = await tool("gh", ["click"], { urgent: true });
+    assert.equal(click.code, 0);
+    assert.equal(click.stdout.trim(), "ok");
+    assert.equal(fs.readFileSync(log, "utf8"), "start click\n");
+  } finally {
+    C.programs.gh = was;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("columnWidth sizes to the longest text, capped, 0 when empty", async () => {
   const { columnWidth } = await import("../src/lib.js");
   assert.equal(columnWidth(["ab", "abcd", undefined], 6.5, 100), 26);

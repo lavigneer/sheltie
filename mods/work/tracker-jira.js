@@ -55,19 +55,24 @@ export function create(s) {
 
   // Moves the ticket for workflow step "start" | "review" | "done" (the
   // transitions in s.jira), unless it's already in that state. Returns a note,
-  // or null when there's nothing to do.
+  // or null when there's nothing to do. Only steps that a click runs reach
+  // here, so the move is urgent (lib.js).
   /** @param {string} key @param {"start" | "review" | "done"} step @param {string | null} [status] */
   async function move(key, step, status = null) {
     const to = s.jira.transitions?.[step];
     if (!to || status === to) return null;
     const resolution = step === "done" ? s.jira.resolution : null;
-    const r = await tool("jira", [
-      "issue",
-      "move",
-      key,
-      to,
-      ...(resolution ? ["--resolution", resolution] : []),
-    ]);
+    const r = await tool(
+      "jira",
+      [
+        "issue",
+        "move",
+        key,
+        to,
+        ...(resolution ? ["--resolution", resolution] : []),
+      ],
+      { urgent: true },
+    );
     if (r.code !== 0) {
       // jira-cli says which transition names it accepts on a later line; the
       // first line alone doesn't tell the user what to put in transitions.
@@ -83,11 +88,13 @@ export function create(s) {
     return `${key} → ${to}`;
   }
 
-  /** @param {string} key */
-  async function url(key) {
-    const r = await tool("jira", ["open", key, "--no-browser"]).catch(
-      () => null,
-    );
+  // Where to see the ticket. The work report asks for every row on each poll,
+  // so only a click (`urgent`, lib.js) gets past a rate-limit backoff.
+  /** @param {string} key @param {boolean} [urgent] */
+  async function url(key, urgent = false) {
+    const r = await tool("jira", ["open", key, "--no-browser"], {
+      urgent,
+    }).catch(() => null);
     return r?.code === 0 ? r.stdout.trim() || null : null;
   }
 
