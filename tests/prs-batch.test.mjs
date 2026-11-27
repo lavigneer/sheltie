@@ -8,7 +8,9 @@ import { test } from "node:test";
 import { prNode, sandbox } from "./fake-tools.mjs";
 
 const { C } = await import("../src/config.js");
-const { prDetailsMany, PRS_PER_QUERY } = await import("../src/prs.js");
+const { prDetailsMany, PRS_PER_QUERY, probePRs } = await import(
+  "../src/prs.js"
+);
 
 const graphqlCalls = (sb) =>
   sb.ghCalls().filter((a) => a[0] === "api" && a[1] === "graphql").length;
@@ -27,11 +29,12 @@ test("prDetailsMany: a number and a branch share one query, each answered", asyn
 });
 
 test("prDetailsMany: more than PRS_PER_QUERY lookups take one query per PRS_PER_QUERY", async () => {
+  const n = PRS_PER_QUERY + 1;
   const prs = Object.fromEntries(
-    Array.from({ length: 11 }, (_, i) => [`b${i}`, prNode(100 + i, `b${i}`)]),
+    Array.from({ length: n }, (_, i) => [`b${i}`, prNode(100 + i, `b${i}`)]),
   );
   const sb = sandbox({ state: { prs } });
-  const refs = [...Array.from({ length: 11 }, (_, i) => `b${i}`), "nobody"];
+  const refs = [...Array.from({ length: n }, (_, i) => `b${i}`), "nobody"];
   assert.equal(refs.length, PRS_PER_QUERY + 2);
   const m = await prDetailsMany(
     "me/app",
@@ -39,7 +42,26 @@ test("prDetailsMany: more than PRS_PER_QUERY lookups take one query per PRS_PER_
   );
   assert.equal(graphqlCalls(sb), 2);
   assert.equal(m.get("b0").number, 100);
-  assert.equal(m.get("b10").number, 110);
+  assert.equal(m.get(`b${n - 1}`).number, 100 + n - 1);
+  assert.equal(m.get("nobody"), null);
+});
+
+test("probePRs: many refs share one query, each answered by number, updatedAt and state", async () => {
+  const prs = Object.fromEntries(
+    Array.from({ length: 30 }, (_, i) => [`b${i}`, prNode(200 + i, `b${i}`)]),
+  );
+  const sb = sandbox({ state: { prs } });
+  const refs = [...Array.from({ length: 30 }, (_, i) => `b${i}`), 9, "nobody"];
+  const m = await probePRs("me/app", refs);
+  assert.equal(
+    graphqlCalls(sb),
+    1,
+    "a probe batch is bigger than a lookup batch",
+  );
+  assert.equal(m.get("b29").number, 229);
+  assert.equal(m.get("b29").state, "OPEN");
+  assert.equal(typeof m.get("b29").updatedAt, "string");
+  assert.equal(m.get(9), null);
   assert.equal(m.get("nobody"), null);
 });
 

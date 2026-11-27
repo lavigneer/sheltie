@@ -83,8 +83,15 @@ test("joinWork: a failed lookup leaves the item without a PR and adds nothing", 
 });
 
 // WorkStore: due/refresh and join on fake sources and a fake clock.
-const { WorkStore, PR_MS, ACTIVE_PR_MS, TICKET_MS, RETRY_MS, SWEEP_MS } =
-  await import("../src/work.js");
+const {
+  WorkStore,
+  PR_MS,
+  PR_FULL_MS,
+  ACTIVE_PR_MS,
+  TICKET_MS,
+  RETRY_MS,
+  SWEEP_MS,
+} = await import("../src/work.js");
 
 function fakeStore({ prs = {}, linked = {} } = {}) {
   let t = 0;
@@ -147,6 +154,87 @@ test("WorkStore: looks up only what is due, by the freshness rules", async () =>
   assert.equal(f.calls.linked, 2);
   await f.store.refresh(f.keys, { force: true });
   assert.equal(f.calls.pr.length, 4);
+});
+
+// A probe for fakeStore's PRs: each ref answered from `at` (its number and
+// updatedAt), and counted in `probes`.
+const probeSource = (at, probes) => async (_slug, refs) => {
+  probes.push(refs);
+  return new Map(
+    refs.map((r) => [
+      r,
+      at === null ? null : { number: 3, updatedAt: at, state: "OPEN" },
+    ]),
+  );
+};
+
+test("WorkStore: a quiet PR the probe finds unchanged is confirmed, not looked up in full", async () => {
+  const open = {
+    ...pr(3, "issue-1"),
+    checks: "passed",
+    mergeable: "MERGEABLE",
+    updatedAt: "t1",
+  };
+  const f = fakeStore({ prs: { "issue-1": open } });
+  const probes = [];
+  f.store.sources.prProbeMany = probeSource("t1", probes);
+  await f.store.scan([repo]);
+  await f.store.refresh(f.keys, { view: true });
+  assert.equal(f.calls.pr.length, 1);
+  f.tick(PR_MS + 1);
+  await f.store.refresh(f.keys, { view: true });
+  assert.deepEqual(probes, [["issue-1"]]);
+  assert.equal(f.calls.pr.length, 1, "unchanged: not looked up in full");
+  assert.equal(f.store.prEntry(repo, "issue-1").state, "found");
+  assert.equal(f.store.prEntry(repo, "issue-1").value.number, 3);
+  // Still confirmed by probes, until PR_FULL_MS since its last full lookup.
+  f.tick(PR_FULL_MS);
+  await f.store.refresh(f.keys, { view: true });
+  assert.equal(f.calls.pr.length, 2, "the ceiling: a full lookup again");
+});
+
+test("WorkStore: a probe that shows a new updatedAt, or fails, means a full lookup", async () => {
+  const open = {
+    ...pr(3, "issue-1"),
+    checks: "passed",
+    mergeable: "MERGEABLE",
+    updatedAt: "t1",
+  };
+  const f = fakeStore({ prs: { "issue-1": open } });
+  await f.store.scan([repo]);
+  f.store.sources.prProbeMany = probeSource("t1", []);
+  await f.store.refresh(f.keys, { view: true });
+  f.store.sources.prProbeMany = probeSource("t2", []);
+  f.tick(PR_MS + 1);
+  await f.store.refresh(f.keys, { view: true });
+  assert.equal(f.calls.pr.length, 2, "a new updatedAt");
+  f.store.sources.prProbeMany = async () => {
+    throw new Error("offline");
+  };
+  f.tick(PR_MS + 1);
+  await f.store.refresh(f.keys, { view: true });
+  assert.equal(f.calls.pr.length, 3, "a failed probe");
+});
+
+test("WorkStore: an active PR, or a forced refresh, is never probed", async () => {
+  const pending = {
+    ...pr(3, "issue-1"),
+    checks: "pending",
+    mergeable: "MERGEABLE",
+    updatedAt: "t1",
+  };
+  const f = fakeStore({ prs: { "issue-1": pending } });
+  const probes = [];
+  f.store.sources.prProbeMany = probeSource("t1", probes);
+  await f.store.scan([repo]);
+  await f.store.refresh(f.keys);
+  f.tick(ACTIVE_PR_MS + 1);
+  await f.store.refresh(f.keys);
+  assert.equal(f.calls.pr.length, 2, "checks pending: looked up in full");
+  assert.deepEqual(probes, [], "and not probed");
+  await f.store.refresh(f.keys, { force: true });
+  assert.equal(f.calls.pr.length, 3);
+  assert.deepEqual(probes, [], "forced: not probed");
 });
 
 test("WorkStore: an active PR is due sooner; a failure is retried and keeps the value", async () => {

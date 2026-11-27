@@ -44,6 +44,8 @@
  * @typedef {object} PR
  * @property {string} slug
  * @property {number} number
+ * @property {string | null} [updatedAt] when GitHub last changed it (probePRs
+ *   compares it: unchanged, its details are not looked up again)
  * @property {string} url
  * @property {string} title
  * @property {string} [body] its description (where a ticket key may be named)

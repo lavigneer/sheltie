@@ -6,7 +6,7 @@ import { C, REPO_FILE } from "./config.js";
 import { repoState, sameSlug, touchedRepos } from "./git.js";
 import { basename, pool } from "./lib.js";
 import { PR_MS, RETRY_MS } from "./polling.js";
-import { prDetailsMany } from "./prs.js";
+import { prDetailsMany, probePRs } from "./prs.js";
 import { handleOf, ticketOfBranch, tracker, trackerOf } from "./tracker.js";
 import { Cache } from "./watch.js";
 
@@ -260,6 +260,11 @@ export const ACTIVE_PR_MS = 20_000;
 export const TICKET_MS = 600_000;
 // How often every repo's git state is read, whatever the find says (WorkStore.scan).
 export const SWEEP_MS = 300_000;
+// How long a quiet PR (see WorkStore.unchanged) is trusted on its probe alone
+// after its last full lookup. Some changes don't move a PR's updatedAt (a
+// conflict after its base moves, a review thread resolved), so this is the
+// longest they can go unseen.
+export const PR_FULL_MS = 600_000;
 
 // How long a PR's details stay fresh: shorter while something you'd wait for
 // may change soon (conflicts, or not known yet: CI starts soon after a fix).
@@ -302,7 +307,12 @@ export class WorkStore {
   statesKey;
 
   constructor({
-    sources = { repoState, prDetailsMany, touched: touchedRepos },
+    sources = {
+      repoState,
+      prDetailsMany,
+      prProbeMany: probePRs,
+      touched: touchedRepos,
+    },
     now = Date.now,
     retryMs = RETRY_MS,
   } = {}) {
@@ -317,6 +327,9 @@ export class WorkStore {
     this.tickets = new Cache({ retryMs, now });
     this.linked = new Cache({ retryMs, now });
     this.prs = new Cache({ retryMs, now });
+    // When each PR was last looked up in full (ref -> time), for PR_FULL_MS.
+    /** @type {Map<string, number>} */
+    this.fullAt = new Map();
     // Bumped by scan; with the caches' versions, says when snapshots go stale.
     this.version = 0;
     /** @type {{ at: string, all: Map<string, WorkItem[]> }} */
@@ -473,6 +486,49 @@ export class WorkStore {
     );
   }
 
+  // The due PRs of `slug` (`items`, as refresh has them) that a probe says are
+  // as they were at their last full lookup: ref -> their details, to keep. Only
+  // quiet PRs qualify (not the active ones of prMaxAge, which are polled as
+  // before), and only within PR_FULL_MS of their last full lookup, since some
+  // changes (checks finishing, a conflict after the base moves) may not move
+  // updatedAt. A failed probe leaves every PR to a full lookup.
+  /** @param {string} slug @param {{ ref: string, r: string | number, was: any }[]} items @returns {Promise<Map<string, any>>} */
+  async unchanged(slug, items) {
+    const out = new Map();
+    if (!this.sources.prProbeMany) return out;
+    const now = this.now();
+    const quiet = items.filter(
+      ({ ref, was }) =>
+        this.prs.get(ref)?.state !== "failed" &&
+        prMaxAge(was) !== ACTIVE_PR_MS &&
+        now - (this.fullAt.get(ref) ?? -Infinity) < PR_FULL_MS,
+    );
+    if (!quiet.length) return out;
+    /** @type {Map<string | number, any>} */
+    let probed;
+    try {
+      probed = await this.sources.prProbeMany(
+        slug,
+        quiet.map(({ r }) => r),
+      );
+    } catch {
+      return out;
+    }
+    for (const { ref, r, was } of quiet) {
+      const p = probed.get(r);
+      if (p instanceof Error || p === undefined) continue;
+      // Same PR, same updatedAt. None before and none now is the same too.
+      const same = was
+        ? p !== null &&
+          p.updatedAt != null &&
+          p.number === was.number &&
+          p.updatedAt === was.updatedAt
+        : p === null;
+      if (same) out.set(ref, was);
+    }
+    return out;
+  }
+
   // Looks up what is due (everything, when forced) for `keys` (key ->
   // its tracker): with `view`, each ticket; the PRs its tracker links, then
   // every PR of their work. onLinked gets the linked PRs before the PR
@@ -564,17 +620,24 @@ export class WorkStore {
       await pool(
         [...due].map(([slug, items]) => async () => {
           const asked = this.now();
-          const found = await this.sources.prDetailsMany(
-            slug,
-            items.map(({ r, was }) => ({ ref: r, previous: was })),
-            { requiredOnly: C.requiredChecksOnly },
-          );
+          const quiet = force ? new Map() : await this.unchanged(slug, items);
+          const todo = items.filter(({ ref }) => !quiet.has(ref));
+          const found = todo.length
+            ? await this.sources.prDetailsMany(
+                slug,
+                todo.map(({ r, was }) => ({ ref: r, previous: was })),
+                { requiredOnly: C.requiredChecksOnly },
+              )
+            : new Map();
           for (const { ref, r, was } of items) {
+            const isQuiet = quiet.has(ref);
             const entry = await this.prs.refresh(ref, async () => {
-              const pr = found.get(r);
+              const pr = isQuiet ? was : found.get(r);
               if (pr instanceof Error) throw pr;
               return pr;
             });
+            if (!isQuiet && entry.state !== "failed")
+              this.fullAt.set(ref, asked);
             onPR?.(ref, was, entry, asked);
           }
         }),
