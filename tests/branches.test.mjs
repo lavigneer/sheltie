@@ -337,6 +337,19 @@ test("jira move: the resolution on done; failures name the transition", async ()
   );
 });
 
+test("jira move: an unknown transition names the ones jira has", async () => {
+  // jira-cli's real reply: the error, then the transition names it does accept.
+  const t = jr({ transitions: { done: "Resolved" } });
+  reply(
+    "jira",
+    `echo 'Error: invalid transition state "Resolved"' >&2; echo "Available states for issue WEB-1: 'Done', 'In Progress'" >&2; exit 1`,
+  );
+  assert.equal(
+    await rejects(t.move("WEB-1", "done")),
+    `WEB-1 → Resolved: Error: invalid transition state "Resolved" (available: 'Done', 'In Progress')`,
+  );
+});
+
 test("jira url: what jira open prints, null when it fails, prints nothing or isn't there", async () => {
   const t = jr();
   reply("jira", 'echo "https://jira/WEB-1"');
