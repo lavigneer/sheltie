@@ -234,6 +234,37 @@ export function adhocBranch(description, repo) {
   return slug ? fill(settingsOf(repo).branch, { ref: slug, key: slug }) : null;
 }
 
+// Moves the review agent's untracked draft (review-<number>.md at the worktree
+// root, see skills/review-pr) out of the worktree, into <git common dir>/sheltie/
+// reviews/, so the worktree can be removed. Kept, not deleted: the draft is the
+// agent's output. A committed file of that name is left alone.
+/** @param {LocalRepo} repo @param {string} path @param {number} number */
+export async function keepReviewDraft(repo, path, number) {
+  const name = `review-${number}.md`;
+  const tracked = await git(path, "ls-files", "--error-unmatch", "--", name);
+  if (tracked.code === 0) return;
+  const common = (
+    await git(
+      repo.path,
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-common-dir",
+    )
+  ).stdout.trim();
+  // Mods can't import node:fs (see excludeWorktrees), so the move runs in sh,
+  // through herdr's exec: `tool` only runs the configured programs.
+  const mv = await exec("sh", [
+    "-c",
+    '[ -e "$1/$2" ] || exit 0; mkdir -p "$3" && mv -f "$1/$2" "$3/$2"',
+    "sh",
+    path,
+    name,
+    `${common}/sheltie/reviews`,
+  ]);
+  if (mv.code !== 0)
+    throw new Error(firstLine(mv.stderr) || `couldn't move ${name}`);
+}
+
 // Where `branch`'s worktree goes: <repo>/<worktreeDir>/<its last part>. A
 // branch whose last part would step out of worktreeDir ("", ".", "..") throws.
 /** @param {import("./types.js").Repo} repo @param {string} branch */
@@ -378,12 +409,18 @@ export async function cloneRepo(slug) {
 
 // After a merge: refuses if the worktree has uncommitted changes or commits
 // that aren't in the PR (its head is `prHead`), so nothing unpushed is lost.
-/** @param {string} path @param {string | null} [prHead] */
-export async function assertClean(path, prHead) {
+// `ignore` names untracked files at the root to overlook (finishReview's draft).
+/** @param {string} path @param {string | null} [prHead] @param {string[]} [ignore] */
+export async function assertClean(path, prHead, ignore = []) {
   const status = await git(path, "status", "--porcelain");
   if (status.code !== 0)
     throw new Error(firstLine(status.stderr) || `can't read ${path}`);
-  if (status.stdout.trim())
+  const dirty = status.stdout
+    .split("\n")
+    .filter(
+      (l) => l.trim() && !(l.startsWith("?? ") && ignore.includes(l.slice(3))),
+    );
+  if (dirty.length)
     throw new Error(`${basename(path)} has uncommitted changes`);
   const head = (await git(path, "rev-parse", "HEAD")).stdout.trim();
   if (prHead && head !== prHead)
