@@ -499,10 +499,16 @@ export default class Work extends View {
     /** @type {any} */ start,
     /** @type {any} */ trigger,
   ) {
-    // One read of Herdr's live data for the whole render (herdrSpaces).
+    const rebuilds = this.store.rebuilds;
+    // One read of Herdr's live data for the whole render (herdrSpaces). Its
+    // spaces are copied on first read, so read them here: hostMs counts the
+    // copy, which the view would otherwise take.
+    const hostStart = Date.now();
     const live = herdrSpaces();
-    this.watchSpaces(cx, live);
+    void live.active;
     const t = theme();
+    const hostMs = Date.now() - hostStart;
+    this.watchSpaces(cx, live);
     const view = this.view(live);
     const viewed = Date.now();
     const ui = {
@@ -543,16 +549,21 @@ export default class Work extends View {
           })
           .child(bodyEl(ui, view, this.groups === null)),
       );
-    this.timed(start, viewed, view, trigger);
+    this.timed(start, viewed, view, trigger, {
+      hostMs,
+      rebuilt: this.store.rebuilds !== rebuilds,
+    });
     return el;
   }
 
   // Records a render's timing (renders.js); a slow one as a failure too.
+  // `extra`: hostMs and rebuilt (renders.js).
   timed(
     /** @type {any} */ start,
     /** @type {any} */ viewed,
     /** @type {any} */ view,
     /** @type {any} */ trigger,
+    /** @type {{ hostMs: number, rebuilt: boolean }} */ extra,
   ) {
     const end = Date.now();
     const r = {
@@ -562,6 +573,7 @@ export default class Work extends View {
       rows: view.rows.length,
       trigger,
       at: end,
+      ...extra,
     };
     if (this.renders.add(r))
       recordFailure("work", "slow render", `${r.ms} ms`, r);

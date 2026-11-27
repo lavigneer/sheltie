@@ -197,3 +197,17 @@ test("Work: Merge asks for a second work.step before merging", async (t) => {
   assert.deepEqual(merges()[0].slice(0, 2), ["pr", "merge"]);
   assert.ok(merges()[0].includes("12"));
 });
+
+test("Work: each render records how much of it was Herdr's reads, and whether it re-joined", async () => {
+  const d = await ready();
+  d.render();
+  // The slowest renders are kept (renders.js); each has the split.
+  const [slowest] = d.view.renders.report().slowest;
+  assert.ok(slowest, "a render was recorded");
+  assert.equal(typeof slowest.hostMs, "number");
+  assert.ok(
+    slowest.hostMs <= slowest.viewMs,
+    "the host reads are inside the view half",
+  );
+  assert.equal(typeof slowest.rebuilt, "boolean");
+});
