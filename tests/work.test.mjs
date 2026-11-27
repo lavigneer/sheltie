@@ -91,6 +91,7 @@ const {
   TICKET_MS,
   RETRY_MS,
   SWEEP_MS,
+  sweepOffset,
 } = await import("../src/work.js");
 
 function fakeStore({ prs = {}, linked = {} } = {}) {
@@ -515,13 +516,62 @@ test("WorkStore.scan: an untouched repo is not read again; a touched one is; a s
   assert.equal(store.version, version, "the same state changes nothing");
   assert.deepEqual([...store.states[1].branches.keys()], ["b-/r/b"]);
 
+  // Nothing touched: a repo is read only if its own sweep has come due.
   t += 30_000;
   touched = new Set();
+  const dueNow = repos
+    .filter((r) => store.sweepAt.get(r.path) <= t)
+    .map((r) => r.path);
   await store.scan(repos);
-  assert.equal(reads.length, 3, "nothing touched: no git call at all");
+  assert.deepEqual(reads.slice(3), dueNow, "only the repos whose sweep is due");
 
   t += SWEEP_MS;
   touched = new Set();
+  const before = reads.length;
   await store.scan(repos);
-  assert.equal(reads.length, 5, "the sweep reads every repo again");
+  assert.deepEqual(
+    reads.slice(before).sort(),
+    ["/r/a", "/r/b"],
+    "a SWEEP_MS later, every repo's sweep is due again",
+  );
+});
+
+// The sweeps of many repos are phased by path: each repo is read once per
+// SWEEP_MS, and no single refresh tick reads them all.
+test("WorkStore.scan: sweeps of many repos spread over the window, not one tick", async () => {
+  let t = 1_000_000;
+  const perTick = new Map();
+  const store = new WorkStore({
+    now: () => t,
+    sources: {
+      repoState: async () => {
+        perTick.set(t, (perTick.get(t) ?? 0) + 1);
+        return {
+          worktrees: [],
+          branches: new Map(),
+          mainBranch: "main",
+          linked: [],
+        };
+      },
+      touched: async () => new Set(),
+    },
+  });
+  const repos = Array.from({ length: 20 }, (_, i) => ({
+    path: `/r/repo${i}`,
+    name: `repo${i}`,
+    slug: null,
+  }));
+  await store.scan(repos); // startup: every repo once
+  perTick.clear();
+  for (let k = 0; k < SWEEP_MS / 30_000; k++) {
+    t += 30_000;
+    await store.scan(repos);
+  }
+  const reads = [...perTick.values()].reduce((a, b) => a + b, 0);
+  assert.equal(reads, repos.length, "each repo is swept once in the window");
+  assert.ok(Math.max(...perTick.values()) < repos.length / 2, "not one burst");
+  assert.ok(
+    repos.every((r) => sweepOffset(r.path) < SWEEP_MS),
+    "each phase falls inside the window",
+  );
 });

@@ -251,8 +251,9 @@ export class WorkModel {
   }
 
   // Where `w`'s ticket is in the browser; null when its branch isn't a ticket.
-  async ticketUrl(/** @type {any} */ w) {
-    return this.isTicket(w) ? await w.handle.url() : null;
+  // `urgent`: a click asks (see tracker-jira.js); the report's polls don't.
+  async ticketUrl(/** @type {any} */ w, urgent = false) {
+    return this.isTicket(w) ? await w.handle.url(urgent) : null;
   }
 
   // What the agents started in a row's folder have cost, in $, or null.

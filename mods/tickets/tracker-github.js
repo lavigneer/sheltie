@@ -65,19 +65,23 @@ export function create(s) {
     );
   }
 
-  /** @param {string} key */
-  async function view(key) {
+  /** @param {string} key @param {boolean} [urgent] */
+  async function view(key, urgent = false) {
     const k = parse(key);
     if (!k) return null;
-    const r = await tool("gh", [
-      "issue",
-      "view",
-      String(k.number),
-      "--repo",
-      k.slug,
-      "--json",
-      "number,title,state,labels",
-    ]);
+    const r = await tool(
+      "gh",
+      [
+        "issue",
+        "view",
+        String(k.number),
+        "--repo",
+        k.slug,
+        "--json",
+        "number,title,state,labels",
+      ],
+      { urgent },
+    );
     if (r.code !== 0) {
       const why = firstLine(r.stderr);
       if (NOT_FOUND.test(why)) return null;
@@ -88,11 +92,12 @@ export function create(s) {
 
   // Only "done" does anything: close the issue if it's still open (merging a PR
   // that says "Closes #12" usually did already) and s.github.closeOnFinish.
+  // Reached only from a click's step, so its calls are urgent (lib.js).
   /** @param {string} key @param {string} step */
   async function move(key, step) {
     if (step !== "done" || !s.github.closeOnFinish) return null;
     const k = parse(key);
-    const t = await view(key);
+    const t = await view(key, true);
     if (!k || !t || t.status !== "Open") return null;
     await must(
       "gh",
@@ -106,6 +111,7 @@ export function create(s) {
         "completed",
       ],
       "gh issue close",
+      { urgent: true },
     );
     return `${labelOf(key)} closed`;
   }

@@ -7,8 +7,8 @@
 //                          when the tracker can't be reached
 //   move(key, step, status)  for workflow step "start" | "review" | "done";
 //                          returns a note, or null when there's nothing to do
-//   url(key)               where to see it in the browser (a promise; null
-//                          when it can't tell)
+//   url(key, urgent)       where to see it in the browser (a promise; null
+//                          when it can't tell). `urgent`: a click (lib.js)
 //   viewCommand(key)       a shell command that prints it (for the agent)
 //   labelOf(key)           short form for display
 //   keysIn(text, slug)     keys a branch name or PR text (in repo slug) mentions
@@ -66,6 +66,6 @@ export const handleOf = (t, key) => ({
   key,
   label: t.labelOf(key),
   tracker: t,
-  url: () => t.url(key),
+  url: (urgent) => t.url(key, urgent),
   move: (step, status) => t.move(key, step, status),
 });

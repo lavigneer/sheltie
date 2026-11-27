@@ -585,6 +585,7 @@ async function ready(/** @type {Worktree} */ w, /** @type {PR} */ pr) {
   if (settingsOf(w.repo).workflow.autoMerge === "when-reviews-required") {
     const now = await prDetails(repoSlug, pr.number, null, {
       requiredOnly: settingsOf(w.repo).requiredChecksOnly,
+      urgent: true, // a click's step (see markReady)
     });
     if (
       now?.review === "REVIEW_REQUIRED" ||
