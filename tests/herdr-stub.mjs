@@ -59,9 +59,13 @@ export const setShared = (key, value) => {
   sharedDoc.set(key, value);
   return null;
 };
+// Like Herdr's: null for an absent file, a rejection for any other failure.
 export const readTextFile = async (path) => {
   const fs = await import("node:fs/promises");
-  return fs.readFile(path, "utf8").catch(() => null);
+  return fs.readFile(path, "utf8").catch((e) => {
+    if (e.code === "ENOENT") return null;
+    throw e;
+  });
 };
 export const writeTextFile = async (path, text) => {
   const fs = await import("node:fs/promises");

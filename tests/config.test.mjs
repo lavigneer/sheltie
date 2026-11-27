@@ -35,3 +35,30 @@ test("useConfig: ~ in roots is the home folder", () => {
   config.useConfig({ roots: ["~/code", "/abs"] });
   assert.deepEqual(config.C.roots, [`${os.homedir()}/code`, "/abs"]);
 });
+
+test("readSettings: a missing file is no problem, an unreadable one is", async () => {
+  const dir = fs.mkdtempSync(path.join(home, "read-"));
+  const missing = path.join(dir, "absent.json");
+  assert.deepEqual(await config.readSettings(missing), {
+    over: {},
+    problem: null,
+  });
+
+  const good = path.join(dir, "good.json");
+  fs.writeFileSync(good, '{"tracker":"github"}');
+  assert.deepEqual(await config.readSettings(good), {
+    over: { tracker: "github" },
+    problem: null,
+  });
+
+  const locked = path.join(dir, "locked.json");
+  fs.writeFileSync(locked, "{}");
+  fs.chmodSync(locked, 0);
+  // root reads any file, so there is nothing to test as root.
+  if (process.getuid?.() !== 0) {
+    const r = await config.readSettings(locked);
+    assert.deepEqual(r.over, {});
+    assert.match(r.problem, /^couldn't read .*locked\.json: /);
+  }
+  fs.chmodSync(locked, 0o600);
+});
