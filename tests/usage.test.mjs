@@ -151,6 +151,72 @@ test("usageGroups: only changed logs are read again; scans are shared", async ()
   assert.equal(fs.statSync(kept).mtimeMs, before, "unchanged log not re-read");
 });
 
+test("usageGroups: changed logs applied to the last scan match a fresh one", async () => {
+  // Each scan of `home` after a change must total what a fresh scan of the
+  // same files (a new home, so nothing counted yet) gives.
+  const home = path.join(tmp, "incremental");
+  const proj = path.join(home, "projects", "-p");
+  const u = (n) => ({ input_tokens: n, output_tokens: 0 });
+  // Each write is seconds newer than the last: the staleness check (-nt)
+  // compares whole seconds.
+  const clock = { t: Date.now() + 10_000 };
+  const later = (/** @type {string} */ f) => {
+    clock.t += 5_000;
+    const t = new Date(clock.t);
+    fs.utimesSync(f, t, t);
+  };
+  const cfg = (/** @type {string} */ h) => ({
+    usage: {
+      agents: [{ type: "claude-code", home: h }],
+      prices: `file://${tmp}/prices.json`,
+    },
+  });
+  const check = async (/** @type {string} */ label) => {
+    const copy = path.join(tmp, `fresh-${label}`);
+    fs.cpSync(home, copy, { recursive: true });
+    useConfig(cfg(copy));
+    const fresh = await usageGroups(0);
+    useConfig(cfg(home));
+    const got = await usageGroups(0);
+    assert.equal(total(got).tokens, total(fresh).tokens, `${label}: tokens`);
+    assert.equal(got.length, fresh.length, `${label}: groups`);
+    return total(got).tokens;
+  };
+
+  write(path.join(proj, "a.jsonl"), [claude("1", "/p", u(1))]);
+  write(path.join(proj, "b.jsonl"), [claude("2", "/p", u(10))]);
+  useConfig(cfg(home));
+  assert.equal(total(await usageGroups(0)).tokens, 11);
+
+  // Appended message in a log that grew: only its new message is added.
+  fs.appendFileSync(
+    path.join(proj, "a.jsonl"),
+    "\n" + claude("3", "/p", u(100)),
+  );
+  later(path.join(proj, "a.jsonl"));
+  await check("appended");
+
+  // A resumed log repeats "1" and "2" and adds "4": "1" and "2" count once.
+  write(path.join(proj, "c.jsonl"), [
+    claude("1", "/p", u(1)),
+    claude("2", "/p", u(10)),
+    claude("4", "/p", u(1000)),
+  ]);
+  later(path.join(proj, "c.jsonl"));
+  await check("resumed");
+
+  // A log rewritten without "3": its message is no longer counted.
+  write(path.join(proj, "a.jsonl"), [claude("1", "/p", u(1))]);
+  later(path.join(proj, "a.jsonl"));
+  assert.equal(await check("shrunk"), 1 + 10 + 1000);
+
+  // Logs deleted: "2" is still in c, so it stays; once c goes, only a's "1".
+  fs.rmSync(path.join(proj, "b.jsonl"));
+  assert.equal(await check("deleted-b"), 1 + 10 + 1000);
+  fs.rmSync(path.join(proj, "c.jsonl"));
+  assert.equal(await check("deleted-c"), 1);
+});
+
 test("costOf: unknown models have no price; dated ids match; totals", () => {
   const table = { "claude-haiku-4-5": { i: 1 * M, o: 5 * M } };
   const base = { input: 1e6, output: 0, read: 0, write5m: 0, write1h: 0 };

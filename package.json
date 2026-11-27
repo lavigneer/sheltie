@@ -10,6 +10,7 @@
     "typecheck": "tsc -p . && node scripts/typecheck-mods.mjs",
     "check-built": "node scripts/build.mjs && test -z \"$(git status --porcelain --untracked-files=all -- mods sheltie.schema.json)\"",
     "e2e": "node --test 'tests/e2e/*.test.mjs'",
+    "bench:usage": "node --import ./tests/register.mjs scripts/bench-usage.mjs",
     "e2e:shots": "node --test tests/e2e/shots.mjs",
     "lint": "biome lint src scripts tests",
     "format": "biome check --write src scripts tests",
