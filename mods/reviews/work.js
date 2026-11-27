@@ -3,7 +3,7 @@
 // use (tracker.js).
 
 import { C, REPO_FILE } from "./config.js";
-import { repoState, sameSlug } from "./git.js";
+import { repoState, sameSlug, touchedRepos } from "./git.js";
 import { basename, pool } from "./lib.js";
 import { PR_MS, RETRY_MS } from "./polling.js";
 import { prDetailsMany } from "./prs.js";
@@ -258,6 +258,8 @@ export function joinWork(
 export { PR_MS, RETRY_MS };
 export const ACTIVE_PR_MS = 20_000;
 export const TICKET_MS = 600_000;
+// How often every repo's git state is read, whatever the find says (WorkStore.scan).
+export const SWEEP_MS = 300_000;
 
 // How long a PR's details stay fresh: shorter while something you'd wait for
 // may change soon (conflicts, or not known yet: CI starts soon after a fix).
@@ -295,12 +297,14 @@ export class WorkStore {
   statesKey;
 
   constructor({
-    sources = { repoState, prDetailsMany },
+    sources = { repoState, prDetailsMany, touched: touchedRepos },
     now = Date.now,
     retryMs = RETRY_MS,
   } = {}) {
     this.sources = sources;
     this.now = now;
+    // When the last full sweep of repo state was (see scan).
+    this.swept = -Infinity;
     /** @type {Repo[]} */
     this.repos = [];
     /** @type {({ repo: Repo } & import("./git.js").RepoState | null)[]} */
@@ -316,17 +320,31 @@ export class WorkStore {
     this.rebuilds = 0;
   }
 
-  // Git: the worktrees and branches of `repos` (those with a path).
+  // Git: the worktrees and branches of `repos` (those with a path). A repo
+  // whose .git was not touched since the last scan keeps its state (one find
+  // for all of them, see touchedRepos), except on a full sweep, which reads
+  // every repo: at once when there is no touched source, and every SWEEP_MS
+  // for what the find can't see (a worktree folder removed by hand).
   /** @param {Repo[]} repos */
   async scan(repos) {
     const local = repos.filter(
       /** @returns {r is Repo & { path: string }} */ (r) => r.path !== null,
     );
+    const known = new Map(
+      this.states.flatMap((s) => (s ? [[s.repo.path, s]] : [])),
+    );
+    const now = this.now();
+    const touched =
+      !this.sources.touched || now - this.swept >= SWEEP_MS
+        ? null
+        : await this.sources.touched(local.map((r) => r.path));
+    if (touched === null) this.swept = now;
     const states = await pool(
-      local.map((repo) => async () => ({
-        repo,
-        ...(await this.sources.repoState(repo)),
-      })),
+      local.map((repo) => async () => {
+        const old = known.get(repo.path);
+        if (touched && old && !touched.has(repo.path)) return { ...old, repo };
+        return { repo, ...(await this.sources.repoState(repo)) };
+      }),
     );
     // A scan that finds what the last one did changes nothing: the version
     // (and so the join, and the view) stays.

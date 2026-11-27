@@ -83,9 +83,8 @@ test("joinWork: a failed lookup leaves the item without a PR and adds nothing", 
 });
 
 // WorkStore: due/refresh and join on fake sources and a fake clock.
-const { WorkStore, PR_MS, ACTIVE_PR_MS, TICKET_MS, RETRY_MS } = await import(
-  "../src/work.js"
-);
+const { WorkStore, PR_MS, ACTIVE_PR_MS, TICKET_MS, RETRY_MS, SWEEP_MS } =
+  await import("../src/work.js");
 
 function fakeStore({ prs = {}, linked = {} } = {}) {
   let t = 0;
@@ -390,4 +389,51 @@ test("WorkStore.adopt: a branch naming no ticket takes the one its PR names", as
   assert.ok(store.adopt(rows, "me/app#fix-login", p));
   assert.equal(rows[0].handle?.key, "#3");
   assert.equal(store.rowFor(rows[0]).pr, p);
+});
+
+// WorkStore.scan: a repo whose .git was not touched keeps its last state, so
+// only the repos the find reports (and the periodic sweep) cost git calls.
+test("WorkStore.scan: an untouched repo is not read again; a touched one is; a sweep reads all", async () => {
+  let t = 1_000_000;
+  let touched = null; // null: nothing to say (a sweep)
+  const reads = [];
+  const store = new WorkStore({
+    now: () => t,
+    sources: {
+      repoState: async (repo) => {
+        reads.push(repo.path);
+        return {
+          worktrees: [],
+          branches: new Map([[`b-${repo.path}`, { local: true }]]),
+          mainBranch: "main",
+          linked: [],
+        };
+      },
+      touched: async () => touched,
+    },
+  });
+  const a = { path: "/r/a", name: "a", slug: null };
+  const b = { path: "/r/b", name: "b", slug: null };
+  const repos = [a, b];
+
+  await store.scan(repos); // the first scan reads every repo
+  assert.deepEqual(reads, ["/r/a", "/r/b"]);
+
+  t += 30_000;
+  touched = new Set(["/r/a"]);
+  const version = store.version;
+  await store.scan(repos);
+  assert.deepEqual(reads, ["/r/a", "/r/b", "/r/a"], "only the touched repo");
+  assert.equal(store.version, version, "the same state changes nothing");
+  assert.deepEqual([...store.states[1].branches.keys()], ["b-/r/b"]);
+
+  t += 30_000;
+  touched = new Set();
+  await store.scan(repos);
+  assert.equal(reads.length, 3, "nothing touched: no git call at all");
+
+  t += SWEEP_MS;
+  touched = new Set();
+  await store.scan(repos);
+  assert.equal(reads.length, 5, "the sweep reads every repo again");
 });

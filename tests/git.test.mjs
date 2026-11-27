@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { after, before, test } from "node:test";
 
-const { addWorktree, assertClean, removeWorktree } = await import(
+const { addWorktree, assertClean, removeWorktree, touchedRepos } = await import(
   "../src/git.js"
 );
 
@@ -68,4 +68,41 @@ test("removeWorktree: removes the worktree and branch, never dirty work", async 
   await removeWorktree(repo, path, "me/three", head);
   assert.ok(!fs.existsSync(path));
   assert.ok(!branches().split("\n").includes("me/three"));
+});
+
+// Sets the mtime of every file and folder under `dir` back by ten minutes, so
+// touchedRepos (a two-minute window) sees the repo as quiet.
+function ageTree(dir) {
+  const old = new Date(Date.now() - 10 * 60_000);
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = `${dir}/${e.name}`;
+    if (e.isDirectory()) ageTree(p);
+    fs.utimesSync(p, old, old);
+  }
+  fs.utimesSync(dir, old, old);
+}
+
+test("touchedRepos: a repo whose refs changed is listed; a quiet one is not", async () => {
+  const idle = `${tmp}/idle`;
+  git(tmp, "init", "--quiet", "-b", "main", "idle");
+  git(idle, "commit", "--quiet", "--allow-empty", "-m", "init");
+  ageTree(`${idle}/.git`);
+  assert.deepEqual(await touchedRepos([idle]), new Set());
+  // A branch is a new file under refs/heads, and so touches the repo.
+  git(idle, "branch", "fresh");
+  assert.deepEqual(await touchedRepos([idle]), new Set([idle]));
+  // A path that isn't a repo lists nothing (and is not an error).
+  assert.deepEqual(await touchedRepos([`${tmp}/nowhere`]), new Set());
+});
+
+test("touchedRepos: writes to objects and logs do not count", async () => {
+  const quiet = `${tmp}/quiet`;
+  git(tmp, "init", "--quiet", "-b", "main", "quiet");
+  git(quiet, "commit", "--quiet", "--allow-empty", "-m", "init");
+  ageTree(`${quiet}/.git`);
+  // Objects and reflogs change on every commit; repoState reads neither.
+  fs.mkdirSync(`${quiet}/.git/objects/zz`, { recursive: true });
+  fs.writeFileSync(`${quiet}/.git/objects/zz/new`, "");
+  fs.writeFileSync(`${quiet}/.git/logs/HEAD`, "x");
+  assert.deepEqual(await touchedRepos([quiet]), new Set());
 });
