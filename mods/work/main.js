@@ -34,7 +34,8 @@
 // (C.workGroupBy sets which it opens with).
 // work.refresh refreshes everything now, like ↻. work.report writes what the
 // sidebar shows to <app home>/work-report.json, for scripts and tests, with
-// how long its renders take (renders.js).
+// how long its renders and refreshes take and what the refreshes spawned
+// (renders.js, refreshes.js; the calls since the mod loaded, lib.js).
 // work.start starts the tickets the requests in <app home>/work-start/ name,
 // like the tickets popup (for agents and scripts; see drainRequests).
 //
@@ -79,9 +80,10 @@ import { C, configReady } from "./config.js";
 import { recordFailure } from "./diagnostics.js";
 import { errorMessage } from "./errors.js";
 import { START_MS } from "./flow.js";
-import { openUrl } from "./lib.js";
+import { callCounts, callsSince, openUrl } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
 import { RepoCache } from "./polling.js";
+import { RefreshStats } from "./refreshes.js";
 import { RenderStats } from "./renders.js";
 import { resize } from "./sidebar.js";
 import { herdrSpaces } from "./spaces.js";
@@ -119,6 +121,8 @@ export default class Work extends View {
   awaitTimer = /** @type {any} */ (undefined);
   /** @type {RenderStats} */
   renders = /** @type {any} */ (undefined);
+  /** @type {RefreshStats} */
+  refreshes = /** @type {any} */ (undefined);
   init(/** @type {any} */ _props, /** @type {any} */ cx) {
     // Groups, steps, starting folders, costs and the store (work-model.js).
     this.model = new WorkModel();
@@ -133,6 +137,7 @@ export default class Work extends View {
     /** @type {number | null} */
     this.width = null; // ours, from on_size_change
     this.renders = new RenderStats(); // render timings, for work.report
+    this.refreshes = new RefreshStats(); // refresh timings and calls (refreshes.js)
     /** @type {string | null} */
     this.why = null; // what the next render is for (wake); null: Herdr's own
     this.refresh = serial((cx, force) => this.scan(cx, force));
@@ -257,6 +262,8 @@ export default class Work extends View {
     const rows = rows0.filter((/** @type {any} */ r) => !r.stacked);
     const out = this.model.report(rows, live, Date.now(), {
       renders: this.renders.report(),
+      refreshes: this.refreshes.report(),
+      calls: callCounts(), // since the mod loaded: every program run, rate limits
     });
     cx.spawn(async () => {
       const urls = await Promise.all(
@@ -280,12 +287,21 @@ export default class Work extends View {
   // Git only: worktrees and branches. Ticket and PR details follow separately,
   // so slow tracker/GitHub calls never hold up the next git refresh.
   // Renders follow what changed, not the 30 s poll.
+  // One refresh's time and the calls it made are recorded (refreshes.js) before
+  // the lookups it starts. A call another run of this mod makes meanwhile is
+  // counted here too; the totals in `calls` (work.report) are exact.
   async scan(/** @type {any} */ cx, /** @type {any} */ force) {
-    await configReady();
-    const repos = await this.localRepos(force);
-    const changed = await this.model.scan(repos);
-    this.recheckWatched(cx);
-    if (changed) this.wake(cx, "scan");
+    const before = callCounts();
+    const t0 = Date.now();
+    try {
+      await configReady();
+      const repos = await this.localRepos(force);
+      const changed = await this.model.scan(repos);
+      this.recheckWatched(cx);
+      if (changed) this.wake(cx, "scan");
+    } finally {
+      this.refreshes.add({ ms: Date.now() - t0, ...callsSince(before) });
+    }
     this.details(cx, force);
   }
 

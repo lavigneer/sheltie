@@ -112,6 +112,15 @@ For scripts: `herdr-app do work.refresh` refreshes the sidebar now, like its
 (with `mergeable`) and next steps, the selected row and step, and the PR and
 ticket URLs `work.open-pr` and `work.open-ticket` would open.
 
+It also has the performance numbers for the sidebar's own refreshes: `refreshes`
+(the count, the mean, the 95th percentile and the slowest of the last 200 git
+scans, and the mean calls each one ran, by program, with how many were rate
+limited) and `calls` (every program run and rate-limited call since the mod
+loaded). A refresh's calls are the ones made while its git scan runs: the gh and
+jira lookups it starts run after that and count only in `calls`. A call from
+another run that overlaps a refresh is counted in both, so `calls` is the exact
+total. Both are kept in memory, so they start again when the mod does.
+
 ## Starting tickets from an agent or script
 
 `herdr-app do work.start` starts the tickets each request in

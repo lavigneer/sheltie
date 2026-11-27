@@ -21,9 +21,41 @@ export const tool = (name, args, opts) =>
     ? limited(limits[name], name, args, opts)
     : run(name, args, opts);
 
+// What this mod has done since it loaded (each mod has its own copy of this
+// file): processes started per program, and calls refused or answered as rate
+// limited. refreshes.js takes the difference across a refresh (callsSince).
+const counts = {
+  spawns: /** @type {Record<string, number>} */ ({}),
+  rateLimited: 0,
+};
+
 /** @param {string} name @param {string[]} args @param {{ cwd?: string, urgent?: boolean }} [opts] */
-const run = (name, args, opts) =>
-  exec(/** @type {Record<string, string>} */ (C.programs)[name], args, opts);
+const run = (name, args, opts) => {
+  counts.spawns[name] = (counts.spawns[name] ?? 0) + 1;
+  return exec(
+    /** @type {Record<string, string>} */ (C.programs)[name],
+    args,
+    opts,
+  );
+};
+
+/** @returns {{ spawns: Record<string, number>, rateLimited: number }} */
+export const callCounts = () => ({
+  spawns: { ...counts.spawns },
+  rateLimited: counts.rateLimited,
+});
+
+// The calls made since `before` (a callCounts()); programs that didn't run are left out.
+/** @param {{ spawns: Record<string, number>, rateLimited: number }} before */
+export function callsSince(before) {
+  /** @type {Record<string, number>} */
+  const spawns = {};
+  for (const [name, n] of Object.entries(counts.spawns)) {
+    const d = n - (before.spawns[name] ?? 0);
+    if (d) spawns[name] = d;
+  }
+  return { spawns, rateLimited: counts.rateLimited - before.rateLimited };
+}
 
 // GitHub and Jira rate-limit callers. At most `max` of their calls run at once
 // (GitHub's secondary limits punish bursts). When one answers "rate limited",
@@ -55,14 +87,17 @@ async function limited(l, name, args, opts) {
   l.active++;
   try {
     const wait = l.until - Date.now();
-    if (wait > 0)
+    if (wait > 0) {
+      counts.rateLimited++;
       return {
         code: 1,
         stdout: "",
         stderr: `${name}: rate limited, retrying in ${Math.ceil(wait / 1000)} s`,
       };
+    }
     const r = await run(name, args, opts);
     if (r.code !== 0 && RATE_LIMITED.test(`${r.stderr}\n${r.stdout}`)) {
+      counts.rateLimited++;
       l.backoff = Math.min(
         l.backoff ? l.backoff * 2 : BACKOFF_MS,
         MAX_BACKOFF_MS,
