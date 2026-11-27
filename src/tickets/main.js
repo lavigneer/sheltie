@@ -22,13 +22,15 @@
 // each, once all their work is known.
 // Opened with mod.open:tickets (prefix+t).
 //
-// State, each in one field and changed only through its setter (which redraws):
+// State: the screen is this View's (go() and back()); the data, the action and
+// the marked tickets are TicketsModel's (tickets-model.js), which the View reads
+// through getters and changes through model calls (each redraws):
 //   screen  list -> ticket -> pick; list -> adhoc (a repo for ad-hoc work);
 //           the moves are declared in SCREENS. go() moves on, back() goes back one
 //   data    tickets -> listed -> local -> linked -> ready | failed (tickets-model.js
 //           says what each knows and the moves between them); load(); a reload
 //           supersedes an older load, whose results are then dropped (gen)
-//   action  idle -> running -> idle | failed       act(); while running, keys
+//   action  idle -> running -> idle | failed       model.act(); while running, keys
 //           and clicks are ignored. Esc is Herdr's: it always closes a popup,
 //           which stops the action after its current step (every step leaves
 //           a usable state: cloned, or cloned with its worktree), so choosing
@@ -40,46 +42,29 @@
 
 import { h_flex, Input, InputState, v_flex } from "gpui-base";
 import { div, svg, View } from "gpui-kit";
-import { closeOverlay, focused, notify, props, run, theme } from "herdr";
+import { closeOverlay, focused, props, run, theme } from "herdr";
 import { C, configReady } from "./config.js";
-import { recordFailure } from "./diagnostics.js";
 import { prLabel, toneKey } from "./flow.js";
-import {
-  addWorktree,
-  adhocBranch,
-  cloneRepo,
-  listWorktrees,
-  localRepos,
-  repoRoot,
-  worktreePath,
-} from "./git.js";
+import { addWorktree, adhocBranch, localRepos, repoRoot } from "./git.js";
 import { basename, columnWidth, fill, moveKey, openUrl, score } from "./lib.js";
 import { herdrSpaces } from "./spaces.js";
 import {
-  errorText,
-  learnClone,
   openSpaces,
-  prepareStart,
   remember,
   rememberedRepo,
   repoId,
   spaceName,
-  startTickets,
   taskValues,
 } from "./start.js";
 import {
   advance,
-  failedAction,
-  idleAction,
-  loadFailed,
   localKnown,
   noWork,
   reloading,
-  runningAction,
+  repoLabel,
+  TicketsModel,
 } from "./tickets-model.js";
 import { listTickets, suggestRepos, workFor } from "./work.js";
-
-const repoLabel = (/** @type {any} */ repo) => repo.slug || repo.name;
 
 // The popup's screens and every move between them. `to`: the screens a screen
 // can move to, back included; `back`: where ⌫ and the header's ‹ go (none on
@@ -99,15 +84,17 @@ export default class Tickets extends View {
   input = /** @type {any} */ (undefined);
   /** @type {number} */
   at = /** @type {any} */ (undefined);
-  /** @type {Set<string>} */
-  marked = /** @type {any} */ (undefined);
+  /** @type {TicketsModel} */
+  model = /** @type {any} */ (undefined);
   init(/** @type {any} */ _props, /** @type {any} */ cx) {
     this.screen = { name: "list" }; // | { name: "ticket" | "pick", ticket } | { name: "adhoc", description } (see SCREENS)
-    this.data = reloading(0); // tickets-model.js: each phase's shape
-    this.action = idleAction();
     this.filter = "";
     this.at = 0;
-    this.marked = new Set(); // ticket keys to start together (Tab)
+    // The data, the action and the marked tickets (tickets-model.js). Opening
+    // spaces dismisses the popup first: it closes once they're to be opened.
+    this.model = new TicketsModel({
+      sources: { open: (/** @type {any} */ spaces) => this.openSpaces(spaces) },
+    });
     // One search box per kind of list, each with its own placeholder (an
     // InputState's is fixed); go() swaps them.
     this.inputs = {
@@ -123,8 +110,8 @@ export default class Tickets extends View {
         cx.notify();
       });
       input.on("submit", (/** @type {any} */ _e, /** @type {any} */ cx) =>
-        this.screen.name === "list" && this.marked.size
-          ? this.startMarked(cx)
+        this.screen.name === "list" && this.model.marked.size
+          ? this.task(cx, (/** @type {any} */ on) => this.model.startMarked(on))
           : this.choose(this.selected(), cx),
       );
     }
@@ -161,7 +148,7 @@ export default class Tickets extends View {
     this.input.set_value("");
     this.input.focus();
     this.at = 0;
-    if (this.action.phase === "failed") this.action = idleAction();
+    this.model.clearFailure(this.notifying(cx));
     cx.notify();
   }
 
@@ -178,18 +165,38 @@ export default class Tickets extends View {
     );
   }
 
-  setData(/** @type {any} */ data, /** @type {any} */ cx) {
-    this.data = data;
-    cx.notify();
+  // The model's data, and the action and marked tickets, read through these.
+  get data() {
+    return this.model.data;
   }
 
-  setAction(/** @type {any} */ action, /** @type {any} */ cx) {
-    this.action = action;
-    cx.notify();
+  get action() {
+    return this.model.action;
+  }
+
+  get marked() {
+    return this.model.marked;
   }
 
   get running() {
-    return this.action.phase === "running";
+    return this.model.running;
+  }
+
+  // Where a task run from `cx` tells its changes: each one redraws.
+  /** @param {any} cx */
+  notifying(cx) {
+    return { changed: () => cx.notify() };
+  }
+
+  // A model action, run as a spawned task from `cx` (a click or a key).
+  /** @param {any} cx @param {(on: { changed: () => void }) => any} f */
+  task(cx, f) {
+    cx.spawn((/** @type {any} */ cx) => f(this.notifying(cx)));
+  }
+
+  /** @param {any} data @param {any} cx */
+  setData(data, cx) {
+    this.model.setData(data, this.notifying(cx));
   }
 
   // The ticket list first, then each ticket's work. A newer load (Ctrl+R)
@@ -224,23 +231,7 @@ export default class Tickets extends View {
         to("ready", { work });
       } catch (e) {
         if (!current()) return;
-        recordFailure("tickets", "load", e);
-        this.setData(loadFailed(this.data, { shown, error: errorText(e) }), cx);
-      }
-    });
-  }
-
-  // Runs an async action; keys are ignored meanwhile, and any error shown after.
-  act(/** @type {any} */ cx, /** @type {any} */ message, /** @type {any} */ f) {
-    if (this.running) return;
-    this.setAction(runningAction(message), cx);
-    cx.spawn(async (/** @type {any} */ cx) => {
-      try {
-        await f(cx);
-        this.setAction(idleAction(), cx);
-      } catch (e) {
-        recordFailure("tickets", message, e);
-        this.setAction(failedAction(errorText(e)), cx);
+        this.model.failLoad(e, shown, this.notifying(cx));
       }
     });
   }
@@ -299,11 +290,8 @@ export default class Tickets extends View {
             why,
             text: `${label} ${repo.name} ${why}`,
             run: (/** @type {any} */ cx) =>
-              this.act(
-                cx,
-                `Creating worktree in ${repoLabel(repo)}…`,
-                (/** @type {any} */ cx) =>
-                  this.startAdhoc(description, repo, cx),
+              this.task(cx, (/** @type {any} */ on) =>
+                this.model.startAdhoc(description, repo, on),
               ),
           };
         }),
@@ -378,10 +366,8 @@ export default class Tickets extends View {
       why,
       text: `${label} ${repo.name} ${why ?? ""}`,
       run: (/** @type {any} */ cx) =>
-        this.act(
-          cx,
-          `Creating worktree for ${ticket.label} in ${repoLabel(repo)}…`,
-          (/** @type {any} */ cx) => this.start(ticket, repo, cx),
+        this.task(cx, (/** @type {any} */ on) =>
+          this.model.start([ticket], repo, on),
         ),
     };
   }
@@ -401,17 +387,21 @@ export default class Tickets extends View {
     } else if (item.branch) {
       tag = item.repo.path ? "branch" : "not cloned";
       run = (/** @type {any} */ cx) =>
-        this.act(
-          cx,
-          `Opening ${ticket.label}…`,
-          async (/** @type {any} */ cx) => {
-            const repo = await this.local(item.repo, cx);
-            const path = await addWorktree(repo, item.branch, {
-              pr: item.pr?.number ?? null,
-            });
-            remember(ticket, repo);
-            this.openSpace(name, path);
-          },
+        this.task(cx, (/** @type {any} */ on) =>
+          this.model.act(
+            `Opening ${ticket.label}…`,
+            async (/** @type {any} */ onStep) => {
+              const repo = /** @type {any} */ (
+                await this.model.local(item.repo, onStep)
+              );
+              const path = await addWorktree(repo, item.branch, {
+                pr: item.pr?.number ?? null,
+              });
+              remember(ticket, repo);
+              this.openSpace(name, path);
+            },
+            on,
+          ),
         );
     } else {
       // A PR whose branch we don't know: show it instead.
@@ -445,22 +435,11 @@ export default class Tickets extends View {
       // The current repo is only a hint; a single mapped/remembered repo decides.
       const decided = s.filter((x) => x.why !== "current repo");
       if (decided.length === 1 && s[0] === decided[0] && s[0].repo.path)
-        return this.act(
-          cx,
-          `Creating worktree for ${ticket.label}…`,
-          (/** @type {any} */ cx) => this.start(ticket, s[0].repo, cx),
+        return this.task(cx, (/** @type {any} */ on) =>
+          this.model.start([ticket], s[0].repo, on),
         );
     }
     this.go({ name: "ticket", ticket }, cx);
-  }
-
-  // The repo, cloned first if it isn't local yet.
-  async local(/** @type {any} */ repo, /** @type {any} */ cx) {
-    if (repo.path) return repo;
-    this.setAction(runningAction(`Cloning ${repo.slug}…`), cx);
-    const cloned = await cloneRepo(repo.slug);
-    learnClone(this.data.repos, repo, cloned);
-    return cloned;
   }
 
   openSpace(
@@ -474,104 +453,6 @@ export default class Tickets extends View {
   openSpaces(/** @type {any} */ spaces) {
     this.dismiss();
     openSpaces(spaces);
-  }
-
-  // New work on the ticket's own branch (C.branch) in `target`.
-  async start(
-    /** @type {any} */ ticket,
-    /** @type {any} */ target,
-    /** @type {any} */ cx,
-  ) {
-    const s = await this.prepare(ticket, target, cx);
-    this.openSpaces([s]);
-  }
-
-  // start()'s work up to opening the space: { name, folder, task }. Before
-  // opening it, which closes this popup and with it any work still to do here.
-  async prepare(
-    /** @type {any} */ ticket,
-    /** @type {any} */ target,
-    /** @type {any} */ cx,
-  ) {
-    return prepareStart(ticket, target, {
-      work: this.data.work.get(ticket.key) ?? [],
-      repos: this.data.repos,
-      onStep: this.onStep(cx),
-    });
-  }
-
-  onStep(/** @type {any} */ cx) {
-    return (/** @type {any} */ message) =>
-      this.setAction(runningAction(message), cx);
-  }
-
-  // Every marked ticket in its best suggested repo, then all their spaces at
-  // once: opening one closes this popup, which would stop the rest.
-  startMarked(/** @type {any} */ cx) {
-    if (this.running) return;
-    const d = this.data;
-    if (d.phase !== "ready")
-      return this.setAction(
-        failedAction("Still loading tickets' work, try again"),
-        cx,
-      );
-    const tickets = d.tickets.filter((/** @type {any} */ t) =>
-      this.marked.has(t.key),
-    );
-    this.act(
-      cx,
-      `Creating ${tickets.length} worktrees…`,
-      async (/** @type {any} */ cx) => {
-        const { results, spaces } = await startTickets(
-          tickets.map((/** @type {any} */ ticket) => ({ ticket, repo: null })),
-          {
-            repos: d.repos,
-            work: d.work,
-            here: d.here,
-            onStep: this.onStep(cx),
-          },
-        );
-        // Opening a space closes this popup: what didn't start is a notification.
-        const left = results.filter((r) => r.status !== "started");
-        if (left.length)
-          notify({
-            title: `${left.length} of ${results.length} tickets not started`,
-            body: left.map((r) => `${r.label}: ${r.why}`).join("\n"),
-            level: "warning",
-          });
-        this.marked.clear();
-        this.openSpaces(spaces);
-      },
-    );
-  }
-
-  // Ad-hoc work in `target`: its own branch (see adhocBranch), reused if it's
-  // already there, and the agent told what it is.
-  async startAdhoc(
-    /** @type {any} */ description,
-    /** @type {any} */ target,
-    /** @type {any} */ cx,
-  ) {
-    const repo = await this.local(target, cx);
-    const branch = adhocBranch(description, repo);
-    if (!branch)
-      throw new Error(`ad-hoc work: no branch name from "${description}"`);
-    const path = worktreePath(repo, branch);
-    const existing = (await listWorktrees(repo.path)).linked.some(
-      (w) => w.path === path,
-    );
-    if (!existing) await addWorktree(repo, branch, { create: true });
-    this.openSpace(
-      basename(path),
-      path,
-      existing
-        ? null
-        : fill(C.agent.adhocTask, {
-            description,
-            branch,
-            worktreeDir: C.worktreeDir,
-          }),
-    );
   }
 
   // The agent names and creates the extra branch itself (C.branch + a short description).
@@ -619,10 +500,8 @@ export default class Tickets extends View {
   mark(/** @type {any} */ sel, /** @type {any} */ cx) {
     if (this.running || this.screen.name !== "list" || sel?.kind !== "ticket")
       return;
-    const k = sel.ticket.key;
-    if (!this.marked.delete(k)) this.marked.add(k);
+    this.model.mark(sel.ticket, this.notifying(cx));
     this.input.focus();
-    cx.notify();
   }
 
   // The line under the search box: [text, isError], or null for none.

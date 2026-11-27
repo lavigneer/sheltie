@@ -220,7 +220,7 @@ test("Tickets: while an action runs, Enter does nothing; once it's done, it work
   const d = await ready();
   let finish;
   const held = new Promise((resolve) => (finish = resolve));
-  d.view.act(d.cx, "Holding…", () => held);
+  d.view.model.act("Holding…", () => held);
   assert.equal(d.view.running, true);
   enterOn(d, "Add dark mode");
   assert.match(d.text(), /Holding…/);
