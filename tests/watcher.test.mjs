@@ -7,7 +7,16 @@ import { fileURLToPath } from "node:url";
 test("sheltie-watcher (Python unittest)", () => {
   execFileSync(
     "python3",
-    ["-B", "-m", "unittest", "discover", "-s", "tests/watcher", "-p", "test_*.py"],
+    [
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/watcher",
+      "-p",
+      "test_*.py",
+    ],
     { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "pipe" },
   );
 });
