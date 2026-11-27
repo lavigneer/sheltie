@@ -27,13 +27,15 @@ if (args[0] === "api" && args[1] === "graphql" && arg(/^q=(.*)$/s) !== undefined
 } else if (args[0] === "api" && args[1] === "graphql") {
   // One alias per PR (prs.js batchQuery): p<i> by number, b<i> by the branch in $b<i>.
   const query = arg(/^query=(.*)$/s) ?? "";
+  // updatedAt: a hash of the node, so it changes whenever the PR does.
+  const stamp = (p) => p && { ...p, updatedAt: require("node:crypto").createHash("sha1").update(JSON.stringify(p)).digest("hex") };
   const prs = Object.values(st.prs ?? {});
   const repository = {};
   for (const [, alias, number] of query.matchAll(/(p\\d+): pullRequest\\(number: (\\d+)\\)/g))
-    repository[alias] = prs.find((p) => String(p.number) === number) ?? null;
+    repository[alias] = stamp(prs.find((p) => String(p.number) === number) ?? null);
   for (const [, alias, variable] of query.matchAll(/(b\\d+): pullRequests\\(headRefName: \\$(b\\d+)/g)) {
     const branch = arg(new RegExp("^" + variable + "=(.*)$", "s"));
-    repository[alias] = { nodes: st.prs?.[branch] ? [st.prs[branch]] : [] };
+    repository[alias] = { nodes: st.prs?.[branch] ? [stamp(st.prs[branch])] : [] };
   }
   out({ data: { repository } });
 } else if (args[0] === "pr" && args[1] === "checkout") {

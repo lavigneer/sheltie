@@ -83,6 +83,17 @@ npm test` replays it.
 checks catch regressions, not slowness: they compare 4x the input (linear is
 about 4x the time, quadratic 16x) and use budgets far above the measured time.
 
+## GitHub's GraphQL budget
+
+Each `gh api graphql` call costs at least 1 point of the 5,000 an hour
+(`gh api rate_limit`), and a call's cost grows with the connections it asks
+for. Measured on this repo: 10 full branch lookups cost 6 points, the same 10
+as probes (`probePRs`: number, updatedAt, state) cost 1, and 5 full lookups by
+number cost 1. So a PR is probed each poll (in batches of `PROBES_PER_QUERY`)
+and looked up in full only when its updatedAt changed, or every
+`PR_FULL_MS` regardless. Active PRs (checks running, auto-merge, approved:
+`prMaxAge`) are looked up in full as before.
+
 ## CI
 
 CI checks that `mods/` is up to date, runs `npm run ci:lint`, ShellCheck and the tests, and runs

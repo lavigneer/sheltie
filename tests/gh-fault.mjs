@@ -31,7 +31,9 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 const prs = f.prs ?? [];
-const byNumber = (n) => prs.find((p) => String(p.number) === String(n)) ?? null;
+// updatedAt: a hash of the node, so it changes whenever the PR does.
+const stamp = (p) => p && { ...p, updatedAt: require("node:crypto").createHash("sha1").update(JSON.stringify(p)).digest("hex") };
+const byNumber = (n) => stamp(prs.find((p) => String(p.number) === String(n)) ?? null);
 const repository = {};
 const errors = [];
 for (const [, alias, number] of query.matchAll(/(p\\d+): pullRequest\\(number: (\\d+)\\)/g)) {
@@ -46,7 +48,7 @@ for (const [, alias, variable] of query.matchAll(/(b\\d+): pullRequests\\(headRe
   if (hit && (f.fail ?? []).includes(hit.number)) {
     errors.push({ message: "Something went wrong", path: ["repository", alias] });
     repository[alias] = null;
-  } else repository[alias] = { nodes: hit ? [hit] : [] };
+  } else repository[alias] = { nodes: hit ? [stamp(hit)] : [] };
 }
 process.stdout.write(JSON.stringify({ data: { repository }, ...(errors.length ? { errors } : {}) }));
 `;

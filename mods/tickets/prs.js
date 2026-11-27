@@ -23,7 +23,7 @@ const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 /**
  * A pullRequest node from prDetails' query (prFields), as parsePR reads it.
  * @typedef {{
- *   number: number, url: string, title: string, body?: string | null,
+ *   number: number, updatedAt?: string, url: string, title: string, body?: string | null,
  *   state: "OPEN" | "CLOSED" | "MERGED", isDraft: boolean, reviewDecision?: string | null,
  *   headRefName: string, baseRefName?: string | null, headRefOid: string,
  *   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN", autoMergeRequest?: unknown, isInMergeQueue?: boolean,
@@ -50,32 +50,44 @@ const MERGE_STATES = ["MERGEABLE", "CONFLICTING"];
 const prFields = (
   required,
   number,
-) => `number url title body state isDraft reviewDecision headRefName baseRefName
+) => `number updatedAt url title body state isDraft reviewDecision headRefName baseRefName
   headRefOid mergeable autoMergeRequest { enabledAt } isInMergeQueue
   commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
     nodes { ... on CheckRun { status conclusion${required ? ` isRequired(pullRequestNumber: ${number})` : ""} }
       ... on StatusContext { state${required ? ` isRequired(pullRequestNumber: ${number})` : ""} } } } } } } }
   reviewThreads(first: 100) { nodes { isResolved } }`;
 
+// What a probe asks for (probePRs): which PR a ref names, and when it last
+// changed. Without prFields' connections it costs GitHub a fraction of a full
+// lookup, so far more refs go in one query.
+const PROBE_FIELDS = "number updatedAt state";
+
 // PRs looked up per GraphQL query. Each lookup is an alias in it: p<i> for a
-// PR by number, b<i> for a branch (its name in the variable $b<i>).
-export const PRS_PER_QUERY = 10;
+// PR by number, b<i> for a branch (its name in the variable $b<i>). GitHub
+// rounds each query's cost up to at least 1 point, so a bigger batch spends
+// fewer points. A full lookup asks for about 3 connections per PR (commits,
+// check contexts, review threads), and a branch lookup takes up to 20 PRs, so
+// 20 lookups stay well under GitHub's 500,000-node limit per query.
+export const PRS_PER_QUERY = 20;
+// Probes per GraphQL query (see probePRs).
+export const PROBES_PER_QUERY = 100;
 /** @param {unknown} ref */
 const isNumber = (ref) => /^\d+$/.test(String(ref));
 
-// The query for `lookups` ({ alias, ref, number, required }). A number is
-// only ever digits, so it goes in as a literal.
-/** @param {any[]} lookups */
-function batchQuery(lookups) {
+// The query for `lookups` ({ alias, ref, number, required }), asking for
+// prFields, or for PROBE_FIELDS with `probe`. A number is only ever digits, so
+// it goes in as a literal.
+/** @param {any[]} lookups @param {boolean} [probe] */
+function batchQuery(lookups, probe = false) {
   const vars = lookups
     .filter((l) => !l.number)
     .map((l) => `, $${l.alias}: String!`)
     .join("");
   const fields = lookups.map((l) =>
     l.number
-      ? `${l.alias}: pullRequest(number: ${l.ref}) { ${prFields(l.required, l.ref)} }`
+      ? `${l.alias}: pullRequest(number: ${l.ref}) { ${probe ? PROBE_FIELDS : prFields(l.required, l.ref)} }`
       : // Like `gh pr view <branch>`: the open PR from that branch, else the latest.
-        `${l.alias}: pullRequests(headRefName: $${l.alias}, first: 20, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${prFields(false)} } }`,
+        `${l.alias}: pullRequests(headRefName: $${l.alias}, first: 20, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${probe ? PROBE_FIELDS : prFields(false)} } }`,
   );
   return `query($owner: String!, $name: String!${vars}) {
   repository(owner: $owner, name: $name) { ${fields.join("\n    ")} } }`;
@@ -125,14 +137,16 @@ function answers(r, lookups) {
 }
 
 // The PR nodes for `refs` ({ ref, required }, in `slug`), a query per
-// PRS_PER_QUERY: Map ref -> node, null for none, or an Error.
-/** @param {string} slug @param {{ ref: string | number, required: boolean }[]} refs @param {boolean} [urgent] */
-async function fetchPRs(slug, refs, urgent = false) {
+// PRS_PER_QUERY (PROBES_PER_QUERY with `probe`): Map ref -> node, null for
+// none, or an Error. `urgent`: a click's lookup (lib.js limits).
+/** @param {string} slug @param {{ ref: string | number, required: boolean }[]} refs @param {{ probe?: boolean, urgent?: boolean }} [opts] */
+async function fetchPRs(slug, refs, { probe = false, urgent = false } = {}) {
   const [owner, name] = slug.split("/");
   const out = new Map();
   const chunks = [];
-  for (let i = 0; i < refs.length; i += PRS_PER_QUERY)
-    chunks.push(refs.slice(i, i + PRS_PER_QUERY));
+  const size = probe ? PROBES_PER_QUERY : PRS_PER_QUERY;
+  for (let i = 0; i < refs.length; i += size)
+    chunks.push(refs.slice(i, i + size));
   await Promise.all(
     chunks.map(async (chunk) => {
       const lookups = chunk.map((l, i) => {
@@ -153,7 +167,7 @@ async function fetchPRs(slug, refs, urgent = false) {
           `name=${name}`,
           ...vars,
           "-f",
-          `query=${batchQuery(lookups)}`,
+          `query=${batchQuery(lookups, probe)}`,
         ],
         { urgent },
       );
@@ -161,6 +175,18 @@ async function fetchPRs(slug, refs, urgent = false) {
     }),
   );
   return out;
+}
+
+// The PR each of `refs` (numbers or branches, in `slug`) names now, as
+// { number, updatedAt, state } (null for none, an Error for a failed lookup),
+// to decide whether a PR needs a full lookup (WorkStore.refresh in work.js).
+/** @param {string} slug @param {(string | number)[]} refs @returns {Promise<Map<string | number, { number: number, updatedAt: string, state: string } | null | Error>>} */
+export function probePRs(slug, refs) {
+  return fetchPRs(
+    slug,
+    refs.map((ref) => ({ ref, required: false })),
+    { probe: true },
+  );
 }
 
 // A PR's details from its pullRequest node in GitHub's GraphQL answer (see
@@ -204,6 +230,7 @@ export function parsePR(
   return {
     slug,
     number: pr.number,
+    updatedAt: pr.updatedAt ?? null,
     url: pr.url,
     title: pr.title,
     body: pr.body ?? "",
@@ -248,7 +275,7 @@ export async function prDetailsMany(
       ref,
       required: requiredOnly && isNumber(ref),
     })),
-    urgent,
+    { urgent },
   );
   // Found by branch: ask again by number, for which checks are required.
   if (requiredOnly) {
@@ -262,7 +289,7 @@ export async function prDetailsMany(
         ref: found.get(ref).number,
         required: true,
       })),
-      urgent,
+      { urgent },
     );
     for (const { ref } of byBranch)
       found.set(ref, byNumber.get(found.get(ref).number));

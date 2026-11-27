@@ -167,6 +167,12 @@ case "${1:-} ${2:-}" in
         | if length == 0 then null else {contexts: {nodes: .}} end)}}]},
      reviewThreads: {nodes: ([range(.unresolved // 0)] | map({isResolved: false}))}} end)
   ' <<<"$pr")"
+    # updatedAt: a checksum of the node, so it changes whenever the PR does (as
+    # GitHub's does, for what the probe (prs.js probePRs) looks at).
+    if [ "$node" != null ]; then
+      sum="$(printf '%s' "$node" | cksum | cut -d' ' -f1)"
+      node="$(jq --arg u "demo-$sum" '. + {updatedAt: $u}' <<<"$node")"
+    fi
     if [ "$kind" = number ]; then
       v="$node"
     else

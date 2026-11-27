@@ -10,7 +10,7 @@ import { C } from "../src/config.js";
 import { parseWorktrees } from "../src/git.js";
 import { score } from "../src/lib.js";
 import { PR_MS } from "../src/polling.js";
-import { prDetailsMany } from "../src/prs.js";
+import { PRS_PER_QUERY, prDetailsMany, probePRs } from "../src/prs.js";
 import { fixtureSpaces } from "../src/spaces.js";
 import { prRef, WorkStore } from "../src/work.js";
 import { WorkModel } from "../src/work-model.js";
@@ -70,13 +70,17 @@ function medianMs(f, n = 5) {
   return times.sort((a, b) => a - b)[Math.floor(n / 2)];
 }
 
-test("performance: 250 PR lookups in one repo cost one GraphQL query per 10, then none while fresh", async () => {
+test("performance: 250 PR lookups in one repo cost one GraphQL query per PRS_PER_QUERY, then none while fresh, and a probe per 100 when due", async () => {
   const gh = faultyGh();
   const clock = { t: 0 };
   const repo = { slug: "me/app", path: "/ws/app", name: "app", tracker };
   const branches = Array.from({ length: 250 }, (_, i) => `issue-${i}`);
   const store = new WorkStore({
-    sources: { repoState: async () => null, prDetailsMany },
+    sources: {
+      repoState: async () => null,
+      prDetailsMany,
+      prProbeMany: probePRs,
+    },
     now: () => clock.t,
   });
   const was = C.programs.gh;
@@ -92,8 +96,8 @@ test("performance: 250 PR lookups in one repo cost one GraphQL query per 10, the
     const took = performance.now() - t0;
     // The budget is a fixed number, not PRS_PER_QUERY: changing the batch size
     // should change this test too.
-    const queries = 25;
-    assert.equal(gh.graphqlCalls(), queries, "one query per 10 PRs");
+    const queries = Math.ceil(250 / PRS_PER_QUERY);
+    assert.equal(gh.graphqlCalls(), queries, "one query per PRS_PER_QUERY PRs");
     assert.equal(store.prs.get(prRef("me/app", "issue-249"))?.state, "found");
     console.log(`  250 PR lookups: ${took.toFixed(0)} ms, ${queries} gh calls`);
 
@@ -101,6 +105,17 @@ test("performance: 250 PR lookups in one repo cost one GraphQL query per 10, the
     clock.t += PR_MS - 1;
     await look();
     assert.equal(gh.graphqlCalls(), queries, "fresh PRs are not asked again");
+
+    // Due, and not changed since (updatedAt): the probe answers for all 250
+    // in 3 queries, and no PR is looked up in full.
+    clock.t += 2;
+    await look();
+    assert.equal(
+      gh.graphqlCalls(),
+      queries + Math.ceil(250 / 100),
+      "due PRs are probed, not looked up in full",
+    );
+    assert.equal(store.prs.get(prRef("me/app", "issue-249"))?.state, "found");
   } finally {
     C.programs.gh = was;
   }
