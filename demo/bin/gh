@@ -138,50 +138,59 @@ case "${1:-} ${2:-}" in
     esac
   done
   slug="$owner/$name"
+  remote="$demo/remotes/$name.git"
   query="$(for a in "$@"; do case "$a" in query=*) printf '%s\n' "${a#query=}" ;; esac; done)"
-  data='{}'
-  while read -r alias kind value; do
-    ref="$value"
-    if [ "$kind" = branch ]; then
-      ref=""
-      for a in "$@"; do case "$a" in "$value"=*) ref="${a#*=}" ;; esac; done
-    fi
-    pr="$(find_pr "$slug" "$ref")" || pr=null
-    head=""
-    if [ "$pr" != null ]; then
-      head="$(pr_head "$name" "$(jq -r .branch <<<"$pr")" "$(jq -r .number <<<"$pr")")"
-    fi
-    node="$(jq --arg head "$head" '
-    (if . == null then null else
-    {number, title, url: "https://github.com/\(.repo)/pull/\(.number)",
-     state: (.state // "OPEN"), isDraft: .draft, reviewDecision: .review,
-     headRefName: .branch, baseRefName: (.base // "main"), headRefOid: $head,
-     autoMergeRequest: (if .autoMerge then {enabledAt: "now"} else null end),
-     mergeable: (.mergeable // "MERGEABLE"),
-     commits: {nodes: [{commit: {statusCheckRollup:
-       # .optionalChecks: conclusions of checks not required for merging.
-       ((if .checks == null then []
-         elif .checks == "IN_PROGRESS" then [{status: .checks, conclusion: null, isRequired: true}]
-         else [{conclusion: .checks, isRequired: true}] end)
-        + ((.optionalChecks // []) | map({conclusion: ., isRequired: false}))
-        | if length == 0 then null else {contexts: {nodes: .}} end)}}]},
-     reviewThreads: {nodes: ([range(.unresolved // 0)] | map({isResolved: false}))}} end)
-  ' <<<"$pr")"
-    # updatedAt: a checksum of the node, so it changes whenever the PR does (as
-    # GitHub's does, for what the probe (prs.js probePRs) looks at).
-    if [ "$node" != null ]; then
-      sum="$(printf '%s' "$node" | cksum | cut -d' ' -f1)"
-      node="$(jq --arg u "demo-$sum" '. + {updatedAt: $u}' <<<"$node")"
-    fi
-    if [ "$kind" = number ]; then
-      v="$node"
-    else
-      v="$(jq -n --argjson n "$node" 'if $n == null then {nodes: []} else {nodes: [$n]} end')"
-    fi
-    data="$(jq --arg k "$alias" --argjson v "$v" '. + {($k): $v}' <<<"$data")"
-  done < <(grep -oE '[pb][0-9]+: pullRequests?\((number: [0-9]+|headRefName: \$[pb][0-9]+)' <<<"$query" |
-    sed -E 's/^([pb][0-9]+): pullRequest\(number: ([0-9]+)/\1 number \2/; s/^([pb][0-9]+): pullRequests\(headRefName: \$([pb][0-9]+)/\1 branch \2/')
-  jq -n --argjson r "$data" '{data: {repository: $r}}'
+  # The lookups as JSON: [{alias, kind, ref}], a branch's name from its variable.
+  lookups="$(
+    grep -oE '[pb][0-9]+: pullRequests?\((number: [0-9]+|headRefName: \$[pb][0-9]+)' <<<"$query" |
+      sed -E 's/^([pb][0-9]+): pullRequest\(number: ([0-9]+)/\1 number \2/; s/^([pb][0-9]+): pullRequests\(headRefName: \$([pb][0-9]+)/\1 branch \2/' |
+      while read -r alias kind value; do
+        ref="$value"
+        if [ "$kind" = branch ]; then
+          ref=""
+          for a in "$@"; do case "$a" in "$value"=*) ref="${a#*=}" ;; esac; done
+        fi
+        printf '%s\t%s\t%s\n' "$alias" "$kind" "$ref"
+      done | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {alias: .[0], kind: .[1], ref: .[2]})'
+  )"
+  # Every branch and PR head on the "GitHub" remote, read once (not per PR).
+  heads="$(git -C "$remote" for-each-ref --format='%(refname) %(objectname)' refs/heads refs/pull 2>/dev/null |
+    jq -R -s -c 'split("\n") | map(select(length > 0) | split(" ") | {(.[0]): .[1]}) | add // {}')"
+  # One jq for every lookup (a process or more per PR is slow at scale, #369).
+  # Each is answered from the demo's PRs, null when there is none, as GitHub
+  # answers; headRefOid is the branch's head on the remote while it exists,
+  # else refs/pull/<n>/head (see pr_head).
+  answer="$(state_jq -c --arg repo "$slug" --argjson ls "$lookups" --argjson heads "$heads" '
+    .prs as $prs
+    | def pick($ref): [$prs[] | select(.repo == $repo and (.branch == $ref or (.number | tostring) == $ref))]
+        | sort_by(if (.state // "OPEN") == "OPEN" then 0 else 1 end) | first;
+      def head: $heads["refs/heads/\(.branch)"] // $heads["refs/pull/\(.number)/head"] // "";
+      def node: if . == null then null else
+        {number, title, url: "https://github.com/\(.repo)/pull/\(.number)",
+         state: (.state // "OPEN"), isDraft: .draft, reviewDecision: .review,
+         headRefName: .branch, baseRefName: (.base // "main"), headRefOid: head,
+         autoMergeRequest: (if .autoMerge then {enabledAt: "now"} else null end),
+         mergeable: (.mergeable // "MERGEABLE"),
+         commits: {nodes: [{commit: {statusCheckRollup:
+           # .optionalChecks: conclusions of checks not required for merging.
+           ((if .checks == null then []
+             elif .checks == "IN_PROGRESS" then [{status: .checks, conclusion: null, isRequired: true}]
+             else [{conclusion: .checks, isRequired: true}] end)
+            + ((.optionalChecks // []) | map({conclusion: ., isRequired: false}))
+            | if length == 0 then null else {contexts: {nodes: .}} end)}}]},
+         reviewThreads: {nodes: ([range(.unresolved // 0)] | map({isResolved: false}))}}
+        # updatedAt: the node itself, encoded, so it changes whenever the PR
+        # does (as GitHub'\''s does, for what the probe, prs.js probePRs, reads).
+        | . + {updatedAt: ("demo-" + (tostring | @base64))} end;
+    {data: {repository: ($ls | map({key: .alias, value: (pick(.ref) | node)}) | from_entries)},
+     pulls: [$ls[] | pick(.ref) | select(. != null and $heads["refs/heads/\(.branch)"])
+             | "update refs/pull/\(.number)/head \($heads["refs/heads/\(.branch)"])"]}')"
+  # Like GitHub, refs/pull/<n>/head follows the branch while it exists.
+  jq -r '.pulls[]' <<<"$answer" | git -C "$remote" update-ref --stdin 2>/dev/null || true
+  # A branch lookup answers a list of nodes ({nodes: []} for none).
+  jq -c --argjson ls "$lookups" '.data.repository as $r
+    | {data: {repository: ($ls | map({key: .alias, value: (if .kind == "number" then $r[.alias]
+        elif $r[.alias] == null then {nodes: []} else {nodes: [$r[.alias]]} end)}) | from_entries)}}' <<<"$answer"
   ;;
 "pr checkout")
   # In a clone of a demo repo: the PR's head (refs/pull/<n>/head, so forks

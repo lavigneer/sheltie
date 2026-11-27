@@ -1,3 +1,4 @@
 node_modules/
 /result
 /e2e-results/
+/demo/data-scale*.json

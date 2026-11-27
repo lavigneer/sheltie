@@ -3,7 +3,8 @@
 // catastrophic regressions only: a ratio between two sizes (linear work grows
 // about 4x for 4x the input, quadratic about 16x) and budgets an order of
 // magnitude above what the code takes. Each measured time is also logged to
-// the test output, so a slow run shows its numbers.
+// the test output, so a slow run shows its numbers, and compared with
+// perf-baseline.json by the last test (baseline.mjs: fails past 2x).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { C } from "../src/config.js";
@@ -14,6 +15,7 @@ import { PRS_PER_QUERY, prDetailsMany, probePRs } from "../src/prs.js";
 import { fixtureSpaces } from "../src/spaces.js";
 import { prRef, WorkStore } from "../src/work.js";
 import { WorkModel } from "../src/work-model.js";
+import { compare, record } from "./baseline.mjs";
 import { prNode } from "./fake-tools.mjs";
 import { faultyGh } from "./gh-fault.mjs";
 
@@ -99,6 +101,7 @@ test("performance: 250 PR lookups in one repo cost one GraphQL query per PRS_PER
     const queries = Math.ceil(250 / PRS_PER_QUERY);
     assert.equal(gh.graphqlCalls(), queries, "one query per PRS_PER_QUERY PRs");
     assert.equal(store.prs.get(prRef("me/app", "issue-249"))?.state, "found");
+    record("250 PR lookups", took);
     console.log(`  250 PR lookups: ${took.toFixed(0)} ms, ${queries} gh calls`);
 
     // Still fresh a moment later: nothing goes to GitHub.
@@ -140,6 +143,8 @@ test("performance: scan and join grow linearly with the workspace, not quadratic
   const tSmall = medianMs(() => small.store.join());
   const tLarge = medianMs(() => large.store.join());
   const ratio = tLarge / Math.max(tSmall, 0.05);
+  record("join 100x10", tSmall);
+  record("join 400x10", tLarge);
   console.log(
     `  join 100x10: ${tSmall.toFixed(1)} ms, 400x10: ${tLarge.toFixed(1)} ms (x${ratio.toFixed(1)})`,
   );
@@ -153,6 +158,7 @@ test("performance: the hot paths stay well inside budget at 10x the sizes above"
   const w = workspace(1000, 10);
   await w.model.scan(w.list);
   const join = medianMs(() => w.store.join());
+  record("join 1000x10", join);
   console.log(`  join 1000x10: ${join.toFixed(1)} ms`);
   assert.ok(join < 1000, `join of 10,000 worktrees took ${join.toFixed(0)} ms`);
 
@@ -163,6 +169,7 @@ test("performance: the hot paths stay well inside budget at 10x the sizes above"
       `worktree /r/.worktrees/w${i}\nHEAD ${"a".repeat(40)}\nbranch refs/heads/issue-${i}\n`,
   ).join("\n");
   const parse = medianMs(() => parseWorktrees(porcelain, "/r"));
+  record("parseWorktrees 20000", parse);
   console.log(`  parseWorktrees ${n}: ${parse.toFixed(1)} ms`);
   assert.ok(parse < 500, `parseWorktrees of ${n} took ${parse.toFixed(0)} ms`);
 
@@ -173,6 +180,16 @@ test("performance: the hot paths stay well inside budget at 10x the sizes above"
   const fuzzy = medianMs(() => {
     for (const t of texts) score(t, "thing 42");
   });
+  record("score 20000", fuzzy);
   console.log(`  score ${n} strings: ${fuzzy.toFixed(1)} ms`);
   assert.ok(fuzzy < 500, `scoring ${n} strings took ${fuzzy.toFixed(0)} ms`);
+});
+
+// Last: every time above against the baseline (see baseline.mjs). Printed on
+// every run; fails only with PERF_COMPARE=1 (CI's own step, without the
+// coverage run's instrumentation, on the machine the baseline came from).
+test("performance: no phase is more than 2x its baseline", () => {
+  const slow = compare(new URL("perf-baseline.json", import.meta.url).pathname);
+  if (process.env.PERF_COMPARE === "1")
+    assert.deepEqual(slow, [], `slower than the baseline:\n${slow.join("\n")}`);
 });

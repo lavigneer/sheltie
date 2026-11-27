@@ -73,13 +73,29 @@ const MAX_BACKOFF_MS = 15 * 60_000;
 /**
  * @typedef {{
  *   max: number, active: number, waiting: ((v?: any) => void)[], urgent: ((v?: any) => void)[],
- *   until: number, backoff: number,
+ *   until: number, backoff: number, opened: number,
  * }} Limit
  */
 /** @type {Record<string, Limit>} */
 const limits = {
-  gh: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
-  jira: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
+  gh: {
+    max: 2,
+    active: 0,
+    waiting: [],
+    urgent: [],
+    until: 0,
+    backoff: 0,
+    opened: 0,
+  },
+  jira: {
+    max: 2,
+    active: 0,
+    waiting: [],
+    urgent: [],
+    until: 0,
+    backoff: 0,
+    opened: 0,
+  },
 };
 
 /** @param {Limit} l @param {string} name @param {string[]} args @param {{ cwd?: string, urgent?: boolean }} [opts] */
@@ -97,14 +113,20 @@ async function limited(l, name, args, opts) {
         stderr: `${name}: rate limited, retrying in ${Math.ceil(wait / 1000)} s`,
       };
     }
+    const asked = Date.now();
     const r = await run(name, args, opts);
     if (r.code !== 0 && RATE_LIMITED.test(`${r.stderr}\n${r.stdout}`)) {
       counts.rateLimited++;
+      // Calls in flight together that are all told "rate limited" are one
+      // rate limit: only a backoff opened before this call asked is repeated
+      // (and so doubled), not one another call opened meanwhile (#370).
+      if (l.opened >= asked) return r;
       l.backoff = Math.min(
         l.backoff ? l.backoff * 2 : BACKOFF_MS,
         MAX_BACKOFF_MS,
       );
-      l.until = Date.now() + l.backoff;
+      l.opened = Date.now();
+      l.until = l.opened + l.backoff;
     } else if (r.code === 0) l.backoff = 0;
     return r;
   } finally {

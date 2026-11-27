@@ -16,8 +16,12 @@ import {
 } from "./start.js";
 import { Cache } from "./watch.js";
 
-/** @param {{ number: number, slug: string | null }} a @param {{ number: number, slug: string | null }} b */
-const samePR = (a, b) => a.number === b.number && sameSlug(a.slug, b.slug);
+// A PR's identity (sameSlug's: the slug's case doesn't count), so a lookup by
+// PR is a Map read, not a walk of every worktree or the queue (#367).
+// No slug: no identity (sameSlug never matches a missing one).
+/** @param {{ number: number, slug: string | null }} pr */
+const prKey = (pr) =>
+  pr.slug ? `${pr.slug.toLowerCase()}#${pr.number}` : null;
 
 export const DEFAULT_SOURCES = {
   ready: configReady,
@@ -48,6 +52,8 @@ export class ReviewsModel {
     this.reviewed = []; // of those, the ones whose PR left the queue
     this.warned = new Set(); // paths whose automatic teardown was refused
     this.starting = false; // one start at a time: no double checkout
+    /** @type {{ of: any[], byPR: Map<string, any> } | undefined} */
+    this.indexed = undefined; // worktreeOf's index of `worktrees`
   }
 
   /** @returns {any[]} */
@@ -107,15 +113,27 @@ export class ReviewsModel {
       }
     // sweepReviews leaves queued ones alone: those stay, with kept.
     const keptPaths = new Set(kept.map((w) => w.path));
+    const inQueue = new Set(queue.map(prKey));
     /** @param {any} w */
-    const queued = (w) => queue.some((r) => samePR(r, w));
+    const queued = (w) => prKey(w) !== null && inQueue.has(prKey(w));
     this.worktrees = all.filter((w) => queued(w) || keptPaths.has(w.path));
     this.reviewed = kept.filter((w) => !queued(w));
   }
 
+  // r's review worktree, from an index of the worktrees rebuilt when they
+  // change: a render asks for every row.
   /** @param {any} r */
   worktreeOf(r) {
-    return this.worktrees.find((w) => samePR(w, r));
+    if (this.indexed?.of !== this.worktrees) {
+      const byPR = new Map();
+      for (const w of this.worktrees) {
+        const k = prKey(w);
+        if (k !== null && !byPR.has(k)) byPR.set(k, w);
+      }
+      this.indexed = { of: this.worktrees, byPR };
+    }
+    const k = prKey(r);
+    return k === null ? undefined : this.indexed.byPR.get(k);
   }
 
   // Starts reviewing r: its PR checked out in a review worktree, in a space.

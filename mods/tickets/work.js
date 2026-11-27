@@ -618,19 +618,34 @@ export class WorkStore {
         if (repo.slug && branch)
           lookups.set(prRef(repo.slug, branch), [repo.slug, branch]);
       for (const [key, items] of this.snapshot(ks)) {
+        const linked = this.linked.get(key)?.value ?? [];
+        // Each linked PR is looked up one way: by its item's branch once that
+        // has been looked up (a local branch's PR), else by number. A PR
+        // found only by number gets a branch in the join; asking that too
+        // would poll it twice (#367).
+        /** @param {PRRef} p @param {WorkItem} w */
+        const byBranch = (p, w) =>
+          sameSlug(w.repo.slug, p.slug) &&
+          w.pr?.number === p.number &&
+          this.prs.get(prRef(/** @type {string} */ (w.repo.slug), w.branch)) !==
+            undefined;
         for (const item of items)
-          if (item.repo.slug && item.branch)
+          if (
+            item.repo.slug &&
+            item.branch &&
+            !linked.some(
+              (/** @type {PRRef} */ p) =>
+                sameSlug(item.repo.slug, p.slug) &&
+                item.pr?.number === p.number &&
+                !byBranch(p, item),
+            )
+          )
             lookups.set(prRef(item.repo.slug, item.branch), [
               item.repo.slug,
               item.branch,
             ]);
-        // A linked PR already attached by branch is looked up that way.
-        for (const p of this.linked.get(key)?.value ?? [])
-          if (
-            !items.some(
-              (w) => sameSlug(w.repo.slug, p.slug) && w.pr?.number === p.number,
-            )
-          )
+        for (const p of linked)
+          if (!items.some((w) => byBranch(p, w)))
             lookups.set(prRef(p.slug, p.number), [p.slug, p.number]);
       }
       // The due ones, by repo: one batched lookup per repo (prDetailsMany).

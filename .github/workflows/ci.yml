@@ -40,6 +40,14 @@ jobs:
           git config --global init.defaultBranch main
           # The unit tests, under coverage: fails below the shared-module gate.
           npm run coverage
+      # Timings against tests/perf-baseline.json (fails past 2x, prints the
+      # table and this run's JSON either way: copy that into the baseline,
+      # in a PR, to refresh it). Not under coverage, which slows everything.
+      - name: Performance against the baseline
+        run: npm run test:perf
+      # Real git at scale (20 repos x 25 worktrees): git processes per phase.
+      - name: Scale tests (real git)
+        run: npm run test:scale
 
   # The real Herdr with the mods, on throwaway demos (npm run e2e), on Xvfb.
   # Herdr comes from the nixpkgs in flake.lock; the scheduled run uses the

@@ -122,7 +122,13 @@ test("sweeping tears down merged and closed reviews, keeps open ones", async () 
   const { kept, refused } = await sweepReviews(
     await allReviewWorktrees([repo]),
     [],
-    async (_slug, n) => ({ state: states[n], title: `PR ${n}`, url: "u" }),
+    async (_slug, numbers) =>
+      new Map(
+        numbers.map((n) => [
+          n,
+          { state: states[n], title: `PR ${n}`, url: "u" },
+        ]),
+      ),
   );
   assert.deepEqual(kept.map((w) => w.number).sort(), [42, 44]);
   assert.deepEqual(
