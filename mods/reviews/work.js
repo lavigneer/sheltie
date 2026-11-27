@@ -277,17 +277,22 @@ export const prMaxAge = (pr) =>
 // PR details by prRef (slug#branch or slug#number). Sources are injected:
 // `repoState(repo)` and `prDetailsMany(slug, items, { requiredOnly })`; trackers (view,
 // linkedPRs) come with the keys asked about.
-// What a scan found, as text to compare with the last scan's.
+// What a scan found, as text to compare with the last scan's. A repo whose
+// state couldn't be read is null (scan): it's part of the key, so its rows
+// going away counts as a change.
 /** @param {any[]} states */
 const statesKey = (states) =>
   JSON.stringify(
-    states.map((s) => [
-      s.repo.path,
-      s.mainBranch,
-      s.linked,
-      s.worktrees,
-      [...(s.branches ?? [])],
-    ]),
+    states.map(
+      (s) =>
+        s && [
+          s.repo.path,
+          s.mainBranch,
+          s.linked,
+          s.worktrees,
+          [...(s.branches ?? [])],
+        ],
+    ),
   );
 
 export class WorkStore {

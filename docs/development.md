@@ -68,6 +68,21 @@ the Jira demo with its long ticket, branch and repo names. They're for looking
 at after a Herdr update or a UI change; the run itself only checks there are
 no errors and the sidebar still offers every step.
 
+## Chaos and performance tests
+
+`tests/chaos.test.mjs` breaks the sources the Work sidebar reads and checks
+its data holds: a fake `gh` (`tests/gh-fault.mjs`) answers with 502s, garbage,
+rate limits or GraphQL errors, and a repo's git state can fail. The rule
+under test: a failed lookup is never "no PR", a repo that can't be read
+doesn't hide the others, and a failed lookup is retried after `RETRY_MS`. Its
+random-faults test is seeded: a failure prints the seed, and `CHAOS_SEED=<n>
+npm test` replays it.
+
+`tests/performance.test.mjs` counts work at realistic sizes (GraphQL calls for
+250 PRs, one git read per repo per scan) and times the hot paths. The timing
+checks catch regressions, not slowness: they compare 4x the input (linear is
+about 4x the time, quadratic 16x) and use budgets far above the measured time.
+
 ## CI
 
 CI checks that `mods/` is up to date, runs `npm run ci:lint`, ShellCheck and the tests, and runs
