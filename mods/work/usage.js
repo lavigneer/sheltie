@@ -28,40 +28,46 @@ const PRICES_MS = 3_600_000;
 // sidebar refreshes every 2 minutes, so together they scan once per interval).
 export const SHARE_MS = 100_000;
 
-// Per (agent, cwd, UTC day, model, fast) token sums from record lines
-// { id?, dir, d, m, fast, i, o, r, w5, w1 }, grouped as they stream. Records
-// sharing an id are one message (the first is kept), across files too: a
-// resumed session repeats its history in a new log.
-const GROUP = `
-reduce inputs as $r ({ seen: {}, g: {} };
-  if $r.id and .seen[$r.id] then . else
-    (if $r.id then .seen[$r.id] = true else . end)
-    | ([$r.d, $r.m, $r.fast, $r.dir] | tojson) as $k
-    | .g[$k] |= { dir: $r.dir, day: $r.d, model: $r.m, fast: $r.fast,
-        input: ((.input // 0) + $r.i), output: ((.output // 0) + $r.o),
-        read: ((.read // 0) + $r.r), write5m: ((.write5m // 0) + $r.w5),
-        write1h: ((.write1h // 0) + $r.w1) } end)
-| [.g[]] | sort_by(.day, .model, .fast, .dir)[]`;
-
 // Shell scripts printing an agent's records, given $1 = its home, $2 =
-// sqlite3, $3 = jq, $4 = the reader's jq and $5 = its cache folder. A missing
-// folder or database (agent never used) prints none.
+// sqlite3, $3 = jq, $4 = the reader's jq, $5 = its cache folder and $6 = 1 to
+// print every log (else only the ones made again). A missing folder or
+// database (agent never used) prints none. Output, one line per log: its cache
+// file as "C<TAB>file" if it was made again, else "U<TAB>file". The caller
+// reads the records of a changed file, lines of { id?, dir, d, m, fast, i, o,
+// r, w5, w1 }.
+//
 // JSONL: each log's records are kept in $5/<log's path>, made again only when
-// the log is newer. The cache takes the log's mtime from before it was read,
-// so a line written meanwhile makes it stale. A half-written last line is
-// skipped until the log grows.
+// the log is newer (-nt compares whole seconds, so a write in the same second
+// as the last read can go unseen until the next). The cache takes the log's
+// mtime from before it was read, so a line written meanwhile makes it stale.
+// A half-written last line is skipped until the log grows. Stale logs are read
+// four at a time.
 /** @param {string} dir */
 const JSONL = (dir) => `[ -d "$1/${dir}" ] || exit 0
+mkdir -p "$5" && changed="$5.changed.$$" && : > "$changed" || exit 1
 find "$1/${dir}" -name "*.jsonl" -type f | while IFS= read -r f; do
   c="$5$f"
-  if [ ! -f "$c" ] || [ "$f" -nt "$c" ]; then
-    mkdir -p "\${c%/*}" && : > "$c.s$$" && touch -r "$f" "$c.s$$" \\
-      && "$3" -R -n -c "$4" "$f" > "$c.t$$" && touch -r "$c.s$$" "$c.t$$" \\
-      && mv "$c.t$$" "$c" || { rm -f "$c.s$$" "$c.t$$"; exit 1; }
-    rm -f "$c.s$$"
-  fi
-  cat "$c"
-done`;
+  if [ ! -f "$c" ] || [ "$f" -nt "$c" ]; then printf '%s\\0' "$f"; fi
+done | xargs -0 -n 1 -P 4 sh -c '
+  [ -n "$5" ] || exit 0
+  c="$3$5"
+  mkdir -p "\${c%/*}" && : > "$c.s$$" && touch -r "$5" "$c.s$$" \\
+    && "$1" -R -n -c "$2" "$5" > "$c.t$$" && touch -r "$c.s$$" "$c.t$$" \\
+    && mv "$c.t$$" "$c" || { rm -f "$c.s$$" "$c.t$$"; exit 1; }
+  rm -f "$c.s$$"
+  printf "%s\\\\n" "$5" >> "$4"' sh "$3" "$4" "$5" "$changed" \\
+  || { rm -f "$changed"; exit 1; }
+ch="
+$(cat "$changed")
+"
+find "$1/${dir}" -name "*.jsonl" -type f | while IFS= read -r f; do
+  c="$5$f"
+  case $ch in *"
+$f
+"*) ;; *) [ "$6" = 1 ] || { printf 'U\\t%s\\n' "$c"; continue; } ;; esac
+  printf 'C\\t%s\\n' "$c"
+done
+rm -f "$changed"`;
 
 // Logs are still being written and may hold anything: a line that can't be
 // read is skipped, a token count that isn't a positive number counts as 0
@@ -119,7 +125,8 @@ foreach (inputs | fromjson? // null | select(.)) as $j
    .out // empty)`,
   },
   opencode: {
-    source: `[ -f "$1/opencode.db" ] || exit 0; command -v "$2" >/dev/null || { echo "opencode needs sqlite3 (settings: programs.sqlite3)" >&2; exit 127; }; "$2" -readonly "$1/opencode.db" "SELECT json_object('id', id, 'data', json(data)) FROM message WHERE json_extract(data, '$.role') = 'assistant'" | "$3" -R -n -c "$4"`,
+    // Its database is one section, read whole each scan into its cache file.
+    source: `[ -f "$1/opencode.db" ] || exit 0; command -v "$2" >/dev/null || { echo "opencode needs sqlite3 (settings: programs.sqlite3)" >&2; exit 127; }; mkdir -p "$5" && "$2" -readonly "$1/opencode.db" "SELECT json_object('id', id, 'data', json(data)) FROM message WHERE json_extract(data, '$.role') = 'assistant'" | "$3" -R -n -c "$4" > "$5/opencode.jsonl" && printf 'C\\t%s\\n' "$5/opencode.jsonl"`,
     jq: `${NUM}
 inputs | fromjson? | try (
   .data as $m | select(($m.modelID | type) == "string" and $m.tokens)
@@ -135,42 +142,181 @@ inputs | fromjson? | try (
 /** @param {string} p */
 const expandHome = (p) => p.replace(/^~(?=\/|$)/, home());
 
-// One agent's groups: [{ dir, day, model, fast, input, output, read, write5m,
-// write1h }]. An agent that was never used (no folder) gives none. The groups
-// are kept in <cache>/<home>.groups after a "<scan time in ms>" line, and a
-// scan younger than maxAge ms is reused from there.
-/** @param {{ type: string, dir?: string, [k: string]: any }} agent @param {number} maxAge */
-async function scan(agent, maxAge) {
+// What one agent's scans have counted, kept in memory between scans (per
+// agent and home): each log's records as read, the message ids already
+// counted (a message repeated in a later log is counted once: the first is
+// kept, across files too, since a resumed session repeats its history in a new
+// log) and the sums per { dir, day, model, fast }. A scan applies only the
+// logs that changed, so its cost doesn't grow with the history it has read.
+/**
+ * @typedef {{ at: number, logs: Map<string, any[]>, seen: Set<string>,
+ *   groups: Map<string, any> }} Counted
+ */
+/** @type {Map<string, Counted>} */
+const counted = new Map();
+
+// Scans of all agents run one at a time: they share the state above.
+/** @type {Promise<any>} */
+let queue = Promise.resolve();
+
+// One agent's groups: [{ agent, dir, day, model, fast, input, output, read,
+// write5m, write1h }]. An agent that was never used (no folder) gives none. A
+// scan younger than maxAge ms is reused.
+/** @param {{ type: string, home: string }} agent @param {number} maxAge */
+function scan(agent, maxAge) {
+  const job = queue.then(() => scanNow(agent, maxAge));
+  queue = job.catch(() => {});
+  return job;
+}
+
+/** @param {{ type: string, home: string }} agent @param {number} maxAge */
+async function scanNow(agent, maxAge) {
   const reader = READERS[agent.type];
   if (!reader) throw new Error(`usage: unknown agent type ${agent.type}`);
+  const key = `${agent.type}\0${agent.home}`;
+  const known = counted.get(key);
+  if (known && Date.now() - known.at < maxAge) return groupsOf(known, agent);
+  const at = Date.now();
+  try {
+    // A scan that can't be matched to what was counted starts over.
+    const next =
+      applySections(known, await read(agent, reader, !known)) ??
+      applySections(undefined, await read(agent, reader, true));
+    if (!next) throw new Error("usage: the logs changed while scanning");
+    next.at = at;
+    counted.set(key, next);
+    return groupsOf(next, agent);
+  } catch (e) {
+    counted.delete(key);
+    throw e;
+  }
+}
+
+/** @param {{ type: string, home: string }} agent @param {{ source: string, jq: string }} reader @param {boolean} full */
+async function read(agent, reader, full) {
   const r = await exec("/bin/sh", [
     "-c",
     `(set -o pipefail) 2>/dev/null && set -o pipefail
-out="$5$1.groups"
-if [ -f "$out" ] && read -r at < "$out"; then
-  case $at in ''|*[!0-9]*) ;; *) [ $(($6 - at)) -lt "$7" ] && { tail -n +2 "$out"; exit 0; } ;; esac
-fi
-mkdir -p "\${out%/*}" || exit 1
-{ ${reader.source}
-} | "$3" -n -c "$8" > "$out.t$$" || { rm -f "$out.t$$"; exit 1; }
-{ echo "$6"; cat "$out.t$$"; } > "$out.u$$" && mv "$out.u$$" "$out"
-cat "$out.t$$"; rm -f "$out.t$$" "$out.u$$"`,
+${reader.source}`,
     "sh",
     expandHome(agent.home).replace(/(.)\/+$/, "$1"),
     C.programs.sqlite3,
     C.programs.jq,
     reader.jq,
     `${appHome()}/usage-cache/${agent.type}`,
-    String(Date.now()),
-    String(maxAge),
-    GROUP,
+    full ? "1" : "0",
   ]);
   if (r.code !== 0)
     throw new Error(`usage: ${(r.stderr ?? "").trim().split("\n")[0]}`);
-  return r.stdout
+  // The sections the script listed: [{ path, changed, recs }]. A changed
+  // log's records are read from its cache file on their own, so no single
+  // output grows with the whole history.
+  const list = r.stdout
     .split("\n")
     .filter(Boolean)
-    .map((line) => ({ agent: agent.type, ...JSON.parse(line) }));
+    .map((line) => ({
+      path: line.slice(2),
+      changed: line[0] === "C",
+      /** @type {any[]} */
+      recs: [],
+    }));
+  await Promise.all(
+    list
+      .filter((s) => s.changed)
+      .map(async (s) => {
+        const c = await exec("/bin/cat", [s.path]);
+        if (c.code !== 0)
+          throw new Error(`usage: ${(c.stderr ?? "").trim().split("\n")[0]}`);
+        s.recs = c.stdout
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line));
+      }),
+  );
+  return list;
+}
+
+// Brings `known` (undefined: nothing counted yet) up to the logs in `list`, in
+// listing order. Null when `known` no longer matches them: a log that lost or
+// changed a record, or one that's gone, means counting starts over.
+/** @param {Counted | undefined} known @param {{ path: string, changed: boolean, recs: any[] }[]} list */
+function applySections(known, list) {
+  const logs = new Map();
+  let rebuild = !known;
+  /** @type {any[][]} */
+  const extra = [];
+  for (const s of list) {
+    const old = known?.logs.get(s.path);
+    if (!s.changed) {
+      if (!old) return null;
+      logs.set(s.path, old);
+      continue;
+    }
+    logs.set(s.path, s.recs);
+    const grown = old ? grownBy(old, s.recs) : s.recs;
+    if (grown) extra.push(grown);
+    else rebuild = true;
+  }
+  if (known)
+    for (const p of known.logs.keys()) if (!logs.has(p)) rebuild = true;
+  /** @type {Counted} */
+  const next =
+    known && !rebuild
+      ? { ...known, logs }
+      : { at: 0, logs, seen: new Set(), groups: new Map() };
+  if (rebuild)
+    for (const recs of logs.values()) for (const r of recs) count(next, r);
+  else for (const recs of extra) for (const r of recs) count(next, r);
+  return next;
+}
+
+// The records of `recs` that `old` doesn't have, or null when `old` has one
+// that's gone or changed (a log only grows). Codex records have no id: their
+// place in the log stands in for it.
+/** @param {any[]} old @param {any[]} recs */
+function grownBy(old, recs) {
+  const key = (/** @type {any} */ r, /** @type {number} */ i) =>
+    r.id ?? `#${i}`;
+  const now = new Map(recs.map((r, i) => [key(r, i), JSON.stringify(r)]));
+  /** @type {Set<string>} */
+  const had = new Set();
+  for (const [i, r] of old.entries()) {
+    const k = key(r, i);
+    if (now.get(k) !== JSON.stringify(r)) return null;
+    had.add(k);
+  }
+  return recs.filter((r, i) => !had.has(key(r, i)));
+}
+
+/** @param {Counted} st @param {any} r */
+function count(st, r) {
+  if (r.id != null) {
+    if (st.seen.has(r.id)) return;
+    st.seen.add(r.id);
+  }
+  const k = JSON.stringify([r.dir, r.d, r.m, r.fast]);
+  const g = st.groups.get(k) ?? {
+    dir: r.dir,
+    day: r.d,
+    model: r.m,
+    fast: r.fast,
+    input: 0,
+    output: 0,
+    read: 0,
+    write5m: 0,
+    write1h: 0,
+  };
+  g.input += r.i;
+  g.output += r.o;
+  g.read += r.r;
+  g.write5m += r.w5;
+  g.write1h += r.w1;
+  st.groups.set(k, g);
+}
+
+/** @param {Counted} st @param {{ type: string }} agent */
+function groupsOf(st, agent) {
+  return [...st.groups.values()].map((g) => ({ agent: agent.type, ...g }));
 }
 
 // Model -> $ per token { i, o, w, w1, r, fast } from LiteLLM's list.
