@@ -2,12 +2,30 @@
 // no View, timers or cx, so tests reach the real path.
 //
 // Owns the groups (repo -> hub + worktrees, from the store's scans), each
-// row's last step, the new spaces' folders (arrivals, below), the agents' costs
-// and the store (WorkStore, work.js). The View draws view()'s rows, handles
-// keys and clicks, and schedules scans and lookups.
+// row's last step, the new spaces' folders (arrivals, below), the agents' costs,
+// the navigation state (Nav, nav.js), and the store (WorkStore, work.js).
+// step() presses a row's next step and runs it; events() says what a PR's
+// change should notify. Both return data: the View does the herdr calls.
+// The View draws view()'s rows, handles keys and clicks, and schedules scans
+// and lookups.
 
-import { clearStale, rowSteps, stillStarting } from "./flow.js";
+import { recordFailure } from "./diagnostics.js";
+import { errorMessage } from "./errors.js";
+import {
+  clearStale,
+  prEvents,
+  rowSteps,
+  runStep,
+  STEP,
+  stepDone,
+  stepFailed,
+  stepRunning,
+  stepState,
+  stillStarting,
+} from "./flow.js";
 import { hubExcept, sameSlug } from "./git.js";
+import { basename } from "./lib.js";
+import { Nav } from "./nav.js";
 import { trackerOf } from "./tracker.js";
 import { costIn } from "./usage.js";
 import { WorkStore } from "./work.js";
@@ -17,6 +35,10 @@ import { workView } from "./work-rows.js";
 // spaces.js). `live`: the pass's snapshot (herdrSpaces).
 export const spaceOf = (/** @type {any} */ w, /** @type {any} */ live) =>
   live.spaceOf(w.path, w.except);
+
+// What a row is called in notifications: its ticket's label, else its folder.
+export const whoOf = (/** @type {any} */ w) =>
+  w.handle?.label ?? basename(w.path);
 
 // Rechecks of a new space's folder before we give up on it (the 30 s poll
 // still lists it later).
@@ -54,13 +76,16 @@ export function stackOrder(/** @type {any} */ prs) {
 }
 
 export class WorkModel {
-  constructor({ store = new WorkStore() } = {}) {
+  constructor({ store = new WorkStore(), nav = new Nav() } = {}) {
     // null until the first scan; else every local repo:
     // [{ repo, hub: { path, branch, hub: true, except }, worktrees: [{ path, branch, repo, handle }] }]
     this.groups = null;
     this.mainCheckouts = new Set();
     this.store = store; // repo state, tickets and PRs (work.js)
     this.tickets = store.tickets; // by ticket key
+    // The folds, the picked row and step, and a step awaiting its second press
+    // (nav.js). The View reads and moves them; step() presses them.
+    this.nav = nav;
     this.steps = new Map(); // worktree path -> its last step (flow.js: STEP)
     // The new spaces' folders: folder -> { watch, tries, bornAt }. `watch` is
     // "watching" (not yet a listed worktree; rechecked after each scan, up to
@@ -221,6 +246,89 @@ export class WorkModel {
     return last
       ? { phase: last.phase, text: last.text, at: last.at ?? null }
       : null;
+  }
+
+  // Presses a row's next step `step` (from rowSteps). Returns what the View
+  // does next, with no herdr calls of its own:
+  //   { outcome: "running" }          it is already running: nothing to do
+  //   { outcome: "confirm", until }   a first press of a step that asks; its
+  //                                   second press (within CONFIRM_MS) runs it
+  //   { outcome: "run", done }        it runs; `done` resolves to { notices,
+  //                                   fades } once it answers. notices: for
+  //                                   herdr's notify; fades: its note fades
+  //                                   (NOTE_MS) rather than staying (failed)
+  // byKey: a key press, not a click (Nav.press). now: ms.
+  /** @returns {{ outcome: "running" } | { outcome: "confirm", until: number } | { outcome: "run", done: Promise<{ notices: { title: string, body?: string, level: "success" | "error" | "warning" | "info" }[], fades: boolean }> }} */
+  step(
+    /** @type {any} */ w,
+    /** @type {any} */ step,
+    { byKey = false, now = Date.now() } = {},
+  ) {
+    const path = w.path;
+    if (stepState(this.steps.get(path)) === STEP.RUNNING)
+      return { outcome: "running" };
+    const id = `${path}:${step.id}`;
+    if (!this.nav.press(id, Boolean(step.confirm), byKey, now))
+      return { outcome: "confirm", until: this.nav.pending?.until ?? now };
+    this.steps.set(path, stepRunning(`${step.label}…`));
+    const pr = this.prOf(w);
+    // The ticket's work everywhere: worktrees and branches here, and the PRs
+    // its tracker links (in repos with no worktree here too).
+    const work = this.workOf(w);
+    const who = whoOf(w);
+    const done = runStep(step.id, w, pr, work).then(
+      (/** @type {string} */ note) => {
+        this.steps.set(path, stepDone(note, Date.now()));
+        const notices =
+          step.kind === "direct"
+            ? [
+                {
+                  title: `${who}: ${step.label}`,
+                  body: note,
+                  level: /** @type {const} */ ("success"),
+                },
+              ]
+            : [];
+        return { notices, fades: true };
+      },
+      (/** @type {any} */ e) => {
+        const text = `${errorMessage(e)}`.split("\n")[0];
+        this.steps.set(path, stepFailed(text, Date.now()));
+        recordFailure("work", step.label, e, { path });
+        return {
+          notices: [
+            {
+              title: `${who}: ${step.label} failed`,
+              body: text,
+              level: /** @type {const} */ ("error"),
+            },
+          ],
+          fades: false,
+        };
+      },
+    );
+    return { outcome: "run", done };
+  }
+
+  // The notifications for a row whose PR moved from `was` to `pr` (prEvents),
+  // each with the action that selects the row's space. `live`: spaces.js.
+  events(
+    /** @type {any} */ w,
+    /** @type {any} */ was,
+    /** @type {any} */ pr,
+    /** @type {any} */ live,
+  ) {
+    const who = whoOf(w);
+    const space = spaceOf(w, live);
+    const action = space
+      ? { name: "space.select", args: { id: space.id } }
+      : undefined;
+    return prEvents(was, pr).map(({ title, level, body }) => ({
+      title: `${who}: ${title}`,
+      body,
+      level,
+      action,
+    }));
   }
 
   // A row's next steps (rowSteps).
