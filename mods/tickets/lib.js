@@ -3,6 +3,7 @@
 
 import { exec, run as herdrRun, spaces } from "herdr";
 import { C } from "./config.js";
+import { recordFailure } from "./diagnostics.js";
 
 /** @param {string | null | undefined} text */
 export const firstLine = (text) => (text || "").trim().split("\n")[0];
@@ -69,18 +70,105 @@ export const RATE_LIMITED =
   /rate limit|too many requests|\b429\b|abuse detection/i;
 const BACKOFF_MS = 60_000;
 const MAX_BACKOFF_MS = 15 * 60_000;
+// A backoff lasting longer than this (from the first "rate limited" answer to
+// a call that works) is recorded once for diagnostics (#365): the sidebars
+// have been showing stale data for a while.
+export const BACKOFF_ALERT_MS = 2 * 60_000;
+const HOUR_MS = 60 * 60_000;
 
 /**
  * @typedef {{
  *   max: number, active: number, waiting: ((v?: any) => void)[], urgent: ((v?: any) => void)[],
- *   until: number, backoff: number,
+ *   until: number, backoff: number, since: number, alerted: boolean, calls: number[],
  * }} Limit
  */
 /** @type {Record<string, Limit>} */
 const limits = {
-  gh: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
-  jira: { max: 2, active: 0, waiting: [], urgent: [], until: 0, backoff: 0 },
+  gh: newLimit(),
+  jira: newLimit(),
 };
+
+// `since`: when the current backoff began (0: none); `calls`: when the calls
+// that reached the program in the last hour started, oldest first.
+/** @returns {Limit} */
+function newLimit() {
+  return {
+    max: 2,
+    active: 0,
+    waiting: [],
+    urgent: [],
+    until: 0,
+    backoff: 0,
+    since: 0,
+    alerted: false,
+    calls: [],
+  };
+}
+
+// For work.report (#365), per rate-limited program: the calls that reached it
+// in the last hour, and how long it has been backing off (0: it isn't).
+/** @param {number} [now] */
+export function quota(now = Date.now()) {
+  return Object.fromEntries(
+    Object.entries(limits).map(([name, l]) => {
+      prune(l, now);
+      const backoffMs = l.since ? now - l.since : 0;
+      return [
+        name,
+        {
+          callsLastHour: l.calls.length,
+          backingOff: l.until > now,
+          backoffMs,
+          alert: backoffMs > BACKOFF_ALERT_MS,
+        },
+      ];
+    }),
+  );
+}
+
+/** @param {Limit} l @param {number} now */
+function prune(l, now) {
+  while (l.calls.length && l.calls[0] <= now - HOUR_MS) l.calls.shift();
+}
+
+// GitHub's GraphQL quota (`gh api rate_limit`, which doesn't count against
+// it), for work.report: { limit, used, remaining, reset } or null if gh
+// couldn't say. Urgent, so a backoff doesn't hide it when it matters most.
+/** @returns {Promise<{ limit: number, used: number, remaining: number, reset: number } | null>} */
+export async function graphqlQuota() {
+  const r = await tool(
+    "gh",
+    ["api", "rate_limit", "--jq", ".resources.graphql"],
+    {
+      urgent: true,
+    },
+  );
+  if (r.code !== 0) return null;
+  try {
+    const { limit, used, remaining, reset } = JSON.parse(r.stdout);
+    return { limit, used, remaining, reset };
+  } catch {
+    return null;
+  }
+}
+
+// Records a backoff that has outlasted BACKOFF_ALERT_MS, once per backoff.
+/** @param {Limit} l @param {string} name */
+function checkBackoff(l, name) {
+  const ms = l.since ? Date.now() - l.since : 0;
+  if (ms <= BACKOFF_ALERT_MS || l.alerted) return;
+  l.alerted = true;
+  recordFailure(
+    "lib",
+    `${name} rate-limit backoff`,
+    new Error(`${name} has been rate limited for ${Math.round(ms / 1000)} s`),
+    {
+      program: name,
+      backoffMs: ms,
+      retryInMs: Math.max(0, l.until - Date.now()),
+    },
+  );
+}
 
 /** @param {Limit} l @param {string} name @param {string[]} args @param {{ cwd?: string, urgent?: boolean }} [opts] */
 async function limited(l, name, args, opts) {
@@ -91,21 +179,31 @@ async function limited(l, name, args, opts) {
     const wait = l.until - Date.now();
     if (wait > 0 && !opts?.urgent) {
       counts.rateLimited++;
+      checkBackoff(l, name);
       return {
         code: 1,
         stdout: "",
         stderr: `${name}: rate limited, retrying in ${Math.ceil(wait / 1000)} s`,
       };
     }
+    const now = Date.now();
+    prune(l, now);
+    l.calls.push(now);
     const r = await run(name, args, opts);
     if (r.code !== 0 && RATE_LIMITED.test(`${r.stderr}\n${r.stdout}`)) {
       counts.rateLimited++;
+      if (!l.since) l.since = now;
+      checkBackoff(l, name);
       l.backoff = Math.min(
         l.backoff ? l.backoff * 2 : BACKOFF_MS,
         MAX_BACKOFF_MS,
       );
       l.until = Date.now() + l.backoff;
-    } else if (r.code === 0) l.backoff = 0;
+    } else if (r.code === 0) {
+      l.backoff = 0;
+      l.since = 0;
+      l.alerted = false;
+    }
     return r;
   } finally {
     l.active--;

@@ -14,9 +14,10 @@ import { h_flex, v_flex } from "gpui-base";
 import { div, svg, View } from "gpui-kit";
 import { setShared, theme } from "herdr";
 import { C } from "./config.js";
-import { openUrl } from "./lib.js";
+import { callCounts, callsSince, openUrl, quota } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
 import { PR_MS } from "./polling.js";
+import { REVIEWS_STATS, RefreshStats } from "./refreshes.js";
 import { ReviewsModel } from "./reviews-model.js";
 import { fit, reviewsView } from "./reviews-rows.js";
 import { resize } from "./sidebar.js";
@@ -32,6 +33,8 @@ export default class Reviews extends View {
   refresh = /** @type {any} */ (undefined);
   /** @type {ReviewsModel} */
   model = /** @type {any} */ (undefined);
+  /** @type {RefreshStats} */
+  refreshes = /** @type {any} */ (undefined);
   /** @type {Nav} */
   confirm = /** @type {any} */ (undefined);
   /** @type {(cx: any, r: any) => any} */
@@ -46,8 +49,21 @@ export default class Reviews extends View {
     this.start = (cx, r) => cx.spawn(() => this.model.start(r));
     // The queue length for the layouts mod's Reviews tab: none until loaded.
     setShared(REVIEW_COUNT, null);
+    // Refresh timings (refreshes.js), shared with work.report with this mod's
+    // gh quota (lib.js quota).
+    this.refreshes = new RefreshStats();
     this.refresh = serial(async (cx, force) => {
-      await this.model.refresh(force);
+      const before = callCounts();
+      const t0 = Date.now();
+      try {
+        await this.model.refresh(force);
+      } finally {
+        this.refreshes.add({ ms: Date.now() - t0, ...callsSince(before) });
+        setShared(REVIEWS_STATS, {
+          refreshes: this.refreshes.report(),
+          quota: quota(),
+        });
+      }
       if (this.model.count !== null) setShared(REVIEW_COUNT, this.model.count);
       cx.notify();
     });

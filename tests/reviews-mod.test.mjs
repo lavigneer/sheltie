@@ -32,6 +32,7 @@ box.setState(state);
 const { mount, find, findAll } = await import("./mod-driver.mjs");
 const { shared } = await import("./herdr-stub.mjs");
 const { REVIEW_COUNT } = await import("../src/switcher.js");
+const { REVIEWS_STATS } = await import("../src/refreshes.js");
 const { default: Reviews } = await import("../mods/reviews/main.js");
 
 const ran = (d, name) => d.calls.run.filter((c) => c.name === name);
@@ -52,6 +53,16 @@ test("Reviews: lists the PRs awaiting your review in repos here, oldest request 
   assert.doesNotMatch(d.text(), /Elsewhere/);
   // Published once the refresh (and its sweep) is done.
   await d.until(() => shared(REVIEW_COUNT) === 2, "the count published");
+});
+
+test("Reviews: each refresh's time and the gh quota are published for work.report", async () => {
+  const d = await ready();
+  const stats = await d.until(() => shared(REVIEWS_STATS), "the stats");
+  assert.ok(stats.refreshes.count >= 1, "a refresh was recorded");
+  assert.equal(typeof stats.refreshes.p95Ms, "number");
+  assert.ok(stats.refreshes.spawnsPerRefresh.gh > 0, "a refresh ran gh");
+  assert.ok(stats.quota.gh.callsLastHour > 0);
+  assert.equal(stats.quota.gh.alert, false);
 });
 
 test("Reviews: clicking a row checks the PR out in a review worktree and opens its space with the review task", async () => {
