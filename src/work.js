@@ -260,6 +260,18 @@ export const ACTIVE_PR_MS = 20_000;
 export const TICKET_MS = 600_000;
 // How often every repo's git state is read, whatever the find says (WorkStore.scan).
 export const SWEEP_MS = 300_000;
+// A repo's first sweep falls this far into the SWEEP_MS window, derived from its
+// path, so the sweeps of many repos spread out instead of landing on one tick.
+// (FNV-1a, then a murmur-style mix: similar paths, like repo1 and repo2, must
+// not land next to each other.)
+export const sweepOffset = (/** @type {string} */ path) => {
+  let h = 0x811c9dc5;
+  for (const c of path) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193);
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  return (h >>> 0) % SWEEP_MS;
+};
 
 // How long a PR's details stay fresh: shorter while something you'd wait for
 // may change soon (conflicts, or not known yet: CI starts soon after a fix).
@@ -308,8 +320,10 @@ export class WorkStore {
   } = {}) {
     this.sources = sources;
     this.now = now;
-    // When the last full sweep of repo state was (see scan).
-    this.swept = -Infinity;
+    // When each repo's next sweep read is due, by path (see scan). Each repo
+    // has its own phase, so the sweeps don't all land on one refresh tick.
+    /** @type {Map<string, number>} */
+    this.sweepAt = new Map();
     /** @type {Repo[]} */
     this.repos = [];
     /** @type {({ repo: Repo } & import("./git.js").RepoState | null)[]} */
@@ -327,9 +341,11 @@ export class WorkStore {
 
   // Git: the worktrees and branches of `repos` (those with a path). A repo
   // whose .git was not touched since the last scan keeps its state (one find
-  // for all of them, see touchedRepos), except on a full sweep, which reads
-  // every repo: at once when there is no touched source, and every SWEEP_MS
-  // for what the find can't see (a worktree folder removed by hand).
+  // for all of them, see touchedRepos). Each repo is also read once every
+  // SWEEP_MS for what the find can't see (a worktree folder removed by hand).
+  // Those sweeps are phased per repo (sweepOffset), so they spread over the
+  // window instead of all landing on one refresh. With no touched source, or
+  // when the find fails (null), every repo is read.
   /** @param {Repo[]} repos */
   async scan(repos) {
     const local = repos.filter(
@@ -339,18 +355,27 @@ export class WorkStore {
       this.states.flatMap((s) => (s ? [[s.repo.path, s]] : [])),
     );
     const now = this.now();
-    const touched =
-      !this.sources.touched || now - this.swept >= SWEEP_MS
-        ? null
-        : await this.sources.touched(local.map((r) => r.path));
-    if (touched === null) this.swept = now;
+    const touched = this.sources.touched
+      ? await this.sources.touched(local.map((r) => r.path))
+      : null;
     const states = await pool(
       local.map((repo) => async () => {
         const old = known.get(repo.path);
-        if (touched && old && !touched.has(repo.path)) return { ...old, repo };
+        const sweepDue = now >= (this.sweepAt.get(repo.path) ?? Infinity);
+        if (touched && old && !touched.has(repo.path) && !sweepDue)
+          return { ...old, repo };
+        // The next sweep is a whole SWEEP_MS later, except a repo's first read,
+        // which takes its phase: spread the first sweeps across the window.
+        this.sweepAt.set(
+          repo.path,
+          now + (old ? SWEEP_MS : sweepOffset(repo.path)),
+        );
         return { repo, ...(await this.sources.repoState(repo)) };
       }),
     );
+    const paths = new Set(local.map((r) => r.path));
+    for (const path of this.sweepAt.keys())
+      if (!paths.has(path)) this.sweepAt.delete(path);
     // A scan that finds what the last one did changes nothing: the version
     // (and so the join, and the view) stays.
     const key = statesKey(states);
