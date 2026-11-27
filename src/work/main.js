@@ -60,8 +60,8 @@
 // while CI runs or a merge is pending), tickets and their linked PRs every
 // 10 min (the rules live in work.js).
 
-import { h_flex, Popover, v_flex } from "gpui-base";
-import { div, svg, View } from "gpui-kit";
+import { v_flex } from "gpui-base";
+import { View } from "gpui-kit";
 import {
   appHome,
   nextCommand,
@@ -85,13 +85,12 @@ import { drainRequests } from "./start.js";
 import { usageGroups } from "./usage.js";
 import { serial } from "./watch.js";
 import { spaceOf, WorkModel, whoOf } from "./work-model.js";
-import { fit, NOTE_MS } from "./work-rows.js";
+import { bodyEl, fit, headerEl, messageEl, NOTE_MS } from "./work-rows.js";
 
 const GIT_MS = 30_000;
 const DUE_CHECK_MS = 10_000; // how often to look for due lookups
 const USAGE_MS = 120_000; // agent costs (see usage.js)
 const WATCH_MS = 3_000; // between rechecks of a new space's folder
-const LINKS_W = 18; // a row's ↗ button
 
 export default class Work extends View {
   /** @type {number | null} */
@@ -444,6 +443,57 @@ export default class Work extends View {
     }
   }
 
+  // What the sidebar's builders (work-rows.js) call on a click, hover or menu
+  // choice: the View's state and effects behind each one, so the builders
+  // themselves hold none. Read live when called (not when built).
+  /** @returns {Record<string, (...args: any[]) => any>} */
+  sidebarActions() {
+    return {
+      open: (w) => this.open(w),
+      openStacked: (p) => this.openStacked(p),
+      step: (cx, w, s) => this.step(cx, w, s),
+      follow: (cx, w, id) =>
+        id === "pr" ? this.openPR(w) : this.openTicket(cx, w),
+      hoverRow: (cx, w, hovered) => {
+        if (!hovered || this.hovered === w.path) return;
+        this.hovered = w.path;
+        this.wake(cx, "hover");
+      },
+      openLinks: (cx, w, open) => {
+        if (open) this.linksOpen = w.path;
+        else if (this.linksOpen === w.path) this.linksOpen = null;
+        this.wake(cx, "menu");
+      },
+      closeLinks: (cx) => {
+        this.linksOpen = null;
+        this.wake(cx, "menu");
+      },
+      expand: (cx, key) => {
+        this.nav.expand(key);
+        cx.notify();
+      },
+      // Folds a group: its rows and their stacked PRs fold with it.
+      fold: (cx, g) => {
+        this.nav.fold(
+          g.key,
+          g.worktrees.flatMap((/** @type {any} */ r) => [
+            r.key,
+            ...r.stack.map((/** @type {any} */ p) => p.key),
+          ]),
+          g.hub ? g.hub.w.path : null,
+        );
+        this.wake(cx, "fold");
+      },
+      toggleGroupBy: (cx) => this.toggleGroupBy(cx),
+      refresh: (cx) => this.refresh(cx, true),
+      newWork: () => run("mod.open", { name: "tickets" }),
+    };
+  }
+
+  // Draws the sidebar: the header, the problem (if any) and the list. The
+  // elements come from work-rows.js (headerEl, bodyEl, messageEl); this keeps
+  // the wiring: the live data, the theme, the View's actions, and the list's
+  // hover and resize handlers.
   draw(
     /** @type {any} */ cx,
     /** @type {any} */ start,
@@ -455,745 +505,17 @@ export default class Work extends View {
     const t = theme();
     const view = this.view(live);
     const viewed = Date.now();
-    const rail = view.span === "rail";
-    const tone = (/** @type {any} */ name) => t[name] ?? t.accent;
-    const icon = (
-      /** @type {any} */ name,
-      /** @type {any} */ label,
-      /** @type {any} */ tip,
-      /** @type {any} */ onClick,
-    ) =>
-      div()
-        .id(`work-${name}`)
-        .h(20)
-        .px(5)
-        .flex()
-        .items_center()
-        .rounded(5)
-        .text_size(12.5)
-        .text_color(t.dim)
-        .cursor_pointer()
-        .hover((/** @type {any} */ s) => s.bg(t.hover).text_color(t.foreground))
-        .tooltip(tip)
-        .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
-          cx.stop_propagation();
-          onClick(cx);
-        })
-        .child(label);
-    // ↻ spins while a refresh asked for by hand (git, then tickets and PRs) runs.
+    const ui = {
+      ...this.sidebarActions(),
+      t,
+      rail: view.span === "rail",
+      hovered: this.hovered,
+      linksOpen: this.linksOpen,
+    };
     const refreshing = this.refresh.forcing() || this.details.forcing();
-    const refreshLabel = refreshing
-      ? svg("mods/workspace-chrome/spinner.svg").size(11).spin(900)
-      : "↻";
-
-    const header = rail
-      ? h_flex()
-          .h(30)
-          .flex_none()
-          .justify_center()
-          .items_center()
-          .child(
-            icon("new", "+", "New work (tickets)", () =>
-              run("mod.open", { name: "tickets" }),
-            ),
-          )
-      : h_flex()
-          .h(30)
-          .flex_none()
-          .px(12)
-          .gap(4)
-          .items_center()
-          .child(
-            div()
-              .flex_1()
-              .min_w(0)
-              .truncate()
-              .text_size(11)
-              .font_semibold()
-              .text_color(t.dim)
-              .child("Work"),
-          )
-          .child(
-            icon(
-              "group",
-              "▤",
-              view.by === "stage" ? "Group by repo" : "Group by stage",
-              (/** @type {any} */ cx) => this.toggleGroupBy(cx),
-            ),
-          )
-          .child(
-            icon(
-              "refresh",
-              refreshLabel,
-              refreshing ? "Refreshing…" : "Refresh now",
-              (/** @type {any} */ cx) => this.refresh(cx, true),
-            ),
-          )
-          .child(
-            icon("new", "+", "New work (tickets)", () =>
-              run("mod.open", { name: "tickets" }),
-            ),
-          );
-
-    // A row's status glyph (or spinner), as work-rows.js decided it.
-    const status = (/** @type {any} */ r) => {
-      const st = r.status;
-      if (st.spin)
-        return svg("mods/workspace-chrome/spinner.svg")
-          .size(11)
-          .flex_none()
-          .text_color(tone(st.tone))
-          .spin(900);
-      const el = div().w(12).flex_none().text_color(tone(st.tone));
-      return (
-        st.tip ? el.id(`work-nospace-${r.w.path}`).tooltip(st.tip) : el
-      ).child(st.glyph);
-    };
-
-    // A step button. The row's next step (primary) is the one solid thing in
-    // the sidebar: accent fill, background-coloured text. Later steps are
-    // quiet accent text. Picked: an accent outline; confirming: blocked.
-    const button = (/** @type {any} */ r, /** @type {any} */ s) => {
-      const solid = s.primary && !s.confirming;
-      const ink = s.confirming ? t.blocked : solid ? t.background : t.accent;
-      return div()
-        .id(`work-step-${r.w.path}-${s.id}`)
-        .flex_none()
-        .h(18)
-        .px(6)
-        .flex()
-        .items_center()
-        .rounded(5)
-        .bg(solid ? t.accent : s.confirming ? t.hover : "#00000000")
-        .border_1()
-        .border_color(
-          s.confirming
-            ? t.blocked
-            : s.chosen
-              ? solid
-                ? t.foreground
-                : t.accent
-              : "#00000000",
-        )
-        .text_size(11)
-        .when(solid, (/** @type {any} */ el) => el.font_semibold())
-        .text_color(ink)
-        .cursor_pointer()
-        .hover((/** @type {any} */ st) =>
-          solid ? st.bg(t.foreground) : st.bg(t.hover).text_color(ink),
-        )
-        .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
-          cx.stop_propagation();
-          this.step(cx, r.w, s);
-        })
-        .child(s.text);
-    };
-
-    // What a link in a row's ↗ menu does.
-    const follow = (
-      /** @type {any} */ w,
-      /** @type {any} */ id,
-      /** @type {any} */ cx,
-    ) => (id === "pr" ? this.openPR(w) : this.openTicket(cx, w));
-
-    // A row's ↗: a menu of what it opens in the browser (the row's links).
-    // It keeps its place while hidden, so showing it moves nothing.
-    const linksMenu = (/** @type {any} */ w, /** @type {any} */ links) => {
-      const close = (/** @type {any} */ cx) => {
-        this.linksOpen = null;
-        this.wake(cx, "menu");
-      };
-      return Popover.new(`work-links-${w.path}`)
-        .anchor("top_right")
-        .open(this.linksOpen === w.path)
-        .on_open_change((/** @type {any} */ open, /** @type {any} */ cx) => {
-          if (open) this.linksOpen = w.path;
-          else if (this.linksOpen === w.path) this.linksOpen = null;
-          this.wake(cx, "menu");
-        })
-        .trigger(
-          div()
-            .id(`work-links-button-${w.path}`)
-            .w(LINKS_W)
-            .h(18)
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(5)
-            .text_size(11)
-            .text_color(this.linksOpen === w.path ? t.foreground : t.dim)
-            .cursor_pointer()
-            .hover((/** @type {any} */ s) =>
-              s.bg(t.hover).text_color(t.foreground),
-            )
-            .tooltip("Open in the browser")
-            .on_click((/** @type {any} */ _e, /** @type {any} */ cx) =>
-              cx.stop_propagation(),
-            )
-            .child("↗"),
-        )
-        .content(
-          v_flex()
-            .p(4)
-            .min_w(120)
-            .rounded(7)
-            .border_1()
-            .border_color(t.border ?? t.dim)
-            .bg(t.popover)
-            .children(
-              links.map((/** @type {any} */ l) =>
-                div()
-                  .id(`work-open-${l.id}-${w.path}`)
-                  .h(24)
-                  .px(8)
-                  .flex()
-                  .items_center()
-                  .rounded(5)
-                  .text_size(12.5)
-                  .text_color(t.foreground)
-                  .cursor_pointer()
-                  .hover((/** @type {any} */ s) => s.bg(t.hover))
-                  .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
-                    cx.stop_propagation();
-                    close(cx);
-                    follow(w, l.id, cx);
-                  })
-                  .child(l.label),
-              ),
-            ),
-        );
-    };
-
-    // The rail: a row is its status, and a hover says the rest. Clicks and
-    // keys work as in the full rows.
-    const dot = (/** @type {any} */ r) => {
-      const { w, space, pr, num } = r;
-      // With a space, the dot is the agent's: the PR's glyph goes by the
-      // number.
-      const prGlyph = Boolean(space && pr);
-      return h_flex()
-        .id(`work-${w.path}`)
-        .mx(4)
-        .min_h(24)
-        .py(2)
-        .justify_center()
-        .items_center()
-        .rounded(6)
-        .border_l_2()
-        .border_color(r.selected ? t.accent : "#00000000")
-        .cursor_pointer()
-        .when(Boolean(space?.active), (/** @type {any} */ el) =>
-          el.bg(t.selected ?? t.hover),
-        )
-        .hover((/** @type {any} */ s) => s.bg(t.hover))
-        .tooltip(r.tip)
-        .on_click(() => this.open(w))
-        .child(
-          v_flex()
-            .items_center()
-            .child(status(r))
-            .when(Boolean(num) || prGlyph, (/** @type {any} */ el) =>
-              el.child(
-                h_flex()
-                  .gap(2)
-                  .text_size(9)
-                  .when(Boolean(num), (/** @type {any} */ e) =>
-                    e.child(div().text_color(t.dim).child(num)),
-                  )
-                  .when(prGlyph, (/** @type {any} */ e) =>
-                    e.child(div().text_color(tone(pr.tone)).child(pr.glyph)),
-                  ),
-              ),
-            ),
-        );
-    };
-
-    const row = (/** @type {any} */ r) => {
-      const { w, space, pr, steps, note, links } = r;
-      return (
-        v_flex()
-          .id(`work-${w.path}`)
-          .mx(6)
-          .px(8)
-          .py(4)
-          .gap(1)
-          .rounded(7)
-          .border_l_2()
-          .border_color(r.selected ? t.accent : "#00000000")
-          .cursor_pointer()
-          .when(Boolean(space?.active), (/** @type {any} */ el) =>
-            el.bg(t.selected ?? t.hover),
-          )
-          .hover((/** @type {any} */ s) => s.bg(t.hover))
-          // Only entering a row renders: leaving one is followed by entering
-          // the next, and leaving the list is handled on "work-list".
-          .on_hover((/** @type {any} */ hovered, /** @type {any} */ cx) => {
-            if (!hovered || this.hovered === w.path) return;
-            this.hovered = w.path;
-            this.wake(cx, "hover");
-          })
-          .on_click(() => this.open(w))
-          .child(
-            h_flex()
-              .gap(6)
-              .items_center()
-              .child(status(r))
-              .child(
-                div()
-                  .flex_shrink(1)
-                  .min_w(64)
-                  .flex()
-                  .child(
-                    div()
-                      .flex_shrink(1)
-                      .min_w(0)
-                      .truncate()
-                      .text_size(12.5)
-                      .text_color(t.foreground)
-                      .when(Boolean(space?.active), (/** @type {any} */ d) =>
-                        d.font_semibold(),
-                      )
-                      .child(r.title),
-                  ),
-              )
-              // The rest of the line after the title (sized to its text): the
-              // PR, at the right; it also pushes ↗ there.
-              .child(
-                h_flex()
-                  .flex_1()
-                  .min_w(0)
-                  .justify_end()
-                  // Narrow, the PR is a word, then a glyph (see prLabel),
-                  // never cut.
-                  .when(
-                    Boolean(pr) && pr.shown !== "full",
-                    (/** @type {any} */ el) =>
-                      el.child(
-                        div()
-                          .id(`work-pr-${w.path}`)
-                          .flex_none()
-                          .text_size(11)
-                          .text_color(tone(pr.tone))
-                          .tooltip(pr.text)
-                          .child(pr.head),
-                      ),
-                  )
-                  .when(
-                    Boolean(pr) && pr.shown === "full",
-                    (/** @type {any} */ el) =>
-                      el.child(
-                        // The tail (the tone: checks, conflicts) stays whole;
-                        // the rest of the PR truncates before it.
-                        h_flex()
-                          .min_w(0)
-                          .gap(4)
-                          .text_size(11)
-                          .text_color(tone(pr.tone))
-                          .child(div().min_w(0).truncate().child(pr.head))
-                          .when(Boolean(pr.tail), (/** @type {any} */ e) =>
-                            e.child(div().flex_none().child(pr.tail)),
-                          ),
-                      ),
-                  ),
-              )
-              .when(links.length > 0, (/** @type {any} */ el) =>
-                el.child(
-                  r.selected ||
-                    this.hovered === w.path ||
-                    this.linksOpen === w.path
-                    ? linksMenu(w, links)
-                    : div().w(LINKS_W).flex_none(),
-                ),
-              ),
-          )
-          // Always there on a ticket's row, even while empty: its summary,
-          // status and cost come from lookups that finish later, and the line
-          // appearing then would push every row below it down. Any other
-          // branch (its title already) is one line unless agents there cost.
-          .when(
-            Boolean(r.sub) || Boolean(w.handle) || Boolean(r.costText),
-            (/** @type {any} */ el) =>
-              el.child(
-                h_flex()
-                  .pl(18)
-                  .gap(6)
-                  .child(
-                    div()
-                      .flex_1()
-                      .min_w(48)
-                      .truncate()
-                      .text_size(11)
-                      .text_color(t.dim)
-                      .child(r.sub),
-                  )
-                  .when(Boolean(r.ticketStatus), (/** @type {any} */ e) =>
-                    e.child(
-                      // Capped, so the summary keeps most of the line.
-                      div()
-                        .flex_shrink(1)
-                        .min_w(0)
-                        .max_w(88)
-                        .truncate()
-                        .text_size(11)
-                        .text_color(t.dim)
-                        .child(r.ticketStatus),
-                    ),
-                  )
-                  .when(Boolean(r.costText), (/** @type {any} */ e) =>
-                    e.child(costEl(r)),
-                  ),
-              ),
-          )
-          .when(steps.length > 0 || Boolean(note), (/** @type {any} */ el) =>
-            el.child(
-              h_flex()
-                .flex_wrap()
-                .pl(18)
-                .pt(2)
-                .gap_x(4)
-                .gap_y(3)
-                .items_center()
-                .children(steps.map((/** @type {any} */ s) => button(r, s)))
-                .when(Boolean(note), (/** @type {any} */ e) =>
-                  e.child(
-                    div()
-                      .flex_1()
-                      .min_w(60)
-                      .truncate()
-                      .text_size(11)
-                      .text_color(tone(note.tone))
-                      .child(note.text),
-                  ),
-                ),
-            ),
-          )
-      );
-    };
-
-    // A stacked PR under its row (work-rows.js, stackItem): one indented
-    // line, no steps; a click opens the PR. Merged or closed: dimmed. A tree
-    // connector (├ / └ for the last) ties it to the row above.
-    const subRow = (/** @type {any} */ p, /** @type {any} */ last) =>
-      h_flex()
-        .id(`work-${p.key}`)
-        .mx(6)
-        .pl(18)
-        .pr(8)
-        .h(20)
-        .gap(6)
-        .items_center()
-        .rounded(6)
-        .border_l_2()
-        .border_color(p.selected ? t.accent : "#00000000")
-        .cursor_pointer()
-        .hover((/** @type {any} */ s) => s.bg(t.hover))
-        .tooltip(p.tip)
-        .on_click(() => this.openStacked(p))
-        .child(
-          div()
-            .flex_none()
-            .text_size(11)
-            .text_color(t.dim)
-            .child(last ? "└" : "├"),
-        )
-        .child(
-          div()
-            .flex_none()
-            .text_size(11)
-            .text_color(tone(p.tone))
-            .child(p.shown),
-        )
-        .child(
-          div()
-            .flex_1()
-            .min_w(0)
-            .truncate()
-            .text_size(11)
-            .text_color(p.dim ? t.dim : t.muted)
-            .child(p.title),
-        );
-    // On the rail: the PR's glyph, small, under its row's dot.
-    const subDot = (/** @type {any} */ p) =>
-      div()
-        .id(`work-${p.key}`)
-        .mx(4)
-        .h(16)
-        .flex()
-        .justify_center()
-        .items_center()
-        .rounded(6)
-        .border_l_2()
-        .border_color(p.selected ? t.accent : "#00000000")
-        .cursor_pointer()
-        .hover((/** @type {any} */ s) => s.bg(t.hover))
-        .tooltip(p.tip)
-        .on_click(() => this.openStacked(p))
-        .text_size(9)
-        .text_color(tone(p.tone))
-        .child(p.glyph);
-
-    const costEl = (/** @type {any} */ r) =>
-      div()
-        .id(`work-cost-${r.w.path}`)
-        .flex_none()
-        .text_size(11)
-        .text_color(t.dim)
-        .tooltip("What agents working here have cost (at API prices)")
-        .child(r.costText);
-
-    // A repo's header. In full, it is also its hub's row (the hub has no
-    // ticket, PR or steps, so a row of its own would repeat in every group):
-    // the chevron folds the group, the rest opens the hub like a row.
-    // Below a capped repo group: "+k more" shows the rest, "Show fewer" goes
-    // back to the cap (workRepoRows). On the rail, "+k".
-    const moreRow = (/** @type {any} */ g) => {
-      const label = g.more
-        ? rail
-          ? `+${g.more}`
-          : `+${g.more} more`
-        : rail
-          ? "−"
-          : "Show fewer";
-      return div()
-        .id(`work-more-${g.key}`)
-        .mx(rail ? 4 : 6)
-        .px(rail ? 6 : 24)
-        .h(20)
-        .flex()
-        .items_center()
-        .when(rail, (/** @type {any} */ el) => el.justify_center())
-        .rounded(6)
-        .cursor_pointer()
-        .hover((/** @type {any} */ s) => s.bg(t.hover))
-        .text_size(11)
-        .text_color(t.dim)
-        .tooltip(
-          g.more
-            ? `Show ${g.more} less recently changed worktree${g.more === 1 ? "" : "s"}`
-            : "Show only the most recently changed",
-        )
-        .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
-          this.nav.expand(g.key);
-          cx.notify();
-        })
-        .child(label);
-    };
-    const withMore = (/** @type {any} */ el, /** @type {any} */ g) =>
-      g.more || g.fewer ? el.child(moreRow(g)) : el;
-
-    const group = (/** @type {any} */ g) => withMore(groupEl(g), g);
-    const groupEl = (/** @type {any} */ g) => {
-      const { hub } = g;
-      const fold = (/** @type {any} */ cx) => {
-        this.nav.fold(
-          g.key,
-          g.worktrees.flatMap((/** @type {any} */ r) => [
-            r.key,
-            ...r.stack.map((/** @type {any} */ p) => p.key),
-          ]),
-          hub ? hub.w.path : null,
-        );
-        this.wake(cx, "fold");
-      };
-      const chevron = svg(
-        `mods/workspace-chrome/chevron-${g.open ? "down" : "right"}.svg`,
-      )
-        .size(11)
-        .flex_none()
-        .text_color(t.dim);
-      if (rail)
-        return v_flex()
-          .child(
-            h_flex()
-              .id(`work-repo-${g.key}`)
-              .mx(4)
-              .px(6)
-              .h(24)
-              .gap(5)
-              .items_center()
-              .justify_center()
-              .tooltip(`${g.name} (${g.count})`)
-              .rounded(6)
-              .cursor_pointer()
-              .hover((/** @type {any} */ s) => s.bg(t.hover))
-              .on_click((/** @type {any} */ _e, /** @type {any} */ cx) =>
-                fold(cx),
-              )
-              .child(chevron)
-              // A monogram tells repos apart without a hover.
-              .child(
-                div()
-                  .text_size(11)
-                  .font_semibold()
-                  .text_color(t.muted)
-                  .child(g.monogram),
-              ),
-          )
-          .when(Boolean(hub), (/** @type {any} */ el) => el.child(dot(hub)))
-          .children(
-            g.worktrees.flatMap((/** @type {any} */ r) => [
-              dot(r),
-              ...r.stack.map(subDot),
-            ]),
-          );
-      // By stage: a plain header (no hub), the chevron and name fold it.
-      if (!hub)
-        return v_flex()
-          .child(
-            h_flex()
-              .id(`work-group-${g.key}`)
-              .mx(6)
-              .px(6)
-              .h(24)
-              .gap(5)
-              .items_center()
-              .rounded(6)
-              .cursor_pointer()
-              .hover((/** @type {any} */ s) => s.bg(t.hover))
-              .on_click((/** @type {any} */ _e, /** @type {any} */ cx) =>
-                fold(cx),
-              )
-              .child(chevron)
-              .child(
-                div()
-                  .flex_1()
-                  .min_w(0)
-                  .truncate()
-                  .text_size(12.5)
-                  .font_semibold()
-                  .text_color(t.muted)
-                  .child(g.name),
-              )
-              .child(
-                div()
-                  .id(`work-count-${g.key}`)
-                  .flex_none()
-                  .text_size(11)
-                  .text_color(t.muted)
-                  .tooltip(g.count)
-                  .child(g.size),
-              ),
-          )
-          .children(
-            g.worktrees.flatMap((/** @type {any} */ r) => [
-              row(r),
-              ...r.stack.map(
-                (
-                  /** @type {any} */ p,
-                  /** @type {any} */ i,
-                  /** @type {any} */ all,
-                ) => subRow(p, i === all.length - 1),
-              ),
-            ]),
-          );
-      return v_flex()
-        .child(
-          h_flex()
-            .id(`work-repo-${g.repo.path}`)
-            .mx(6)
-            .px(6)
-            .h(24)
-            .gap(5)
-            .items_center()
-            .rounded(6)
-            .border_l_2()
-            .border_color(hub.selected ? t.accent : "#00000000")
-            .cursor_pointer()
-            .when(Boolean(hub.space?.active), (/** @type {any} */ el) =>
-              el.bg(t.selected ?? t.hover),
-            )
-            .hover((/** @type {any} */ s) => s.bg(t.hover))
-            .tooltip(`${g.name} hub: ${hub.title}`)
-            .on_click(() => this.open(hub.w))
-            .child(
-              div()
-                .id(`work-fold-${g.repo.path}`)
-                .flex_none()
-                .rounded(4)
-                .hover((/** @type {any} */ s) => s.bg(t.hover))
-                .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
-                  cx.stop_propagation();
-                  fold(cx);
-                })
-                .child(chevron),
-            )
-            .child(status(hub))
-            .child(
-              div()
-                .flex_shrink(1)
-                .min_w(0)
-                .truncate()
-                .text_size(12.5)
-                .font_semibold()
-                .text_color(t.muted)
-                .child(g.name),
-            )
-            .child(
-              div()
-                .flex_1()
-                .min_w(0)
-                .truncate()
-                .text_size(11)
-                .text_color(t.dim)
-                .child(hub.title),
-            )
-            .when(Boolean(hub.costText), (/** @type {any} */ el) =>
-              el.child(costEl(hub)),
-            )
-            .child(
-              div()
-                .id(`work-count-${g.repo.path}`)
-                .flex_none()
-                .text_size(11)
-                // Neutral, like the repo name: the count carries no state.
-                .text_color(t.muted)
-                .tooltip(g.count)
-                .child(g.size),
-            ),
-        )
-        .children(
-          g.worktrees.flatMap((/** @type {any} */ r) => [
-            row(r),
-            ...r.stack.map(
-              (
-                /** @type {any} */ p,
-                /** @type {any} */ i,
-                /** @type {any} */ all,
-              ) => subRow(p, i === all.length - 1),
-            ),
-          ]),
-        );
-    };
-
-    // Messages: in full on the rail too, on hover.
-    const message = (
-      /** @type {any} */ id,
-      /** @type {any} */ text,
-      /** @type {any} */ color,
-    ) =>
-      rail
-        ? div()
-            .id(`work-${id}`)
-            .py(4)
-            .flex()
-            .justify_center()
-            .text_size(12.5)
-            .text_color(color)
-            .tooltip(text)
-            .child(id === "problem" ? "!" : "…")
-        : div().px(14).py(4).text_size(11).text_color(color).child(text);
-    const problem = C.problem ? message("problem", C.problem, t.blocked) : null;
-    const body =
-      this.groups === null
-        ? message("loading", "Loading worktrees…", t.dim)
-        : view.groups.length
-          ? v_flex().gap(4).children(view.groups.map(group))
-          : message(
-              "empty",
-              "No worktrees yet. Press + to start a ticket.",
-              t.dim,
-            );
+    const problem = C.problem
+      ? messageEl(ui, "problem", C.problem, t.blocked)
+      : null;
 
     const el = v_flex()
       .id("work")
@@ -1202,7 +524,7 @@ export default class Work extends View {
       .on_size_change((/** @type {any} */ size, /** @type {any} */ cx) => {
         if (resize(this, size.width, fit)) this.wake(cx, "resize");
       })
-      .child(header)
+      .child(headerEl(ui, view.by, refreshing))
       .when(Boolean(problem), (/** @type {any} */ el) => el.child(problem))
       .child(
         v_flex()
@@ -1214,11 +536,12 @@ export default class Work extends View {
           .border_color(t.border ?? t.dim)
           .overflow_y_scrollbar()
           .on_hover((/** @type {any} */ hovered, /** @type {any} */ cx) => {
+            // Only entering a row renders: leaving the list is handled here.
             if (hovered || this.hovered === null) return;
             this.hovered = null;
             cx.notify();
           })
-          .child(body),
+          .child(bodyEl(ui, view, this.groups === null)),
       );
     this.timed(start, viewed, view, trigger);
     return el;
