@@ -88,6 +88,38 @@ test("Work: the focused space's row is selected; clicking a row with a space sel
   assert.deepEqual(ran(d, "space.new"), []);
 });
 
+// work.start makes a worktree and then asks Herdr for its space, which may
+// land after the sidebar's scan has already listed the worktree. The sidebar
+// must show the space without anything else asking it to render.
+test("Work: a space that lands after its worktree is listed shows without another render", async (t) => {
+  const d = await ready();
+  const wt3 = app.worktree("issue-3");
+  app.git("worktree", "add", "-q", "-b", "issue-3", wt3);
+  await d.press("refresh");
+  await d.until(
+    () => find(d.render(), `work-${wt3}`),
+    "the new worktree's row",
+  );
+  const isSelected = () =>
+    find(d.render(), `work-${wt3}`)?.style.border_color === "accent";
+  assert.equal(isSelected(), false);
+  // Herdr draws the sidebar only when the view asks (wake). Record the
+  // timer's asks: rendering it ourselves would read the new space at once.
+  const timers = [];
+  const wake = d.view.wake;
+  d.view.wake = function (cx, why) {
+    if (why === "timer") timers.push(why);
+    return wake.call(this, cx, why);
+  };
+  const asked = timers.length;
+  live.spaces = [{ id: "s3", folder: wt3, tabs: [], active: true }];
+  t.after(() => {
+    live.spaces = [];
+  });
+  await d.until(() => timers.length > asked, "a timer's redraw");
+  assert.equal(isSelected(), true);
+});
+
 test("Work: work.next / work.prev move the selection from the hub; work.open opens the selected row", async () => {
   const d = await ready();
   assert.equal(selected(d), app.path);
