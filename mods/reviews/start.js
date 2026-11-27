@@ -22,6 +22,7 @@ import {
   assertClean,
   branchFor,
   cloneRepo,
+  keepReviewDraft,
   listWorktrees,
   localRepos,
   removeWorktree,
@@ -228,10 +229,12 @@ export async function prepareReview(review, repo) {
 
 // Done reviewing: closes the review's spaces, removes its worktree
 // (`w`, from reviewWorktrees) and local branch. Refuses, touching nothing, if
-// the worktree has uncommitted changes.
-/** @param {Repo & { path: string }} repo @param {{ path: string, branch: string | null }} w */
+// the worktree has uncommitted changes; the agent's own draft doesn't count
+// (keepReviewDraft moves it out first).
+/** @param {Repo & { path: string }} repo @param {{ path: string, branch: string | null, number: number }} w */
 export async function finishReview(repo, w) {
-  await assertClean(w.path, null);
+  await assertClean(w.path, null, [`review-${w.number}.md`]);
+  await keepReviewDraft(repo, w.path, w.number);
   closeSpacesIn(w.path);
   await removeWorktree(repo, w.path, w.branch, null);
 }

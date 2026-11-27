@@ -133,6 +133,28 @@ test("sweeping tears down merged and closed reviews, keeps open ones", async () 
   assert.deepEqual(left, [42, 44]);
 });
 
+test("finishing a review keeps the agent's draft, out of the way", async () => {
+  const w = await reviewAt(47);
+  fs.writeFileSync(`${w.path}/review-47.md`, "draft");
+  await finishReview(repo, w);
+  assert.ok(!fs.existsSync(w.path));
+  assert.equal(
+    fs.readFileSync(`${tmp}/app/.git/sheltie/reviews/review-47.md`, "utf8"),
+    "draft",
+  );
+});
+
+test("a review with an uncommitted file besides the draft is refused, draft untouched", async () => {
+  const w = await reviewAt(48);
+  fs.writeFileSync(`${w.path}/review-48.md`, "draft");
+  fs.writeFileSync(`${w.path}/notes.txt`, "wip");
+  await assert.rejects(finishReview(repo, w), /uncommitted changes/);
+  assert.ok(fs.existsSync(`${w.path}/review-48.md`));
+  fs.rmSync(`${w.path}/review-48.md`);
+  fs.rmSync(`${w.path}/notes.txt`);
+  await finishReview(repo, w);
+});
+
 test("a queued review isn't looked up or swept", async () => {
   const { kept } = await sweepReviews(
     await allReviewWorktrees([repo]),
