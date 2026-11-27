@@ -3,7 +3,7 @@
 // What each setting does: types/settings.d.ts (and sheltie.schema.json, made
 // from it); the defaults: src/defaults.js.
 
-import { appHome, exec, home } from "herdr";
+import { appHome, exec, home, readTextFile } from "herdr";
 import { DEFAULTS } from "./defaults.js";
 import { errorMessage } from "./errors.js";
 
@@ -51,20 +51,20 @@ async function load() {
 // A settings file: { over (its JSON object, {} if missing or bad), problem }.
 /** @param {string} path @returns {Promise<{ over: Record<string, any>, problem: string | null }>} */
 export async function readSettings(path) {
-  const r = await exec("cat", [path]).catch((e) => ({
-    code: 1,
-    stdout: "",
-    stderr: `${e}`,
-  }));
-  if (r.code !== 0)
+  // Herdr's readTextFile gives null for an absent file and rejects for one it
+  // can't read, so no separate existence check is needed.
+  let text;
+  try {
+    text = await readTextFile(path);
+  } catch (e) {
     return {
       over: {},
-      problem: /no such file/i.test(r.stderr ?? "")
-        ? null
-        : `couldn't read ${path}: ${(r.stderr ?? "").trim()}`,
+      problem: `couldn't read ${path}: ${errorMessage(e)}`,
     };
+  }
+  if (text == null) return { over: {}, problem: null };
   try {
-    const over = JSON.parse(r.stdout);
+    const over = JSON.parse(text);
     if (!isObject(over)) throw new Error("not a JSON object");
     return { over, problem: null };
   } catch (e) {
