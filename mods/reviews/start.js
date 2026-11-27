@@ -18,14 +18,17 @@ import { errorMessage, errorText } from "./errors.js";
 import {
   addReviewWorktree,
   addWorktree,
+  adhocBranch,
   assertClean,
   branchFor,
   cloneRepo,
+  listWorktrees,
   localRepos,
   removeWorktree,
   reviewWorktrees,
+  worktreePath,
 } from "./git.js";
-import { closeSpacesIn, fill } from "./lib.js";
+import { basename, closeSpacesIn, fill } from "./lib.js";
 
 export { errorText };
 
@@ -91,6 +94,17 @@ export function learnClone(repos, target, cloned) {
   else repos.push(cloned);
 }
 
+// `repo` as a local checkout: cloned first when it isn't one, and `repos`
+// told. `onStep` hears the clone.
+/** @param {Repo} repo @param {Repo[]} repos @param {(message: string) => void} [onStep] */
+export async function localCopy(repo, repos, onStep = () => {}) {
+  if (repo.path) return repo;
+  onStep(`Cloning ${repo.slug}…`);
+  const cloned = await cloneRepo(/** @type {string} */ (repo.slug));
+  learnClone(repos, repo, cloned);
+  return cloned;
+}
+
 // Everything up to opening the space for new work on the ticket's own branch
 // in `target` (cloned first if it isn't local, and `repos` told): { name,
 // folder, task, repo }. `work` is the ticket's known work, so an existing
@@ -102,12 +116,7 @@ export async function prepareStart(
   target,
   { work = [], repos = [], onStep = () => {} } = {},
 ) {
-  let repo = target;
-  if (!repo.path) {
-    onStep(`Cloning ${repo.slug}…`);
-    repo = await cloneRepo(/** @type {string} */ (repo.slug));
-    learnClone(repos, target, repo);
-  }
+  const repo = await localCopy(target, repos, onStep);
   const branch = branchFor(ticket, repo);
   const existing = work.find(
     (w) => w.repo.path === repo.path && w.branch === branch && w.worktree,
@@ -135,6 +144,39 @@ export async function prepareStart(
     name: spaceName(ticket, repo, work),
     folder: path,
     task: existing ? null : fill(C.agent.task, taskValues(ticket, { repo })),
+  };
+}
+
+// Ad-hoc work (no ticket) in `target`: its own branch (adhocBranch), reused
+// when it's already there, with the agent told what it is only when new.
+// { name, folder, task }, as openSpaces takes it.
+/** @param {string} description @param {Repo} target @param {{ repos?: Repo[], onStep?: (message: string) => void }} [opts] */
+export async function prepareAdhoc(
+  description,
+  target,
+  { repos = [], onStep = () => {} } = {},
+) {
+  const repo = /** @type {import("./git.js").LocalRepo} */ (
+    await localCopy(target, repos, onStep)
+  );
+  const branch = adhocBranch(description, repo);
+  if (!branch)
+    throw new Error(`ad-hoc work: no branch name from "${description}"`);
+  const path = worktreePath(repo, branch);
+  const existing = (await listWorktrees(repo.path)).linked.some(
+    (w) => w.path === path,
+  );
+  if (!existing) await addWorktree(repo, branch, { create: true });
+  return {
+    name: basename(path),
+    folder: path,
+    task: existing
+      ? null
+      : fill(C.agent.adhocTask, {
+          description,
+          branch,
+          worktreeDir: C.worktreeDir,
+        }),
   };
 }
 
