@@ -1,11 +1,17 @@
-// What the Work sidebar shows, as plain data: its groups (a repo's header,
-// which is also its hub's row) and their rows, at the sidebar's width, with
-// the selection. work/main.js draws it (render) and writes it out (report);
-// nothing here draws, so tests can check what a row shows.
+// What the Work sidebar shows: its groups (a repo's header, which is also its
+// hub's row) and their rows, at the sidebar's width, with the selection, as
+// plain data (workView, and capped). The builders after it draw them: each
+// turns a group, row or stacked PR into gpui elements (groupEl, rowEl,
+// subRowEl, headerEl, bodyEl...). A builder takes its data and `ui` (see
+// "Drawing") and reads no View state, so tests can check a layout without a
+// View (tests/work-layout.test.mjs). work/main.js calls them in render (draw)
+// and writes the data out in report.
 //
 // Tones name theme colours ("blocked", "done", "muted", "dim", "working",
 // or a space status, which falls back to "accent" when the theme has none).
 
+import { h_flex, Popover, v_flex } from "gpui-base";
+import { div, svg } from "gpui-kit";
 import {
   LADDER,
   prLabel,
@@ -44,6 +50,9 @@ export const stageKey = (/** @type {any} */ stage) => `stage:${stage}`;
 
 // How long a step's success note stays.
 export const NOTE_MS = 60_000;
+
+// A row's ↗ button, its width (the menu's trigger).
+export const LINKS_W = 18;
 
 // Each state has its own glyph, not only its own colour.
 const GLYPHS = { blocked: "!", done: "✓" };
@@ -399,4 +408,765 @@ function stageGroups(/** @type {any} */ input, /** @type {any} */ rowOf) {
     if (ws.length) out.push(group(stageKey(id), name, ws, "worktree"));
   }
   return out;
+}
+
+// ---- Drawing ----------------------------------------------------------------
+//
+// The builders below return gpui elements. Each takes its data and `ui`, which
+// holds what a draw needs besides the data:
+//   t          the theme
+//   rail       whether the sidebar is a rail (its width is under RAIL)
+//   hovered    the path of the row under the pointer, or null
+//   linksOpen  the path of the row whose ↗ menu is open, or null
+// and the actions a click, hover or menu calls (the View's; see
+// Work.sidebarActions): open(w), openStacked(p), step(cx, w, s),
+// follow(cx, w, id), hoverRow(cx, w, hovered), openLinks(cx, w, open),
+// closeLinks(cx), expand(cx, key), fold(cx, g), toggleGroupBy(cx),
+// refresh(cx), newWork().
+
+/** @type {(t: any, name: any) => any} */
+const toneOf = (t, name) => t[name] ?? t.accent;
+
+// A header or row button: an id, a label, a tooltip, and what a click does
+// (the click doesn't reach the row behind it).
+function iconButton(
+  /** @type {any} */ ui,
+  /** @type {any} */ name,
+  /** @type {any} */ label,
+  /** @type {any} */ tip,
+  /** @type {any} */ onClick,
+) {
+  const { t } = ui;
+  return div()
+    .id(`work-${name}`)
+    .h(20)
+    .px(5)
+    .flex()
+    .items_center()
+    .rounded(5)
+    .text_size(12.5)
+    .text_color(t.dim)
+    .cursor_pointer()
+    .hover((/** @type {any} */ s) => s.bg(t.hover).text_color(t.foreground))
+    .tooltip(tip)
+    .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
+      cx.stop_propagation();
+      onClick(cx);
+    })
+    .child(label);
+}
+
+// The header: on a rail, only "+"; else "Work" with the grouping, refresh and
+// "+" buttons. `by`: the grouping shown; `refreshing`: ↻ spins while a
+// refresh asked for by hand (git, then tickets and PRs) runs.
+export function headerEl(
+  /** @type {any} */ ui,
+  /** @type {any} */ by,
+  /** @type {any} */ refreshing,
+) {
+  const { t, rail } = ui;
+  if (rail)
+    return h_flex()
+      .h(30)
+      .flex_none()
+      .justify_center()
+      .items_center()
+      .child(iconButton(ui, "new", "+", "New work (tickets)", ui.newWork));
+  const refreshLabel = refreshing
+    ? svg("mods/workspace-chrome/spinner.svg").size(11).spin(900)
+    : "↻";
+  return h_flex()
+    .h(30)
+    .flex_none()
+    .px(12)
+    .gap(4)
+    .items_center()
+    .child(
+      div()
+        .flex_1()
+        .min_w(0)
+        .truncate()
+        .text_size(11)
+        .font_semibold()
+        .text_color(t.dim)
+        .child("Work"),
+    )
+    .child(
+      iconButton(
+        ui,
+        "group",
+        "▤",
+        by === "stage" ? "Group by repo" : "Group by stage",
+        ui.toggleGroupBy,
+      ),
+    )
+    .child(
+      iconButton(
+        ui,
+        "refresh",
+        refreshLabel,
+        refreshing ? "Refreshing…" : "Refresh now",
+        ui.refresh,
+      ),
+    )
+    .child(iconButton(ui, "new", "+", "New work (tickets)", ui.newWork));
+}
+
+// A row's status glyph (or spinner), as work-rows.js decided it.
+function statusEl(/** @type {any} */ ui, /** @type {any} */ r) {
+  const st = r.status;
+  if (st.spin)
+    return svg("mods/workspace-chrome/spinner.svg")
+      .size(11)
+      .flex_none()
+      .text_color(toneOf(ui.t, st.tone))
+      .spin(900);
+  const el = div().w(12).flex_none().text_color(toneOf(ui.t, st.tone));
+  return (
+    st.tip ? el.id(`work-nospace-${r.w.path}`).tooltip(st.tip) : el
+  ).child(st.glyph);
+}
+
+// A step button. The row's next step (primary) is the one solid thing in
+// the sidebar: accent fill, background-coloured text. Later steps are
+// quiet accent text. Picked: an accent outline; confirming: blocked.
+function stepButton(
+  /** @type {any} */ ui,
+  /** @type {any} */ r,
+  /** @type {any} */ s,
+) {
+  const { t } = ui;
+  const solid = s.primary && !s.confirming;
+  const ink = s.confirming ? t.blocked : solid ? t.background : t.accent;
+  return div()
+    .id(`work-step-${r.w.path}-${s.id}`)
+    .flex_none()
+    .h(18)
+    .px(6)
+    .flex()
+    .items_center()
+    .rounded(5)
+    .bg(solid ? t.accent : s.confirming ? t.hover : "#00000000")
+    .border_1()
+    .border_color(
+      s.confirming
+        ? t.blocked
+        : s.chosen
+          ? solid
+            ? t.foreground
+            : t.accent
+          : "#00000000",
+    )
+    .text_size(11)
+    .when(solid, (/** @type {any} */ el) => el.font_semibold())
+    .text_color(ink)
+    .cursor_pointer()
+    .hover((/** @type {any} */ st) =>
+      solid ? st.bg(t.foreground) : st.bg(t.hover).text_color(ink),
+    )
+    .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
+      cx.stop_propagation();
+      ui.step(cx, r.w, s);
+    })
+    .child(s.text);
+}
+
+// A row's ↗ menu: a popover of what it opens in the browser (the row's links).
+// It keeps its place while hidden, so showing it moves nothing.
+function linksMenu(
+  /** @type {any} */ ui,
+  /** @type {any} */ w,
+  /** @type {any} */ links,
+) {
+  const { t } = ui;
+  return Popover.new(`work-links-${w.path}`)
+    .anchor("top_right")
+    .open(ui.linksOpen === w.path)
+    .on_open_change((/** @type {any} */ open, /** @type {any} */ cx) =>
+      ui.openLinks(cx, w, open),
+    )
+    .trigger(
+      div()
+        .id(`work-links-button-${w.path}`)
+        .w(LINKS_W)
+        .h(18)
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(5)
+        .text_size(11)
+        .text_color(ui.linksOpen === w.path ? t.foreground : t.dim)
+        .cursor_pointer()
+        .hover((/** @type {any} */ s) => s.bg(t.hover).text_color(t.foreground))
+        .tooltip("Open in the browser")
+        .on_click((/** @type {any} */ _e, /** @type {any} */ cx) =>
+          cx.stop_propagation(),
+        )
+        .child("↗"),
+    )
+    .content(
+      v_flex()
+        .p(4)
+        .min_w(120)
+        .rounded(7)
+        .border_1()
+        .border_color(t.border ?? t.dim)
+        .bg(t.popover)
+        .children(
+          links.map((/** @type {any} */ l) =>
+            div()
+              .id(`work-open-${l.id}-${w.path}`)
+              .h(24)
+              .px(8)
+              .flex()
+              .items_center()
+              .rounded(5)
+              .text_size(12.5)
+              .text_color(t.foreground)
+              .cursor_pointer()
+              .hover((/** @type {any} */ s) => s.bg(t.hover))
+              .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
+                cx.stop_propagation();
+                ui.closeLinks(cx);
+                ui.follow(cx, w, l.id);
+              })
+              .child(l.label),
+          ),
+        ),
+    );
+}
+
+// The rail: a row is its status, and a hover says the rest. Clicks and
+// keys work as in the full rows.
+function dotEl(/** @type {any} */ ui, /** @type {any} */ r) {
+  const { t } = ui;
+  const { w, space, pr, num } = r;
+  // With a space, the dot is the agent's: the PR's glyph goes by the
+  // number.
+  const prGlyph = Boolean(space && pr);
+  return h_flex()
+    .id(`work-${w.path}`)
+    .mx(4)
+    .min_h(24)
+    .py(2)
+    .justify_center()
+    .items_center()
+    .rounded(6)
+    .border_l_2()
+    .border_color(r.selected ? t.accent : "#00000000")
+    .cursor_pointer()
+    .when(Boolean(space?.active), (/** @type {any} */ el) =>
+      el.bg(t.selected ?? t.hover),
+    )
+    .hover((/** @type {any} */ s) => s.bg(t.hover))
+    .tooltip(r.tip)
+    .on_click(() => ui.open(w))
+    .child(
+      v_flex()
+        .items_center()
+        .child(statusEl(ui, r))
+        .when(Boolean(num) || prGlyph, (/** @type {any} */ el) =>
+          el.child(
+            h_flex()
+              .gap(2)
+              .text_size(9)
+              .when(Boolean(num), (/** @type {any} */ e) =>
+                e.child(div().text_color(t.dim).child(num)),
+              )
+              .when(prGlyph, (/** @type {any} */ e) =>
+                e.child(div().text_color(toneOf(t, pr.tone)).child(pr.glyph)),
+              ),
+          ),
+        ),
+    );
+}
+
+// A worktree's row: its status, title and PR on the first line; its sub line
+// (ticket summary, status, cost), its steps and note below.
+export function rowEl(/** @type {any} */ ui, /** @type {any} */ r) {
+  const { t } = ui;
+  const { w, space, pr, steps, note, links } = r;
+  return (
+    v_flex()
+      .id(`work-${w.path}`)
+      .mx(6)
+      .px(8)
+      .py(4)
+      .gap(1)
+      .rounded(7)
+      .border_l_2()
+      .border_color(r.selected ? t.accent : "#00000000")
+      .cursor_pointer()
+      .when(Boolean(space?.active), (/** @type {any} */ el) =>
+        el.bg(t.selected ?? t.hover),
+      )
+      .hover((/** @type {any} */ s) => s.bg(t.hover))
+      // Only entering a row renders: leaving one is followed by entering
+      // the next, and leaving the list is handled on "work-list".
+      .on_hover((/** @type {any} */ hovered, /** @type {any} */ cx) =>
+        ui.hoverRow(cx, w, hovered),
+      )
+      .on_click(() => ui.open(w))
+      .child(
+        h_flex()
+          .gap(6)
+          .items_center()
+          .child(statusEl(ui, r))
+          .child(
+            div()
+              .flex_shrink(1)
+              .min_w(64)
+              .flex()
+              .child(
+                div()
+                  .flex_shrink(1)
+                  .min_w(0)
+                  .truncate()
+                  .text_size(12.5)
+                  .text_color(t.foreground)
+                  .when(Boolean(space?.active), (/** @type {any} */ d) =>
+                    d.font_semibold(),
+                  )
+                  .child(r.title),
+              ),
+          )
+          // The rest of the line after the title (sized to its text): the
+          // PR, at the right; it also pushes ↗ there.
+          .child(
+            h_flex()
+              .flex_1()
+              .min_w(0)
+              .justify_end()
+              // Narrow, the PR is a word, then a glyph (see prLabel),
+              // never cut.
+              .when(
+                Boolean(pr) && pr.shown !== "full",
+                (/** @type {any} */ el) =>
+                  el.child(
+                    div()
+                      .id(`work-pr-${w.path}`)
+                      .flex_none()
+                      .text_size(11)
+                      .text_color(toneOf(t, pr.tone))
+                      .tooltip(pr.text)
+                      .child(pr.head),
+                  ),
+              )
+              .when(
+                Boolean(pr) && pr.shown === "full",
+                (/** @type {any} */ el) =>
+                  el.child(
+                    // The tail (the tone: checks, conflicts) stays whole;
+                    // the rest of the PR truncates before it.
+                    h_flex()
+                      .min_w(0)
+                      .gap(4)
+                      .text_size(11)
+                      .text_color(toneOf(t, pr.tone))
+                      .child(div().min_w(0).truncate().child(pr.head))
+                      .when(Boolean(pr.tail), (/** @type {any} */ e) =>
+                        e.child(div().flex_none().child(pr.tail)),
+                      ),
+                  ),
+              ),
+          )
+          .when(links.length > 0, (/** @type {any} */ el) =>
+            el.child(
+              r.selected || ui.hovered === w.path || ui.linksOpen === w.path
+                ? linksMenu(ui, w, links)
+                : div().w(LINKS_W).flex_none(),
+            ),
+          ),
+      )
+      // Always there on a ticket's row, even while empty: its summary,
+      // status and cost come from lookups that finish later, and the line
+      // appearing then would push every row below it down. Any other
+      // branch (its title already) is one line unless agents there cost.
+      .when(
+        Boolean(r.sub) || Boolean(w.handle) || Boolean(r.costText),
+        (/** @type {any} */ el) =>
+          el.child(
+            h_flex()
+              .pl(18)
+              .gap(6)
+              .child(
+                div()
+                  .flex_1()
+                  .min_w(48)
+                  .truncate()
+                  .text_size(11)
+                  .text_color(t.dim)
+                  .child(r.sub),
+              )
+              .when(Boolean(r.ticketStatus), (/** @type {any} */ e) =>
+                e.child(
+                  // Capped, so the summary keeps most of the line.
+                  div()
+                    .flex_shrink(1)
+                    .min_w(0)
+                    .max_w(88)
+                    .truncate()
+                    .text_size(11)
+                    .text_color(t.dim)
+                    .child(r.ticketStatus),
+                ),
+              )
+              .when(Boolean(r.costText), (/** @type {any} */ e) =>
+                e.child(costEl(ui, r)),
+              ),
+          ),
+      )
+      .when(steps.length > 0 || Boolean(note), (/** @type {any} */ el) =>
+        el.child(
+          h_flex()
+            .flex_wrap()
+            .pl(18)
+            .pt(2)
+            .gap_x(4)
+            .gap_y(3)
+            .items_center()
+            .children(steps.map((/** @type {any} */ s) => stepButton(ui, r, s)))
+            .when(Boolean(note), (/** @type {any} */ e) =>
+              e.child(
+                div()
+                  .flex_1()
+                  .min_w(60)
+                  .truncate()
+                  .text_size(11)
+                  .text_color(toneOf(t, note.tone))
+                  .child(note.text),
+              ),
+            ),
+        ),
+      )
+  );
+}
+
+// A stacked PR `p` under its row (work-rows.js, stackItem): one indented
+// line, no steps; a click opens the PR. Merged or closed: dimmed. A tree
+// connector (├ / └ for the last) ties it to the row above.
+export function subRowEl(
+  /** @type {any} */ ui,
+  /** @type {any} */ p,
+  /** @type {any} */ last,
+) {
+  const { t } = ui;
+  return h_flex()
+    .id(`work-${p.key}`)
+    .mx(6)
+    .pl(18)
+    .pr(8)
+    .h(20)
+    .gap(6)
+    .items_center()
+    .rounded(6)
+    .border_l_2()
+    .border_color(p.selected ? t.accent : "#00000000")
+    .cursor_pointer()
+    .hover((/** @type {any} */ s) => s.bg(t.hover))
+    .tooltip(p.tip)
+    .on_click(() => ui.openStacked(p))
+    .child(
+      div()
+        .flex_none()
+        .text_size(11)
+        .text_color(t.dim)
+        .child(last ? "└" : "├"),
+    )
+    .child(
+      div()
+        .flex_none()
+        .text_size(11)
+        .text_color(toneOf(t, p.tone))
+        .child(p.shown),
+    )
+    .child(
+      div()
+        .flex_1()
+        .min_w(0)
+        .truncate()
+        .text_size(11)
+        .text_color(p.dim ? t.dim : t.muted)
+        .child(p.title),
+    );
+}
+
+// On the rail: the PR's glyph, small, under its row's dot.
+function subDotEl(/** @type {any} */ ui, /** @type {any} */ p) {
+  const { t } = ui;
+  return div()
+    .id(`work-${p.key}`)
+    .mx(4)
+    .h(16)
+    .flex()
+    .justify_center()
+    .items_center()
+    .rounded(6)
+    .border_l_2()
+    .border_color(p.selected ? t.accent : "#00000000")
+    .cursor_pointer()
+    .hover((/** @type {any} */ s) => s.bg(t.hover))
+    .tooltip(p.tip)
+    .on_click(() => ui.openStacked(p))
+    .text_size(9)
+    .text_color(toneOf(t, p.tone))
+    .child(p.glyph);
+}
+
+// What a row costs (its agents, at API prices): a tooltip says what.
+function costEl(/** @type {any} */ ui, /** @type {any} */ r) {
+  return div()
+    .id(`work-cost-${r.w.path}`)
+    .flex_none()
+    .text_size(11)
+    .text_color(ui.t.dim)
+    .tooltip("What agents working here have cost (at API prices)")
+    .child(r.costText);
+}
+
+// The "+k more" row below a capped repo group (workRepoRows), or "Show fewer"
+// once expanded past the cap. On the rail, "+k", and "−".
+function moreRowEl(/** @type {any} */ ui, /** @type {any} */ g) {
+  const { t, rail } = ui;
+  const label = g.more
+    ? rail
+      ? `+${g.more}`
+      : `+${g.more} more`
+    : rail
+      ? "−"
+      : "Show fewer";
+  return div()
+    .id(`work-more-${g.key}`)
+    .mx(rail ? 4 : 6)
+    .px(rail ? 6 : 24)
+    .h(20)
+    .flex()
+    .items_center()
+    .when(rail, (/** @type {any} */ el) => el.justify_center())
+    .rounded(6)
+    .cursor_pointer()
+    .hover((/** @type {any} */ s) => s.bg(t.hover))
+    .text_size(11)
+    .text_color(t.dim)
+    .tooltip(
+      g.more
+        ? `Show ${g.more} less recently changed worktree${g.more === 1 ? "" : "s"}`
+        : "Show only the most recently changed",
+    )
+    .on_click((/** @type {any} */ _e, /** @type {any} */ cx) =>
+      ui.expand(cx, g.key),
+    )
+    .child(label);
+}
+
+// The rows of a group, each with its stacked PRs under it.
+function rowsOf(/** @type {any} */ ui, /** @type {any} */ g) {
+  return g.worktrees.flatMap((/** @type {any} */ r) => [
+    rowEl(ui, r),
+    ...r.stack.map(
+      (/** @type {any} */ p, /** @type {any} */ i, /** @type {any} */ all) =>
+        subRowEl(ui, p, i === all.length - 1),
+    ),
+  ]);
+}
+
+// A repo group: its header (its hub's row, in full) and its rows; a "+k more"
+// row under them when the cap hides some (or "Show fewer" once expanded).
+export function groupEl(/** @type {any} */ ui, /** @type {any} */ g) {
+  const el = groupBodyEl(ui, g);
+  return g.more || g.fewer ? el.child(moreRowEl(ui, g)) : el;
+}
+
+// A group without its "more" row. In full, the header is also the repo's hub's
+// row (the hub has no ticket, PR or steps, so a row of its own would repeat in
+// every group): the chevron folds the group, the rest opens the hub like a
+// row. By stage, a plain header (no hub): the chevron and name fold it.
+function groupBodyEl(/** @type {any} */ ui, /** @type {any} */ g) {
+  const { t, rail } = ui;
+  const { hub } = g;
+  const fold = (/** @type {any} */ cx) => ui.fold(cx, g);
+  const chevron = svg(
+    `mods/workspace-chrome/chevron-${g.open ? "down" : "right"}.svg`,
+  )
+    .size(11)
+    .flex_none()
+    .text_color(t.dim);
+  if (rail)
+    return v_flex()
+      .child(
+        h_flex()
+          .id(`work-repo-${g.key}`)
+          .mx(4)
+          .px(6)
+          .h(24)
+          .gap(5)
+          .items_center()
+          .justify_center()
+          .tooltip(`${g.name} (${g.count})`)
+          .rounded(6)
+          .cursor_pointer()
+          .hover((/** @type {any} */ s) => s.bg(t.hover))
+          .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => fold(cx))
+          .child(chevron)
+          // A monogram tells repos apart without a hover.
+          .child(
+            div()
+              .text_size(11)
+              .font_semibold()
+              .text_color(t.muted)
+              .child(g.monogram),
+          ),
+      )
+      .when(Boolean(hub), (/** @type {any} */ el) => el.child(dotEl(ui, hub)))
+      .children(
+        g.worktrees.flatMap((/** @type {any} */ r) => [
+          dotEl(ui, r),
+          ...r.stack.map((/** @type {any} */ p) => subDotEl(ui, p)),
+        ]),
+      );
+  if (!hub)
+    return v_flex()
+      .child(
+        h_flex()
+          .id(`work-group-${g.key}`)
+          .mx(6)
+          .px(6)
+          .h(24)
+          .gap(5)
+          .items_center()
+          .rounded(6)
+          .cursor_pointer()
+          .hover((/** @type {any} */ s) => s.bg(t.hover))
+          .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => fold(cx))
+          .child(chevron)
+          .child(
+            div()
+              .flex_1()
+              .min_w(0)
+              .truncate()
+              .text_size(12.5)
+              .font_semibold()
+              .text_color(t.muted)
+              .child(g.name),
+          )
+          .child(
+            div()
+              .id(`work-count-${g.key}`)
+              .flex_none()
+              .text_size(11)
+              .text_color(t.muted)
+              .tooltip(g.count)
+              .child(g.size),
+          ),
+      )
+      .children(rowsOf(ui, g));
+  return v_flex()
+    .child(
+      h_flex()
+        .id(`work-repo-${g.repo.path}`)
+        .mx(6)
+        .px(6)
+        .h(24)
+        .gap(5)
+        .items_center()
+        .rounded(6)
+        .border_l_2()
+        .border_color(hub.selected ? t.accent : "#00000000")
+        .cursor_pointer()
+        .when(Boolean(hub.space?.active), (/** @type {any} */ el) =>
+          el.bg(t.selected ?? t.hover),
+        )
+        .hover((/** @type {any} */ s) => s.bg(t.hover))
+        .tooltip(`${g.name} hub: ${hub.title}`)
+        .on_click(() => ui.open(hub.w))
+        .child(
+          div()
+            .id(`work-fold-${g.repo.path}`)
+            .flex_none()
+            .rounded(4)
+            .hover((/** @type {any} */ s) => s.bg(t.hover))
+            .on_click((/** @type {any} */ _e, /** @type {any} */ cx) => {
+              cx.stop_propagation();
+              fold(cx);
+            })
+            .child(chevron),
+        )
+        .child(statusEl(ui, hub))
+        .child(
+          div()
+            .flex_shrink(1)
+            .min_w(0)
+            .truncate()
+            .text_size(12.5)
+            .font_semibold()
+            .text_color(t.muted)
+            .child(g.name),
+        )
+        .child(
+          div()
+            .flex_1()
+            .min_w(0)
+            .truncate()
+            .text_size(11)
+            .text_color(t.dim)
+            .child(hub.title),
+        )
+        .when(Boolean(hub.costText), (/** @type {any} */ el) =>
+          el.child(costEl(ui, hub)),
+        )
+        .child(
+          div()
+            .id(`work-count-${g.repo.path}`)
+            .flex_none()
+            .text_size(11)
+            // Neutral, like the repo name: the count carries no state.
+            .text_color(t.muted)
+            .tooltip(g.count)
+            .child(g.size),
+        ),
+    )
+    .children(rowsOf(ui, g));
+}
+
+// A message in the list: in full on the rail too, on hover (a rail shows "!"
+// for a problem, "…" for loading).
+export function messageEl(
+  /** @type {any} */ ui,
+  /** @type {any} */ id,
+  /** @type {any} */ text,
+  /** @type {any} */ color,
+) {
+  const { rail } = ui;
+  return rail
+    ? div()
+        .id(`work-${id}`)
+        .py(4)
+        .flex()
+        .justify_center()
+        .text_size(12.5)
+        .text_color(color)
+        .tooltip(text)
+        .child(id === "problem" ? "!" : "…")
+    : div().px(14).py(4).text_size(11).text_color(color).child(text);
+}
+
+// The list's body: the groups, or the message while they load or when there
+// are none. `loading`: the groups aren't known yet.
+export function bodyEl(
+  /** @type {any} */ ui,
+  /** @type {any} */ view,
+  /** @type {any} */ loading,
+) {
+  if (loading) return messageEl(ui, "loading", "Loading worktrees…", ui.t.dim);
+  return view.groups.length
+    ? v_flex()
+        .gap(4)
+        .children(view.groups.map((/** @type {any} */ g) => groupEl(ui, g)))
+    : messageEl(
+        ui,
+        "empty",
+        "No worktrees yet. Press + to start a ticket.",
+        ui.t.dim,
+      );
 }
