@@ -68,10 +68,18 @@ export function create(s) {
       to,
       ...(resolution ? ["--resolution", resolution] : []),
     ]);
-    if (r.code !== 0)
+    if (r.code !== 0) {
+      // jira-cli says which transition names it accepts on a later line; the
+      // first line alone doesn't tell the user what to put in transitions.
+      const why =
+        firstLine(r.stderr) || firstLine(r.stdout) || "jira issue move failed";
+      const available = `${r.stderr}\n${r.stdout}`.match(
+        /Available states for issue \S+: (.+)/,
+      )?.[1];
       throw new Error(
-        `${key} → ${to}: ${firstLine(r.stderr) || firstLine(r.stdout) || "jira issue move failed"}`,
+        `${key} → ${to}: ${why}${available ? ` (available: ${available})` : ""}`,
       );
+    }
     return `${key} → ${to}`;
   }
 

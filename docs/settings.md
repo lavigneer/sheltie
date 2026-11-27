@@ -15,7 +15,7 @@ shows every setting with its default, and `types/settings.d.ts` documents each o
 | `programs` | `git`, `gh`, `jira`, `hc`, `jq`, `curl`, `sqlite3`, `claude` | found on your login shell's PATH; absolute paths win. Each is needed only by what uses it (`jira` by the Jira tracker, `sqlite3` by opencode's usage, `claude` by the plan limits) |
 | `tracker` | `"jira"` | or `"github"` |
 | `jira.jql` | your unresolved tickets | which tickets to list |
-| `jira.transitions` | `{start: null, review: null, done: "Resolved"}` | Jira transition at each step |
+| `jira.transitions` | `{start: null, review: null, done: "Resolved"}` | Jira transition at each step, by transition name (not always the status name; a failed move lists the names your Jira accepts) |
 | `jira.resolution` | `null` | resolution for the `done` transition |
 | `github.repos` | `[]` (anywhere) | where to look for issues |
 | `github.assignee`, `github.search` | `"@me"`, `""` | which issues |
