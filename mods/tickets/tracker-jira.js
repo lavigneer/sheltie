@@ -131,7 +131,9 @@ export function create(s) {
         const args = [
           "search",
           "prs",
-          chunk.map((k) => `"${k}"`).join(" OR "),
+          // Bare keys: ticket keys are single tokens, and GitHub search
+          // returns nothing when quoted terms are OR-ed together.
+          chunk.join(" OR "),
           "--limit",
           "100",
           "--json",

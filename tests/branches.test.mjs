@@ -390,4 +390,6 @@ test("jira linkedPRs: owners from repos and repo rules; none to ask, no search",
     "WEB-2": [],
   });
   assert.match(logged("gh")[0], /--owner o --owner rules$/);
+  // Bare keys, not quoted: GitHub search returns nothing for quoted terms OR-ed.
+  assert.match(logged("gh")[0], / WEB-1 OR WEB-2 /);
 });
