@@ -88,7 +88,7 @@
  *   no such ticket; throws when the tracker can't be reached
  * @property {(key: string, step: Step, status?: string | null) => Promise<string | null>} move
  *   returns a note, or null when there's nothing to do
- * @property {(key: string) => Promise<string | null>} url where to see it in
+ * @property {(key: string, urgent?: boolean) => Promise<string | null>} url where to see it in
  *   the browser, null when it can't tell
  * @property {(key: string) => string} viewCommand a shell command that prints it
  * @property {(key: string) => string} labelOf
@@ -106,7 +106,7 @@
  * @property {string} key
  * @property {string} label short form for display
  * @property {Tracker} tracker the one it's in
- * @property {() => Promise<string | null>} url
+ * @property {(urgent?: boolean) => Promise<string | null>} url
  * @property {(step: Step, status?: string | null) => Promise<string | null>} move
  */
 

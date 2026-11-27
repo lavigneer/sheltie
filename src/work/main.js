@@ -433,7 +433,7 @@ export default class Work extends View {
   openTicket(/** @type {any} */ cx, /** @type {any} */ w) {
     if (w.hub) return this.nothingToOpen(w);
     cx.spawn(async () => {
-      const url = await this.model.ticketUrl(w).catch(() => null);
+      const url = await this.model.ticketUrl(w, true).catch(() => null);
       if (url) return openUrl(url);
       notify({
         title: `${this.who(w)}: ${this.model.isTicket(w) ? `no link for ${w.handle.label}` : "not a ticket"}`,

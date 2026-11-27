@@ -59,10 +59,12 @@ export function callsSince(before) {
 
 // GitHub and Jira rate-limit callers. At most `max` of their calls run at once
 // (GitHub's secondary limits punish bursts). When one answers "rate limited",
-// every call to that program fails at once, without asking, until the backoff
-// (a minute, doubling up to 15 on repeats) has passed; a call that works
-// resets it. Shared by everything in a mod, so polls, popups and steps can't
-// pile on together.
+// every background call to that program fails at once, without asking, until
+// the backoff (a minute, doubling up to 15 on repeats) has passed; a call that
+// works resets it. Urgent calls (a click, `urgent` above) skip that wait, so a
+// person's action is never refused by a backoff that polls caused; if GitHub
+// still says "rate limited", that answer extends the backoff as usual. Shared
+// by everything in a mod, so polls, popups and steps can't pile on together.
 export const RATE_LIMITED =
   /rate limit|too many requests|\b429\b|abuse detection/i;
 const BACKOFF_MS = 60_000;
@@ -87,7 +89,7 @@ async function limited(l, name, args, opts) {
   l.active++;
   try {
     const wait = l.until - Date.now();
-    if (wait > 0) {
+    if (wait > 0 && !opts?.urgent) {
       counts.rateLimited++;
       return {
         code: 1,
@@ -112,7 +114,7 @@ async function limited(l, name, args, opts) {
 }
 
 // Runs a program and returns its stdout, or throws with its first error line.
-/** @param {string} name @param {string[]} args @param {string} [what] @param {{ cwd?: string }} [opts] @returns {Promise<string>} */
+/** @param {string} name @param {string[]} args @param {string} [what] @param {{ cwd?: string, urgent?: boolean }} [opts] @returns {Promise<string>} */
 export async function must(name, args, what, opts) {
   const r = await tool(name, args, opts);
   if (r.code !== 0)
