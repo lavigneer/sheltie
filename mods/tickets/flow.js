@@ -35,13 +35,50 @@ import { markReady, mergePr, prDetails } from "./prs.js";
 import { herdrSpaces } from "./spaces.js";
 import { openWork, workName } from "./work.js";
 
+/** @typedef {import("./types.js").PR} PR */
+/** @typedef {import("./types.js").WorkItem} WorkItem */
+/** @typedef {import("./types.js").TicketHandle} TicketHandle */
+/** @typedef {import("./types.js").Repo} Repo */
+/** @typedef {import("./git.js").LocalRepo} LocalRepo */
+/** @typedef {import("./config.js").Settings} Settings */
+/** @typedef {"success" | "error" | "warning" | "info"} Level */
+/**
+ * A worktree a step runs in: its folder and branch, its repo, and its ticket's
+ * handle when it has one (joinWork, work.js).
+ * @typedef {{ path: string, branch: string | null, repo: LocalRepo, handle?: TicketHandle | null }} Worktree
+ */
+/**
+ * A worktree's last step (WorkModel.steps; see STEP below).
+ * @typedef {{ phase: string, text?: string, at?: number, staleAt?: number }} StepLast
+ */
+/**
+ * What a step's `when` and `confirm` read: whether the PR conflicts, is green
+ * (CI passed and GitHub can merge), whether its agent is busy or done, and the
+ * repo's workflow settings.
+ * @typedef {{ conflicts: boolean, green: boolean, working: boolean, agentDone: boolean, workflow: Settings["workflow"] }} StepContext
+ */
+/**
+ * A row of STEPS (see the table's comment).
+ * @typedef {{
+ *   id: string,
+ *   kind: "agent" | "direct",
+ *   label: string | ((pr: PR) => string),
+ *   short?: string | ((pr: PR) => string),
+ *   from: string[],
+ *   to?: string[],
+ *   when?: (pr: PR, x: StepContext) => boolean,
+ *   confirm?: (x: StepContext) => boolean,
+ *   run?: (w: Worktree, pr: PR, work: WorkItem[]) => Promise<string> | string,
+ * }} FlowStep
+ */
+
 // --- Stage ------------------------------------------------------------------
 
 // Every stage a PR can be in (stageOf), in the order the Work sidebar groups
 // them, with `name` and the stages a PR can move to from it (`next`). A move is
 // made by a step (STEPS' `to`) or by hand on GitHub. `told`: the notice when a
 // PR enters the stage (prEvents).
-/** @type {Record<string, { name: string, next: string[], told?: { title: string, level: string, body?: string } }>} */
+/** @type {Record<string, { name: string, next: string[], told?: { title: string, level: Level, body?: string } }>} */
 export const LADDER = {
   "no-pr": { name: "No PR", next: ["draft", "in-review", "approved"] },
   draft: {
@@ -69,7 +106,7 @@ export const LADDER = {
 };
 
 // pr: prDetails() (`unresolved`: a count, or null when unknown).
-export function stageOf(/** @type {any} */ pr) {
+export function stageOf(/** @type {PR | null} */ pr) {
   if (!pr) return "no-pr";
   if (pr.state === "MERGED") return "merged";
   if (pr.state === "CLOSED") return "closed";
@@ -84,7 +121,7 @@ export function stageOf(/** @type {any} */ pr) {
 // matters most as a word ("#881 CI failed"), with no tail; at glyph width,
 // that state's glyph alone. `text` is the whole label at any width (for a
 // tooltip), `glyph` the state's glyph, `tone` "bad" | "good" | null.
-export function prLabel(/** @type {any} */ pr, span = "full") {
+export function prLabel(/** @type {PR | null} */ pr, span = "full") {
   if (!pr) return null;
   const parts = [`#${pr.number}`];
   const tail = [];
@@ -119,6 +156,7 @@ export function prLabel(/** @type {any} */ pr, span = "full") {
       !pr.draft &&
       (pr.review === "APPROVED" || !pr.review) &&
       pr.checks === "passed");
+  /** @type {"bad" | "good" | null} */
   const tone = bad ? "bad" : good ? "good" : null;
   // When space is short: the one state that matters most, as a word and as
   // a glyph.
@@ -153,7 +191,7 @@ export function prLabel(/** @type {any} */ pr, span = "full") {
 }
 
 // The theme key for a prLabel's tone: "blocked" | "done" | "muted".
-export const toneKey = (/** @type {any} */ tone) =>
+export const toneKey = (/** @type {"bad" | "good" | null} */ tone) =>
   tone === "bad" ? "blocked" : tone === "good" ? "done" : "muted";
 
 // Whether a PR is offered Merge: CI passed (not failed, pending or missing) on
@@ -162,9 +200,9 @@ export const toneKey = (/** @type {any} */ tone) =>
 // is empty) unless the workflow's mergeWithoutReview is false. The stages it's
 // offered from are the Merge step's (STEPS). `workflow`: the repo's
 // (settingsOf(repo).workflow).
-export function canMerge(/** @type {any} */ pr, workflow = C.workflow) {
+export function canMerge(/** @type {PR} */ pr, workflow = C.workflow) {
   if (pr.checks !== "passed" || pr.mergeable !== "MERGEABLE") return false;
-  if (pr.unresolved > 0 || pr.autoMerge) return false;
+  if ((pr.unresolved ?? 0) > 0 || pr.autoMerge) return false;
   if (pr.review === "APPROVED") return true;
   return pr.review === null && workflow.mergeWithoutReview !== false;
 }
@@ -175,13 +213,13 @@ export function canMerge(/** @type {any} */ pr, workflow = C.workflow) {
 // out), so it's told once, not again after every push that doesn't fix it.
 // A move along LADDER is told by the stage it enters (`told`); CI, comments,
 // conflicts and reviews are told from the field that changed.
-export function prEvents(/** @type {any} */ was, /** @type {any} */ pr) {
-  /** @type {{ title: string, level: "success" | "error" | "warning" | "info", body?: string }[]} */ const events =
+export function prEvents(/** @type {PR} */ was, /** @type {PR} */ pr) {
+  /** @type {{ title: string, level: Level, body?: string }[]} */ const events =
     [];
   const add = (
-    /** @type {any} */ title,
-    /** @type {any} */ level,
-    /** @type {any} */ body = undefined,
+    /** @type {string} */ title,
+    /** @type {Level} */ level,
+    /** @type {string | undefined} */ body = undefined,
   ) => events.push({ title, level, body });
   const from = stageOf(was);
   const to = stageOf(pr);
@@ -235,10 +273,10 @@ export function prEvents(/** @type {any} */ was, /** @type {any} */ pr) {
 //   run(w, pr, work)  for direct steps: does it, returns a note
 // A PR that conflicts with its base offers only Resolve conflicts: GitHub
 // runs no CI on it, so nothing else can get it green.
-const confirmFinish = (/** @type {any} */ { workflow }) =>
-  workflow.confirmFinish !== false;
+const confirmFinish = (/** @type {StepContext} */ x) =>
+  x.workflow.confirmFinish !== false;
 const OPEN = ["draft", "in-review", "approved"];
-/** @type {any[]} */
+/** @type {FlowStep[]} */
 export const STEPS = [
   {
     id: "draft-pr",
@@ -253,30 +291,30 @@ export const STEPS = [
     label: "Resolve conflicts",
     short: "Conflicts",
     from: OPEN,
-    when: (/** @type {any} */ _pr, /** @type {any} */ x) => x.conflicts,
+    when: (_pr, x) => x.conflicts,
   },
   {
     id: "fix-ci",
     kind: "agent",
     label: "Fix CI",
     from: OPEN,
-    when: (/** @type {any} */ pr, /** @type {any} */ x) =>
-      !x.conflicts && pr.checks === "failed",
+    when: (pr, x) => !x.conflicts && pr.checks === "failed",
   },
   {
     id: "address-comments",
     kind: "agent",
-    label: (/** @type {any} */ pr) =>
-      pr.unresolved > 0
+    label: (pr) =>
+      (pr.unresolved ?? 0) > 0
         ? `Address ${pr.unresolved} comment${pr.unresolved === 1 ? "" : "s"}`
         : "Address review",
-    short: (/** @type {any} */ pr) =>
-      pr.unresolved > 0
+    short: (pr) =>
+      (pr.unresolved ?? 0) > 0
         ? `${pr.unresolved} comment${pr.unresolved === 1 ? "" : "s"}`
         : "Review",
     from: OPEN,
-    when: (/** @type {any} */ pr, /** @type {any} */ x) =>
-      !x.conflicts && (pr.unresolved > 0 || pr.review === "CHANGES_REQUESTED"),
+    when: (pr, x) =>
+      !x.conflicts &&
+      ((pr.unresolved ?? 0) > 0 || pr.review === "CHANGES_REQUESTED"),
   },
   {
     id: "ready",
@@ -284,7 +322,7 @@ export const STEPS = [
     label: "Ready",
     from: ["draft"],
     to: ["in-review", "approved"],
-    when: (/** @type {any} */ pr, /** @type {any} */ x) =>
+    when: (pr, x) =>
       x.green &&
       !pr.unresolved &&
       (x.workflow.readyWhen !== "agent" || x.agentDone) &&
@@ -297,12 +335,10 @@ export const STEPS = [
     label: "Merge",
     from: ["in-review", "approved"],
     to: ["merged"],
-    when: (/** @type {any} */ pr, /** @type {any} */ x) =>
-      !x.working && canMerge(pr, x.workflow),
-    confirm: (/** @type {any} */ { workflow }) =>
-      workflow.confirmMerge !== false,
-    run: async (/** @type {any} */ w, /** @type {any} */ pr) => {
-      await mergePr(w.repo.slug, pr.number);
+    when: (pr, x) => !x.working && canMerge(pr, x.workflow),
+    confirm: ({ workflow }) => workflow.confirmMerge !== false,
+    run: async (w, pr) => {
+      await mergePr(/** @type {string} */ (w.repo.slug), pr.number);
       return "merged";
     },
   },
@@ -313,11 +349,7 @@ export const STEPS = [
     from: ["merged"],
     to: [],
     confirm: confirmFinish,
-    run: (
-      /** @type {any} */ w,
-      /** @type {any} */ pr,
-      /** @type {any} */ work,
-    ) => finish(w, pr, work, true),
+    run: (w, pr, work) => finish(w, pr, work, true),
   },
   {
     id: "clean-up",
@@ -326,11 +358,7 @@ export const STEPS = [
     from: ["closed"],
     to: [],
     confirm: confirmFinish,
-    run: (
-      /** @type {any} */ w,
-      /** @type {any} */ pr,
-      /** @type {any} */ work,
-    ) => finish(w, pr, work, false),
+    run: (w, pr, work) => finish(w, pr, work, false),
   },
 ];
 
@@ -340,8 +368,9 @@ export const STEPS = [
 // marked Ready or merged while the agent may still be iterating on it. `agentDone`: its
 // agent says the PR is done (see agentDone in spaces.js), which Ready waits for with
 // readyWhen "agent". `repo`: whose workflow settings apply (settingsOf).
+/** @param {PR | null} pr @param {{ working?: boolean, agentDone?: boolean, repo?: Repo | null }} [opts] */
 export function nextSteps(
-  /** @type {any} */ pr,
+  pr,
   { working = false, agentDone = false, repo = null } = {},
 ) {
   const stage = stageOf(pr);
@@ -364,10 +393,13 @@ export function nextSteps(
         !(/** @type {Record<string, string>} */ (C.agent.steps)[s.id]))
     )
       continue;
-    if (s.when && !s.when(pr, x)) continue;
-    const label = typeof s.label === "function" ? s.label(pr) : s.label;
-    const short = typeof s.short === "function" ? s.short(pr) : s.short;
-    /** @type {{ id: string, label: string, short: string, kind: string, confirm?: any }} */
+    if (s.when && !s.when(/** @type {PR} */ (pr), x)) continue;
+    // A step with a label or when is offered from a stage with a PR (see from).
+    const label =
+      typeof s.label === "function" ? s.label(/** @type {PR} */ (pr)) : s.label;
+    const short =
+      typeof s.short === "function" ? s.short(/** @type {PR} */ (pr)) : s.short;
+    /** @type {{ id: string, label: string, short: string, kind: string, confirm?: boolean }} */
     const step = { id: s.id, label, short: short ?? label, kind: s.kind };
     if (s.confirm) step.confirm = s.confirm(x);
     steps.push(step);
@@ -382,9 +414,9 @@ export const START_MS = 30_000;
 // space appeared, null if it didn't while we run): until it first works or
 // START_MS passes, so it isn't offered Draft PR before it has begun.
 export const stillStarting = (
-  /** @type {any} */ bornAt,
-  /** @type {any} */ status,
-  /** @type {any} */ now,
+  /** @type {number | null} */ bornAt,
+  /** @type {string | null} */ status,
+  /** @type {number} */ now,
 ) => bornAt != null && status !== "working" && now - bornAt < START_MS;
 
 // A worktree's last step (WorkModel.steps: { phase, text, at, staleAt }) is in
@@ -405,7 +437,7 @@ export const STEP = Object.freeze({
 });
 
 // The state of `last` (a worktree's last step), or null when none has run.
-export function stepState(/** @type {any} */ last) {
+export function stepState(/** @type {StepLast | null | undefined} */ last) {
   if (!last) return null;
   if (last.phase === "running") return STEP.RUNNING;
   if (last.phase === "failed") return STEP.FAILED;
@@ -413,22 +445,28 @@ export function stepState(/** @type {any} */ last) {
 }
 
 // Whether a state is a step that succeeded (its note is a success note).
-export const succeeded = (/** @type {any} */ state) =>
+export const succeeded = (/** @type {string | null} */ state) =>
   state === STEP.DONE || state === STEP.STALE;
 
 // The steps the runner writes: running, then done (stale until the PR is
 // looked up again) or failed. `at`: when the step answered.
-export const stepRunning = (/** @type {any} */ text) => ({
+export const stepRunning = (/** @type {string} */ text) => ({
   phase: "running",
   text,
 });
-export const stepDone = (/** @type {any} */ text, /** @type {any} */ at) => ({
+export const stepDone = (
+  /** @type {string} */ text,
+  /** @type {number} */ at,
+) => ({
   phase: "done",
   text,
   at,
   staleAt: at,
 });
-export const stepFailed = (/** @type {any} */ text, /** @type {any} */ at) => ({
+export const stepFailed = (
+  /** @type {string} */ text,
+  /** @type {number} */ at,
+) => ({
   phase: "failed",
   text,
   at,
@@ -438,8 +476,15 @@ export const stepFailed = (/** @type {any} */ text, /** @type {any} */ at) => ({
 // started after the step answered (staleAt <= asked) counts as a refresh. A
 // failed lookup counts too, so a row isn't held back for a retry. True when it
 // cleared.
-export function clearStale(/** @type {any} */ last, /** @type {any} */ asked) {
-  if (stepState(last) !== STEP.STALE || last.staleAt > asked) return false;
+export function clearStale(
+  /** @type {StepLast} */ last,
+  /** @type {number} */ asked,
+) {
+  if (
+    stepState(last) !== STEP.STALE ||
+    /** @type {number} */ (last.staleAt) > asked
+  )
+    return false;
   delete last.staleAt;
   return true;
 }
@@ -451,7 +496,7 @@ export function clearStale(/** @type {any} */ last, /** @type {any} */ asked) {
 // STEP): none while it runs or while its PR is stale after it. `status`: its
 // space's agent status. `bornAt`, `now`: see stillStarting. `agentDone`, `repo`:
 // see nextSteps.
-/** @param {{ hub?: boolean, pr?: any, lookup?: { state: string } | null, last?: { phase: string, staleAt?: number } | null, status?: string | null, bornAt?: number | null, now?: number, agentDone?: boolean, repo?: any }} row */
+/** @param {{ hub?: boolean, pr?: PR | null, lookup?: { state: string } | null, last?: StepLast | null, status?: string | null, bornAt?: number | null, now?: number, agentDone?: boolean, repo?: Repo | null }} row */
 export function rowSteps({
   hub = false,
   pr = null,
@@ -477,7 +522,7 @@ export function rowSteps({
 // --- The agent --------------------------------------------------------------
 
 // Sends a step's message to the worktree's agent, or starts one with it.
-async function tellAgent(/** @type {any} */ w, /** @type {any} */ id) {
+async function tellAgent(/** @type {Worktree} */ w, /** @type {string} */ id) {
   const text = /** @type {Record<string, string>} */ (C.agent.steps)[id];
   const live = herdrSpaces();
   const space = live.spaceOf(w.path);
@@ -516,32 +561,36 @@ async function tellAgent(/** @type {any} */ w, /** @type {any} */ id) {
 // and tracker-linked PRs, checked out here or not), to tell whether the
 // ticket still has open work. Returns a short note, or throws.
 export async function runStep(
-  /** @type {any} */ id,
-  /** @type {any} */ w,
-  /** @type {any} */ pr,
-  /** @type {any} */ work = [],
+  /** @type {string} */ id,
+  /** @type {Worktree} */ w,
+  /** @type {PR | null} */ pr,
+  /** @type {WorkItem[]} */ work = [],
 ) {
   const step = STEPS.find((s) => s.id === id);
   if (!step) throw new Error(`unknown step ${id}`);
-  return step.run ? step.run(w, pr, work) : tellAgent(w, id);
+  // Only a direct step runs here, and those are offered only with a PR (see from).
+  return step.run
+    ? step.run(w, /** @type {PR} */ (pr), work)
+    : tellAgent(w, id);
 }
 
 // Ready: out of draft; with autoMerge "when-reviews-required", auto-merge
 // while reviews are still required; tracker step "review".
-async function ready(/** @type {any} */ w, /** @type {any} */ pr) {
-  await markReady(w.repo.slug, pr.number);
+async function ready(/** @type {Worktree} */ w, /** @type {PR} */ pr) {
+  const repoSlug = /** @type {string} */ (w.repo.slug);
+  await markReady(repoSlug, pr.number);
   const notes = ["ready for review"];
   // Auto-merge only waits for what the repo requires; without required
   // reviews it would merge at once, so then leave merging to the Merge step.
   if (settingsOf(w.repo).workflow.autoMerge === "when-reviews-required") {
-    const now = await prDetails(w.repo.slug, pr.number, null, {
+    const now = await prDetails(repoSlug, pr.number, null, {
       requiredOnly: settingsOf(w.repo).requiredChecksOnly,
     });
     if (
       now?.review === "REVIEW_REQUIRED" ||
       now?.review === "CHANGES_REQUESTED"
     ) {
-      await mergePr(w.repo.slug, pr.number, { auto: true });
+      await mergePr(repoSlug, pr.number, { auto: true });
       notes.push("auto-merge on approval");
     }
   }
@@ -556,10 +605,10 @@ async function ready(/** @type {any} */ w, /** @type {any} */ pr) {
 // branch; after a merge, tracker step "done" unless other work on the ticket
 // (any branch or PR not merged or closed, wherever it is) is still open.
 async function finish(
-  /** @type {any} */ w,
-  /** @type {any} */ pr,
-  /** @type {any} */ work,
-  /** @type {any} */ merged,
+  /** @type {Worktree} */ w,
+  /** @type {PR | null} */ pr,
+  /** @type {WorkItem[]} */ work,
+  /** @type {boolean} */ merged,
 ) {
   await assertClean(w.path, pr?.head ?? null);
   // Its spaces end with it (the agent's work is in the PR by now).
