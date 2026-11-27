@@ -27,4 +27,4 @@ Before pushing, run the same checks CI does: `npm run check-built && npm run typ
 ## Known test noise
 
 - `limits.test.mjs` "planLimits: without claude installed" fails locally on macOS (#280). Ignore it unless you touched `src/limits.js`.
-- Flaky in CI: `github.test.mjs` "workFor: branches by name…" and the e2e Draft PR button race. Rerun before debugging.
+- Flaky in CI: the e2e Draft PR button race. Rerun before debugging.
