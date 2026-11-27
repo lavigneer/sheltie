@@ -243,3 +243,13 @@ test("Work: each render records how much of it was Herdr's reads, and whether it
   );
   assert.equal(typeof slowest.rebuilt, "boolean");
 });
+
+test("Work: each refresh records how long it took and what it spawned", async () => {
+  const d = await ready();
+  // The scans that loaded the sidebar are in the window (refreshes.js); a
+  // scan runs git, so its calls are counted per refresh.
+  const r = d.view.refreshes.report();
+  assert.ok(r.count >= 1, "a refresh was recorded");
+  assert.equal(typeof r.p95Ms, "number");
+  assert.ok(r.spawnsPerRefresh.git > 0, "a refresh ran git");
+});
