@@ -126,8 +126,8 @@ function answers(r, lookups) {
 
 // The PR nodes for `refs` ({ ref, required }, in `slug`), a query per
 // PRS_PER_QUERY: Map ref -> node, null for none, or an Error.
-/** @param {string} slug @param {{ ref: string | number, required: boolean }[]} refs */
-async function fetchPRs(slug, refs) {
+/** @param {string} slug @param {{ ref: string | number, required: boolean }[]} refs @param {boolean} [urgent] */
+async function fetchPRs(slug, refs, urgent = false) {
   const [owner, name] = slug.split("/");
   const out = new Map();
   const chunks = [];
@@ -142,17 +142,21 @@ async function fetchPRs(slug, refs) {
       const vars = lookups
         .filter((l) => !l.number)
         .flatMap((l) => ["-f", `${l.alias}=${l.ref}`]);
-      const r = await tool("gh", [
-        "api",
-        "graphql",
-        "-F",
-        `owner=${owner}`,
-        "-F",
-        `name=${name}`,
-        ...vars,
-        "-f",
-        `query=${batchQuery(lookups)}`,
-      ]);
+      const r = await tool(
+        "gh",
+        [
+          "api",
+          "graphql",
+          "-F",
+          `owner=${owner}`,
+          "-F",
+          `name=${name}`,
+          ...vars,
+          "-f",
+          `query=${batchQuery(lookups)}`,
+        ],
+        { urgent },
+      );
       for (const [ref, node] of answers(r, lookups)) out.set(ref, node);
     }),
   );
@@ -232,11 +236,11 @@ export function parsePR(
 // Error for a lookup that failed (GitHub unreachable: retried later, never
 // shown as none). With `requiredOnly` (the requiredChecksOnly setting), only
 // checks required for merging count.
-/** @param {string} slug @param {{ ref: string | number, previous?: import("./types.js").PR | null }[]} items @param {{ requiredOnly?: boolean }} [opts] @returns {Promise<Map<string | number, import("./types.js").PR | null | Error>>} */
+/** @param {string} slug @param {{ ref: string | number, previous?: import("./types.js").PR | null }[]} items @param {{ requiredOnly?: boolean, urgent?: boolean }} [opts] @returns {Promise<Map<string | number, import("./types.js").PR | null | Error>>} */
 export async function prDetailsMany(
   slug,
   items,
-  { requiredOnly = false } = {},
+  { requiredOnly = false, urgent = false } = {},
 ) {
   const found = await fetchPRs(
     slug,
@@ -244,6 +248,7 @@ export async function prDetailsMany(
       ref,
       required: requiredOnly && isNumber(ref),
     })),
+    urgent,
   );
   // Found by branch: ask again by number, for which checks are required.
   if (requiredOnly) {
@@ -257,6 +262,7 @@ export async function prDetailsMany(
         ref: found.get(ref).number,
         required: true,
       })),
+      urgent,
     );
     for (const { ref } of byBranch)
       found.set(ref, byNumber.get(found.get(ref).number));
@@ -276,17 +282,21 @@ export async function prDetailsMany(
 
 // Details for a PR (number or branch) in `slug` (see parsePR), or null when
 // there is none; throws when GitHub can't be asked.
-/** @param {string} slug @param {string | number} ref @param {import("./types.js").PR | null} [previous] @param {{ requiredOnly?: boolean }} [opts] @returns {Promise<import("./types.js").PR | null>} */
+/** @param {string} slug @param {string | number} ref @param {import("./types.js").PR | null} [previous] @param {{ requiredOnly?: boolean, urgent?: boolean }} [opts] @returns {Promise<import("./types.js").PR | null>} */
 export async function prDetails(slug, ref, previous = null, opts = {}) {
   const pr = (await prDetailsMany(slug, [{ ref, previous }], opts)).get(ref);
   if (pr instanceof Error) throw pr;
   return pr ?? null;
 }
 
+// Ready and Merge are clicks (flow.js), so their gh calls are urgent (lib.js).
 export const markReady = (
   /** @type {string} */ slug,
   /** @type {number} */ number,
-) => must("gh", ["pr", "ready", String(number), "--repo", slug], "gh pr ready");
+) =>
+  must("gh", ["pr", "ready", String(number), "--repo", slug], "gh pr ready", {
+    urgent: true,
+  });
 
 // The merge method GitHub's web UI offers you first for this repo.
 const mergeMethods = new Map();
@@ -305,6 +315,7 @@ async function defaultMergeMethod(slug) {
         ".viewerDefaultMergeMethod",
       ],
       "gh repo view",
+      { urgent: true },
     );
     mergeMethods.set(slug, out.trim().toLowerCase() || "merge");
   }
@@ -328,6 +339,7 @@ export async function mergePr(slug, number, { auto = false } = {}) {
       ...(auto ? ["--auto"] : []),
     ],
     "gh pr merge",
+    { urgent: true },
   );
 }
 
