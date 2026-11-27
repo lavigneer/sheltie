@@ -453,3 +453,74 @@ test("arrivals: a listed folder whose window has ended is forgotten", async () =
   m.settle(live("idle"), START_MS);
   assert.equal(m.arrivals.has(folder), false);
 });
+
+// --- Steps and notifications (step, events): the rules the View used to hold.
+
+const { CONFIRM_MS } = await import("../src/nav.js");
+const { whoOf } = await import("../src/work-model.js");
+
+// runStep rejects an id it doesn't know, so a step that fails without any git
+// or tracker fakes.
+const UNKNOWN = { id: "no-such-step", label: "Nope" };
+
+test("WorkModel.step: a step that asks runs on its second press, not its first", async () => {
+  const { m, repos } = model(["issue-1"]);
+  await m.scan(repos);
+  const [w] = m.groups[0].worktrees;
+  const step = { ...UNKNOWN, confirm: true };
+  const first = m.step(w, step, { now: 1000 });
+  assert.deepEqual(first, { outcome: "confirm", until: 1000 + CONFIRM_MS });
+  assert.equal(m.steps.has(w.path), false);
+  const second = m.step(w, step, { now: 2000 });
+  assert.equal(second.outcome, "run");
+  await second.done;
+});
+
+test("WorkModel.step: a running step is not pressed again; a failed one says so and its note stays", async () => {
+  const { m, repos } = model(["issue-1"]);
+  await m.scan(repos);
+  const [w] = m.groups[0].worktrees;
+  const r = m.step(w, UNKNOWN, { now: 0 });
+  assert.equal(r.outcome, "run");
+  assert.equal(stepState(m.steps.get(w.path)), STEP.RUNNING);
+  assert.equal(m.step(w, UNKNOWN, { now: 0 }).outcome, "running");
+  const { notices, fades } = await r.done;
+  assert.equal(fades, false);
+  assert.deepEqual(
+    notices.map((n) => [n.title, n.level]),
+    [[`${whoOf(w)}: Nope failed`, "error"]],
+  );
+  assert.equal(stepState(m.steps.get(w.path)), STEP.FAILED);
+});
+
+test("WorkModel.events: a PR's news notifies its row, selecting the row's space", async () => {
+  const { m, repos } = model(["issue-1"]);
+  await m.scan(repos);
+  const [w] = m.groups[0].worktrees;
+  const was = {
+    number: 1,
+    state: "OPEN",
+    draft: true,
+    checks: "pending",
+    review: null,
+    mergeable: "MERGEABLE",
+    unresolved: 0,
+  };
+  const pr = { ...was, checks: "passed" };
+  const live = fixtureSpaces({
+    spaces: [{ id: "s1", folder: "/wt/issue-1", tabs: [{ id: "t1" }] }],
+  });
+  assert.deepEqual(m.events(w, was, pr, live), [
+    {
+      title: `${whoOf(w)}: CI passed`,
+      body: "Ready to mark ready for review.",
+      level: "success",
+      action: { name: "space.select", args: { id: "s1" } },
+    },
+  ]);
+  // No space for the row: nothing to select.
+  const [n] = m.events(w, was, pr, fixtureSpaces({}));
+  assert.equal(n.action, undefined);
+  // The same PR again: nothing new to say.
+  assert.deepEqual(m.events(w, pr, pr, live), []);
+});

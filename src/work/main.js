@@ -38,8 +38,8 @@
 // work.start starts the tickets the requests in <app home>/work-start/ name,
 // like the tickets popup (for agents and scripts; see drainRequests).
 //
-// State (groups, store, steps, starting folders and costs live in WorkModel,
-// work-model.js, which tests reach without a View):
+// State (groups, store, steps, starting folders, costs and the step rules live
+// in WorkModel, work-model.js, which tests reach without a View):
 //   git refresh, details   each runs one at a time; a request during a run
 //                          queues one more (serial(), watch.js), merging "force"
 //   store                  repo state, plus caches (WorkStore, work.js) of tickets,
@@ -74,17 +74,8 @@ import {
 import { C, configReady } from "./config.js";
 import { recordFailure } from "./diagnostics.js";
 import { errorMessage } from "./errors.js";
-import {
-  prEvents,
-  runStep,
-  START_MS,
-  STEP,
-  stepDone,
-  stepFailed,
-  stepRunning,
-  stepState,
-} from "./flow.js";
-import { basename, openUrl } from "./lib.js";
+import { START_MS } from "./flow.js";
+import { openUrl } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
 import { RepoCache } from "./polling.js";
 import { RenderStats } from "./renders.js";
@@ -93,7 +84,7 @@ import { herdrSpaces } from "./spaces.js";
 import { drainRequests } from "./start.js";
 import { usageGroups } from "./usage.js";
 import { serial } from "./watch.js";
-import { spaceOf, WorkModel } from "./work-model.js";
+import { spaceOf, WorkModel, whoOf } from "./work-model.js";
 import { fit, NOTE_MS } from "./work-rows.js";
 
 const GIT_MS = 30_000;
@@ -126,7 +117,7 @@ export default class Work extends View {
   init(/** @type {any} */ _props, /** @type {any} */ cx) {
     // Groups, steps, starting folders, costs and the store (work-model.js).
     this.model = new WorkModel();
-    this.nav = new Nav(); // folds, picked row and step, confirm (nav.js)
+    this.nav = this.model.nav; // folds, picked row and step, confirm (nav.js)
     /** @type {string | null} */
     this.by = null; // "repo" | "stage"; null: C.workGroupBy (once loaded)
     this.repos = new RepoCache(); // the local repos (polling.js)
@@ -330,68 +321,39 @@ export default class Work extends View {
     }
   }
 
-  // A notification when something you'd wait for changes on a PR.
+  // A notification when something you'd wait for changes on a PR
+  // (WorkModel.events).
   tell(/** @type {any} */ w, /** @type {any} */ was, /** @type {any} */ pr) {
-    const who = this.who(w);
-    const space = spaceOf(w, herdrSpaces());
-    const action = space
-      ? { name: "space.select", args: { id: space.id } }
-      : undefined;
-    for (const { title, level, body } of prEvents(was, pr))
-      notify({ title: `${who}: ${title}`, body, level, action });
+    for (const n of this.model.events(w, was, pr, herdrSpaces())) notify(n);
   }
 
-  // Runs a next step for worktree `w`; one asking for confirmation runs on its
-  // second click or key press (within a few seconds).
+  // Presses a row's next step `step` for worktree `w` (WorkModel.step): one
+  // asking for confirmation runs on its second click or key press (within a
+  // few seconds). The View only draws the wait, runs timers and notifies.
   step(
     /** @type {any} */ cx,
     /** @type {any} */ w,
     /** @type {any} */ step,
     byKey = false,
   ) {
-    const path = w.path;
-    const steps = this.model.steps;
-    if (stepState(steps.get(path)) === STEP.RUNNING) return;
-    const id = `${path}:${step.id}`;
-    if (!this.nav.press(id, Boolean(step.confirm), byKey, Date.now())) {
+    const r = this.model.step(w, step, { byKey, now: Date.now() });
+    if (r.outcome === "running") return;
+    if (r.outcome === "confirm") {
       // Redraws once it expires.
       cx.timer.after(CONFIRM_MS, (/** @type {any} */ cx) =>
         this.wake(cx, "timer"),
       );
       return this.wake(cx, "step");
     }
-    steps.set(path, stepRunning(`${step.label}…`));
     this.wake(cx, "step");
-    const pr = this.model.prOf(w);
-    // The ticket's work everywhere: worktrees and branches here, and the PRs
-    // its tracker links (in repos with no worktree here too).
-    const work = this.model.workOf(w);
     cx.spawn(async (/** @type {any} */ cx) => {
-      const who = this.who(w);
-      try {
-        const note = await runStep(step.id, w, pr, work);
-        const at = Date.now();
-        steps.set(path, stepDone(note, at));
-        // The note fades after NOTE_MS: nothing else may re-render by then.
+      const { notices, fades } = await r.done;
+      // The note fades after NOTE_MS: nothing else may re-render by then.
+      if (fades)
         cx.timer.after(NOTE_MS + 50, (/** @type {any} */ cx) =>
           this.wake(cx, "timer"),
         );
-        if (step.kind === "direct")
-          notify({
-            title: `${who}: ${step.label}`,
-            body: note,
-            level: "success",
-          });
-      } catch (e) {
-        const text = `${errorMessage(e)}`.split("\n")[0];
-        steps.set(path, stepFailed(text, Date.now()));
-        recordFailure("work", step.label, e, { path });
-        notify({
-          title: `${who}: ${step.label} failed`,
-          body: text,
-          level: "error",
-        });
-      }
+      for (const n of notices) notify(n);
       this.wake(cx, "step");
       this.refresh(cx, true);
     });
@@ -450,7 +412,7 @@ export default class Work extends View {
   }
 
   who(/** @type {any} */ w) {
-    return w.handle?.label ?? basename(w.path);
+    return whoOf(w);
   }
 
   // cx.notify(), noting why for the render's timing (renders.js).
