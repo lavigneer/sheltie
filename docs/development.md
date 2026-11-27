@@ -30,6 +30,12 @@ and `mod.json`. Herdr only resolves imports inside a mod's folder, so the build 
 (with Herdr running) loads a mod once; it leaves `gpui-kit.d.ts` and
 `jsconfig.json` in the folder, which `npm run build` removes.
 
+`scripts/sheltie-watcher.py` (stdlib Python, tested by `tests/watcher/`) reads the
+Herdr app's `sheltie-diagnostics/` records and `herdr-server.log` and files each new
+failure as an `automated` issue here, deduplicated against open issues. It runs from
+launchd (`shared/home-manager/sheltie-watcher` in the dotfiles repo). Try it with
+`python3 scripts/sheltie-watcher.py --dry-run --backfill --no-notify`.
+
 ## Adding a mod or layout
 
 A mod is a `src/<name>/` folder with its `mod.json` and `main.js`; it can
