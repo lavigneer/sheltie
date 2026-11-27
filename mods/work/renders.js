@@ -3,11 +3,16 @@
 // (view: workView and live data; build: the elements) and what triggered it
 // (the reason our last notify gave; "host": none, so Herdr re-rendered on its
 // own). Kept in memory only.
+//
+// Two optional fields split the view half further: hostMs, the reads of Herdr's
+// own state (spaces, theme), which are inside viewMs; and rebuilt, whether the
+// render itself re-ran the store's join (WorkStore.snapshot), which a change
+// that skipped wake() would cause.
 
 export const SLOWEST = 5; // how many of the slowest renders to keep
 export const SLOW_MS = 100; // a render this slow is recorded as a failure
 
-/** @typedef {{ ms: number, viewMs: number, buildMs: number, rows: number, trigger: string, at?: number }} Render */
+/** @typedef {{ ms: number, viewMs: number, buildMs: number, rows: number, trigger: string, at?: number, hostMs?: number, rebuilt?: boolean }} Render */
 
 export class RenderStats {
   constructor() {
