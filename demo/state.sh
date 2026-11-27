@@ -24,20 +24,23 @@ state_jq() {
   jq "$@" "$state"
 }
 
-# state_set [jq options...] <filter>: change the state, one writer at a time
-# (a mkdir lock: flock isn't on macOS).
+# state_set [jq options...] <filter>: change the state, one writer at a time.
+# The lock is a symlink whose target is the holder's pid (flock isn't on
+# macOS). `ln -s` creates it atomically with its pid, and fails while another
+# writer holds it. A waiter breaks the lock only once that pid is gone, so a
+# slow live writer is never cut off and its cleanup can't fail.
 state_set() {
-  local tmp lock="$state.lock" tries=0
+  local tmp lock="$state.lock" holder
   need_state
-  until mkdir "$lock" 2>/dev/null; do
-    tries=$((tries + 1))
-    # A lock older than a few seconds is left over from a killed writer.
-    if [ "$tries" -gt 50 ]; then rmdir "$lock" 2>/dev/null || true; fi
+  until ln -s "$$" "$lock" 2>/dev/null; do
+    holder="$(readlink "$lock" 2>/dev/null || true)"
+    # A killed writer leaves its lock behind; its pid is then gone.
+    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then rm -f "$lock"; fi
     sleep 0.1
   done
   tmp="$(mktemp "$state.XXXXXX")"
   if jq "$@" "$state" >"$tmp"; then mv "$tmp" "$state"; else rm -f "$tmp"; fi
-  rmdir "$lock"
+  rm -f "$lock"
 }
 
 # A new CI run for the PR(s) matching <select filter>.
