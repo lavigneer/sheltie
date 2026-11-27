@@ -454,6 +454,33 @@ test("arrivals: a listed folder whose window has ended is forgotten", async () =
   assert.equal(m.arrivals.has(folder), false);
 });
 
+test("awaiting: a worktree a scan lists for the first time waits for its space, until it has one", async () => {
+  const { m, repo, state } = model(["issue-1"]);
+  await m.scan([repo], 0);
+  assert.equal(m.awaiting.size, 0); // the first scan lists none as new
+  state.branches.push("issue-2");
+  await m.scan([repo], 1000);
+  assert.deepEqual([...m.awaiting.entries()], [["/wt/issue-2", 1000]]);
+  // Listed again by a later scan, it keeps its first time.
+  await m.scan([repo], 2000);
+  assert.deepEqual([...m.awaiting.entries()], [["/wt/issue-2", 1000]]);
+  assert.equal(m.waitingForSpaces(LIVE, 1001), true);
+  const withSpace = fixtureSpaces({
+    spaces: [{ id: "s2", folder: "/wt/issue-2", tabs: [] }],
+  });
+  assert.equal(m.waitingForSpaces(withSpace, 1002), false);
+  assert.equal(m.awaiting.size, 0);
+});
+
+test("awaiting: a worktree with no space stops waiting after START_MS", async () => {
+  const { m, repo, state } = model(["issue-1"]);
+  await m.scan([repo], 0);
+  state.branches.push("issue-2");
+  await m.scan([repo], 1000);
+  assert.equal(m.waitingForSpaces(LIVE, 1000 + START_MS - 1), true);
+  assert.equal(m.waitingForSpaces(LIVE, 1000 + START_MS), false);
+});
+
 // --- Steps and notifications (step, events): the rules the View used to hold.
 
 const { CONFIRM_MS } = await import("../src/nav.js");

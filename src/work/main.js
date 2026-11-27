@@ -56,6 +56,10 @@
 //                          (the tickets popup makes the worktree first; an
 //                          agent may make it later), and their agent's
 //                          starting window
+//   awaiting               (work-model.js) the worktrees a scan listed for the
+//                          first time, until each has a space (or START_MS):
+//                          rendered every WATCH_MS meanwhile, as nothing else
+//                          renders when Herdr opens the space
 // Git refreshes every 30 s and at once for a new space; PRs every 2 min (20 s
 // while CI runs or a merge is pending), tickets and their linked PRs every
 // 10 min (the rules live in work.js).
@@ -111,6 +115,8 @@ export default class Work extends View {
   repos = /** @type {any} */ (undefined);
   /** @type {boolean} */
   watchTimer = /** @type {any} */ (undefined);
+  /** @type {boolean} */
+  awaitTimer = /** @type {any} */ (undefined);
   /** @type {RenderStats} */
   renders = /** @type {any} */ (undefined);
   init(/** @type {any} */ _props, /** @type {any} */ cx) {
@@ -123,6 +129,7 @@ export default class Work extends View {
     this.hovered = null; // the path of the row under the pointer
     this.linksOpen = null; // the path of the row whose ↗ menu is open
     this.watchTimer = false;
+    this.awaitTimer = false; // a render is due for a new worktree's space
     /** @type {number | null} */
     this.width = null; // ours, from on_size_change
     this.renders = new RenderStats(); // render timings, for work.report
@@ -302,6 +309,15 @@ export default class Work extends View {
   // a little later.
   watchSpaces(/** @type {any} */ cx, /** @type {any} */ live) {
     this.model.settle(live, Date.now());
+    // A worktree the scan just listed may get its space a moment later: look
+    // again every WATCH_MS until it has one (or START_MS passes).
+    if (this.model.waitingForSpaces(live, Date.now()) && !this.awaitTimer) {
+      this.awaitTimer = true;
+      cx.timer.after(WATCH_MS, (/** @type {any} */ cx) => {
+        this.awaitTimer = false;
+        this.wake(cx, "timer");
+      });
+    }
     if (!this.model.arrive(live, Date.now()).length) return;
     // Shows its steps once it's no longer starting, even if nothing changes.
     cx.timer.after(START_MS, (/** @type {any} */ cx) => this.wake(cx, "timer"));

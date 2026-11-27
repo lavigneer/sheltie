@@ -16,6 +16,7 @@ import {
   prEvents,
   rowSteps,
   runStep,
+  START_MS,
   STEP,
   stepDone,
   stepFailed,
@@ -95,6 +96,11 @@ export class WorkModel {
     // offered Draft PR before it has begun the ticket; null once it isn't.
     // An entry goes once it is listed and no longer starting.
     this.arrivals = new Map();
+    // The worktrees a scan listed for the first time: path -> when it did. A
+    // space for one may land after the scan (work.start opens it once the
+    // worktree exists), and nothing else renders then, so the View looks
+    // again until the worktree has one or START_MS passes (waitingForSpaces).
+    this.awaiting = new Map();
     this.usage = null; // usage groups (usage.js), for each row's agent cost
     // Bumped by what the store's versions don't cover: an adoption, a step's
     // stale mark clearing, a cost moving.
@@ -110,12 +116,15 @@ export class WorkModel {
 
   // Scans the repos' git state; true when it changed what is shown (the
   // groups are rebuilt only then: most scans find what the last one did).
-  async scan(/** @type {any} */ repos) {
+  // `now`: ms, when the worktrees it lists for the first time are awaiting
+  // their spaces (see awaiting). The first scan lists none as new.
+  async scan(/** @type {any} */ repos, now = Date.now()) {
     const was = this.store.version;
     await this.store.scan(repos);
     this.mainCheckouts = new Set(repos.map((/** @type {any} */ r) => r.path));
     // The groups follow the scan only; lookups move the revision themselves.
     const changed = this.groups === null || this.store.version !== was;
+    const listed = this.groups === null ? null : this.worktreePaths();
     if (changed)
       this.groups = this.store.states.flatMap((s) => {
         if (!s) return [];
@@ -134,7 +143,27 @@ export class WorkModel {
           }),
         };
       });
+    if (listed)
+      for (const p of this.worktreePaths())
+        if (!listed.has(p)) this.awaiting.set(p, now);
     return changed;
+  }
+
+  // The paths of the worktrees the groups list.
+  /** @returns {Set<string>} */
+  worktreePaths() {
+    return new Set(
+      (this.groups ?? []).flatMap((g) => g.worktrees.map((w) => w.path)),
+    );
+  }
+
+  // Whether any worktree listed by a scan still waits for its space: each
+  // one stops waiting once it has a space, or START_MS after it was listed.
+  // `live`: spaces.js; `now`: ms.
+  waitingForSpaces(/** @type {any} */ live, /** @type {number} */ now) {
+    for (const [p, since] of this.awaiting)
+      if (live.spaceOf(p) || now - since >= START_MS) this.awaiting.delete(p);
+    return this.awaiting.size > 0;
   }
 
   // Gives worktrees whose branch names no ticket the one their PR (just
