@@ -215,6 +215,53 @@ export async function repoState(repo) {
   };
 }
 
+// The repos (paths) whose git state may have changed in the last `withinMin`
+// minutes, found with two `find`s over all of them instead of git calls per
+// repo. repoState reads only refs, HEAD and worktrees/, and a write to any of
+// them touches a file or folder under .git: the top level (HEAD is replaced
+// there on checkout, packed-refs on a fetch; the folder itself counts too) and,
+// recursively, refs/ and worktrees/. objects, logs and index change on every
+// commit or status and say nothing repoState needs, so they're left out by
+// name at the top level and never walked. Null when a find fails: the caller
+// reads every repo then.
+/** @param {string[]} paths @param {number} [withinMin] @returns {Promise<Set<string> | null>} */
+export async function touchedRepos(paths, withinMin = 2) {
+  if (paths.length === 0) return new Set();
+  const gitDirs = paths.map((p) => `${p}/.git`);
+  const within = ["-mmin", `-${withinMin}`, "-print"];
+  const [top, deep] = await Promise.all([
+    exec("find", [
+      ...gitDirs,
+      "-maxdepth",
+      "1",
+      "!",
+      "-name",
+      "objects",
+      "!",
+      "-name",
+      "logs",
+      "!",
+      "-name",
+      "index",
+      ...within,
+    ]).catch(() => null),
+    exec("find", [
+      ...gitDirs.flatMap((g) => [`${g}/refs`, `${g}/worktrees`]),
+      ...within,
+    ]).catch(() => null),
+  ]);
+  if (!top || !deep) return null;
+  // find exits non-zero when a path is missing (a repo with no worktrees/, or
+  // one whose .git is gone), but still lists what it found: its output is used.
+  const touched = new Set();
+  for (const line of [...top.stdout.split("\n"), ...deep.stdout.split("\n")]) {
+    for (const p of paths) {
+      if (line === `${p}/.git` || line.startsWith(`${p}/.git/`)) touched.add(p);
+    }
+  }
+  return touched;
+}
+
 // --- Worktrees --------------------------------------------------------------
 
 // A ticket's branch in `repo` (its `branch` setting, e.g. "{ref}" or "me/{ref}").
