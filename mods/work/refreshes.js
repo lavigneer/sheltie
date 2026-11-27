@@ -5,8 +5,13 @@
 // which the report also carries. Kept in memory only, as renders.js is: a record
 // per refresh would fill the diagnostics folder (KEEP) in minutes.
 //
-// A refresh is one git scan (work/main.js scan). Calls to gh and jira made by the
+// A Work refresh is one git scan (work/main.js scan); a Reviews refresh is one
+// queue refresh (reviews/main.js). Calls to gh and jira made by the
 // lookups that run alongside it are counted in the totals, not in a refresh.
+
+// The Reviews sidebar's report() and quota() (lib.js; each mod has its own),
+// published after each of its refreshes for work.report's `reviews`.
+export const REVIEWS_STATS = "reviews.stats";
 
 export const WINDOW = 200; // how many recent refreshes the percentiles use
 

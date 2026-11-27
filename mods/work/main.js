@@ -73,6 +73,7 @@ import {
   notify,
   readTextFile,
   run,
+  shared,
   theme,
   writeTextFile,
 } from "herdr";
@@ -80,10 +81,10 @@ import { C, configReady } from "./config.js";
 import { recordFailure } from "./diagnostics.js";
 import { errorMessage } from "./errors.js";
 import { START_MS } from "./flow.js";
-import { callCounts, callsSince, openUrl } from "./lib.js";
+import { callCounts, callsSince, graphqlQuota, openUrl, quota } from "./lib.js";
 import { CONFIRM_MS, Nav } from "./nav.js";
 import { RepoCache } from "./polling.js";
-import { RefreshStats } from "./refreshes.js";
+import { REVIEWS_STATS, RefreshStats } from "./refreshes.js";
 import { RenderStats } from "./renders.js";
 import { resize } from "./sidebar.js";
 import { herdrSpaces } from "./spaces.js";
@@ -260,12 +261,20 @@ export default class Work extends View {
     /** @type {any} */ live,
   ) {
     const rows = rows0.filter((/** @type {any} */ r) => !r.stacked);
+    /** @type {Record<string, unknown>} */
+    const q = { ...quota(), graphql: null };
     const out = this.model.report(rows, live, Date.now(), {
       renders: this.renders.report(),
       refreshes: this.refreshes.report(),
       calls: callCounts(), // since the mod loaded: every program run, rate limits
+      // gh/jira calls in the last hour and backoff time (lib.js quota);
+      // graphql is filled in below.
+      quota: q,
+      // The Reviews sidebar's refreshes and quota (null: it isn't running).
+      reviews: shared(REVIEWS_STATS) ?? null,
     });
     cx.spawn(async () => {
+      q.graphql = await graphqlQuota().catch(() => null);
       const urls = await Promise.all(
         rows.map((/** @type {any} */ r) =>
           this.model.ticketUrl(r.w).catch(() => null),

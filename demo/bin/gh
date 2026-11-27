@@ -8,7 +8,8 @@ here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 # review threads, the review queue's search, pr checkout, the repo's merge
 # method and repo clone, from the demo's state
 # (state.sh); clones come from the demo's local remotes. Also GitHub issues
-# (search, view with linked PRs, close) for the GitHub tracker.
+# (search, view with linked PRs, close) for the GitHub tracker, and the
+# GraphQL quota (api rate_limit).
 
 demo="${HERDR_DEMO:?}"
 state_tick
@@ -103,6 +104,12 @@ case "${1:-} ${2:-}" in
 "repo view")
   # The demo's repos default to squash in the web UI.
   echo "SQUASH"
+  ;;
+"api rate_limit")
+  # GitHub's quota (work.report's quota.graphql): the GraphQL part, with the
+  # demo's state's .graphqlRemaining if set. --jq is ignored: this prints it.
+  state_jq -c '{limit: 5000, used: (5000 - (.graphqlRemaining // 4900)),
+    remaining: (.graphqlRemaining // 4900), reset: (now + 3600 | floor)}'
   ;;
 "api graphql")
   # The review queue's search (q=...): open PRs by others (with an author),
