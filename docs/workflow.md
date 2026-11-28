@@ -121,6 +121,15 @@ jira lookups it starts run after that and count only in `calls`. A call from
 another run that overlaps a refresh is counted in both, so `calls` is the exact
 total. Both are kept in memory, so they start again when the mod does.
 
+`quota` watches the GitHub and Jira limits: per program, `callsLastHour` (calls
+that reached it in the last hour), `backingOff`, and `backoffMs` (how long since
+it first answered "rate limited" without a call working since), with `alert`
+once that passes 2 minutes. A backoff that long is also recorded once in
+`<Herdr app home>/sheltie-diagnostics/`. `quota.graphql` is GitHub's GraphQL
+points (`limit`, `used`, `remaining`, `reset`) from `gh api rate_limit`, or null.
+`reviews` has the Reviews sidebar's own `refreshes` (one per queue refresh) and
+`quota` (each mod counts its own calls), or null if it isn't running.
+
 ## Starting tickets from an agent or script
 
 `herdr-app do work.start` starts the tickets each request in
