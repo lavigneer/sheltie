@@ -4,6 +4,9 @@
 
 import { fill, firstLine, must, NOT_FOUND, pool, tool } from "./lib.js";
 
+// Issues asked about in one GraphQL query (linkedPRs).
+export const ISSUES_PER_QUERY = 50;
+
 // A tracker using settings `s` (the global ones, or a repo's: config.js).
 /** @param {import("./config.js").Settings} s @returns {import("./types.js").Tracker} */
 export function create(s) {
@@ -153,38 +156,62 @@ export function create(s) {
   }
 
   // PRs GitHub links to each issue (that close it): Map key -> [{ slug, number }].
+  // One GraphQL query per repo for up to ISSUES_PER_QUERY issues (an alias
+  // each), not a gh call per issue (#366: 2,000 issues were 2,000 calls). A
+  // failed query, or an issue that isn't there, gives no PRs.
   /** @param {string[]} keys */
   async function linkedPRs(keys) {
     /** @type {Map<string, { slug: string, number: number }[]>} */
     const out = new Map(keys.map((k) => [k, []]));
-    const found = await pool(
-      keys.map((key) => async () => {
-        const k = parse(key);
-        if (!k) return null;
-        const json = await must(
-          "gh",
-          [
-            "issue",
-            "view",
-            String(k.number),
-            "--repo",
-            k.slug,
-            "--json",
-            "closedByPullRequestsReferences",
-          ],
-          "gh issue view",
-        );
-        return {
-          key,
-          prs: JSON.parse(json).closedByPullRequestsReferences ?? [],
-        };
-      }),
-    );
-    for (const f of /** @type {any[]} */ (found.filter(Boolean)))
-      for (const p of f.prs) {
-        const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(p.url ?? "");
-        if (m) out.get(f.key)?.push({ slug: m[1], number: Number(m[2]) });
+    /** @type {Map<string, { key: string, number: number }[]>} */
+    const bySlug = new Map();
+    for (const key of keys) {
+      const k = parse(key);
+      if (k)
+        bySlug.set(k.slug, [
+          ...(bySlug.get(k.slug) ?? []),
+          { key, number: k.number },
+        ]);
+    }
+    /** @type {(() => Promise<void>)[]} */
+    const tasks = [];
+    for (const [slug, issues] of bySlug)
+      for (let at = 0; at < issues.length; at += ISSUES_PER_QUERY) {
+        const chunk = issues.slice(at, at + ISSUES_PER_QUERY);
+        tasks.push(async () => {
+          const [owner, repo] = slug.split("/");
+          const fields = chunk.map(
+            (c, i) =>
+              `i${i}: issue(number: ${c.number}) { closedByPullRequestsReferences(first: 20) { nodes { url } } }`,
+          );
+          const r = await tool("gh", [
+            "api",
+            "graphql",
+            "-F",
+            `owner=${owner}`,
+            "-F",
+            `name=${repo}`,
+            "-f",
+            `query=query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${fields.join(" ")} } }`,
+          ]);
+          /** @type {any} */
+          let body = null;
+          try {
+            body = JSON.parse(r.stdout);
+          } catch {}
+          const answers = body?.data?.repository ?? {};
+          chunk.forEach((c, i) => {
+            for (const p of answers[`i${i}`]?.closedByPullRequestsReferences
+              ?.nodes ?? []) {
+              const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(
+                p?.url ?? "",
+              );
+              if (m) out.get(c.key)?.push({ slug: m[1], number: Number(m[2]) });
+            }
+          });
+        });
       }
+    await pool(tasks);
     return out;
   }
 

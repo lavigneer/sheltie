@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --import ./tests/register.mjs --test 'tests/*.test.mjs'",
-    "test:scale": "SHELTIE_SCALE=1 node --import ./tests/register.mjs --test tests/git-scale.test.mjs",
+    "test:scale": "SHELTIE_SCALE=1 node --import ./tests/register.mjs --test tests/git-scale.test.mjs tests/demo-scale.test.mjs",
     "test:perf": "PERF_COMPARE=1 node --import ./tests/register.mjs --test tests/performance.test.mjs",
     "perf:baseline": "PERF_UPDATE=1 node --import ./tests/register.mjs --test tests/performance.test.mjs",
     "typecheck": "tsc -p . && node scripts/typecheck-mods.mjs",

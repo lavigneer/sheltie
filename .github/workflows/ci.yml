@@ -45,7 +45,8 @@ jobs:
       # in a PR, to refresh it). Not under coverage, which slows everything.
       - name: Performance against the baseline
         run: npm run test:perf
-      # Real git at scale (20 repos x 25 worktrees): git processes per phase.
+      # Real git at scale (20 repos x 25 worktrees: git processes per phase)
+      # and the demo at scale (scripts/gen-scale-fixture.mjs).
       - name: Scale tests (real git)
         run: npm run test:scale
 
