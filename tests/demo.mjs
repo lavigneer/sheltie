@@ -6,9 +6,9 @@ import path from "node:path";
 
 export const root = path.resolve(import.meta.dirname, "..");
 
-// Creates a demo with the given tracker and points the stub at it. Returns
-// its folder.
-export function prepare(tracker) {
+// Creates a demo with the given tracker (and `args` for herdr-demo, e.g.
+// ["--fixture", file]) and points the stub at it. Returns its folder.
+export function prepare(tracker, args = []) {
   const dir = path.join(
     fs.mkdtempSync(path.join(os.tmpdir(), "htf-")),
     "herdr-demo",
@@ -18,7 +18,7 @@ export function prepare(tracker) {
   process.env.DEMO_CI_SECONDS = "0";
   execFileSync(
     path.join(root, "demo/herdr-demo"),
-    ["--prepare", "--tracker", tracker],
+    ["--prepare", "--tracker", tracker, ...args],
     {
       stdio: "pipe",
     },

@@ -272,19 +272,20 @@ test("github linkedPRs: a failed lookup or a bad key gives no PRs", async () => 
   const t = gh();
   reply(
     "gh",
-    `case "$3" in
-  1) echo '{"closedByPullRequestsReferences":[{"url":"https://github.com/a/b/pull/4"},{"url":"elsewhere"},{}]}';;
-  2) echo '{}';;
+    `case "$*" in
+  *name=b*) echo '{"data":{"repository":{"i0":{"closedByPullRequestsReferences":{"nodes":[{"url":"https://github.com/a/b/pull/4"},{"url":"elsewhere"},{}]}},"i1":null}}}';;
   *) echo "boom" >&2; exit 1;;
 esac`,
   );
-  const out = await t.linkedPRs(["a/b#1", "a/b#2", "a/b#3", "nonsense"]);
+  const out = await t.linkedPRs(["a/b#1", "a/b#2", "c/d#3", "nonsense"]);
   assert.deepEqual(Object.fromEntries(out), {
     "a/b#1": [{ slug: "a/b", number: 4 }],
     "a/b#2": [],
-    "a/b#3": [],
+    "c/d#3": [],
     nonsense: [],
   });
+  // One query per repo, not a call per issue.
+  assert.equal(logged("gh").length, 2);
   assert.deepEqual(t.suggest({ repo: null }), []);
 });
 

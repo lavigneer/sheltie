@@ -33,7 +33,7 @@ import { basename, closeSpacesIn, fill } from "./lib.js";
 
 export { errorText };
 
-import { prDetails } from "./prs.js";
+import { prDetailsMany } from "./prs.js";
 import { herdrSpaces } from "./spaces.js";
 import {
   findRepo,
@@ -263,27 +263,49 @@ export async function allReviewWorktrees(repos) {
 // The review worktrees whose PR merged or closed are torn down (finishReview).
 // Returns the rest that aren't in `queue` (reviewed, PR still open) with the
 // PR's { title, url }, and an error per one that refused: { kept, refused }.
-// `state` looks a PR up (prDetails by default).
+// `states(slug, numbers)` looks a repo's PRs up together: number -> details,
+// null for none, an Error when it failed (prDetailsMany by default: a query
+// per PRS_PER_QUERY of them, not a gh call per worktree). A failed lookup
+// throws, so the caller keeps what it had.
 /**
  * @param {Awaited<ReturnType<typeof allReviewWorktrees>>} worktrees
  * @param {{ slug: string, number: number }[]} queue
- * @param {(slug: string, number: number) => Promise<any>} [state]
+ * @param {(slug: string, numbers: number[]) => Promise<Map<number, any>>} [states]
  */
 export async function sweepReviews(
   worktrees,
   queue,
-  state = (slug, number) =>
-    prDetails(slug, number, null, { requiredOnly: C.requiredChecksOnly }),
+  states = async (slug, numbers) =>
+    /** @type {Map<number, any>} */ (
+      await prDetailsMany(
+        slug,
+        numbers.map((ref) => ({ ref })),
+        { requiredOnly: C.requiredChecksOnly },
+      )
+    ),
 ) {
+  /** @param {{ slug: string, number: number }} r */
+  const id = (r) => `${r.slug.toLowerCase()}#${r.number}`;
+  const queued = new Set(queue.map(id));
+  const left = worktrees.filter((w) => !queued.has(id(w)));
+  /** @type {Map<string, number[]>} */
+  const bySlug = new Map();
+  for (const w of left)
+    bySlug.set(w.slug, [...(bySlug.get(w.slug) ?? []), w.number]);
+  /** @type {Map<string, any>} */
+  const found = new Map();
+  for (const [slug, numbers] of bySlug) {
+    const got = await states(slug, numbers);
+    for (const n of numbers) {
+      const pr = got.get(n) ?? null;
+      if (pr instanceof Error) throw pr;
+      found.set(`${slug}#${n}`, pr);
+    }
+  }
   const kept = [];
   const refused = [];
-  for (const w of worktrees) {
-    const queued = queue.some(
-      (r) =>
-        r.number === w.number && r.slug.toLowerCase() === w.slug.toLowerCase(),
-    );
-    if (queued) continue;
-    const pr = await state(w.slug, w.number);
+  for (const w of left) {
+    const pr = found.get(`${w.slug}#${w.number}`);
     if (pr && pr.state !== "OPEN") {
       try {
         await finishReview(w.repo, w);

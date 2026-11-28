@@ -80,6 +80,7 @@ const HOUR_MS = 60 * 60_000;
  * @typedef {{
  *   max: number, active: number, waiting: ((v?: any) => void)[], urgent: ((v?: any) => void)[],
  *   until: number, backoff: number, since: number, alerted: boolean, calls: number[],
+ *   opened: number,
  * }} Limit
  */
 /** @type {Record<string, Limit>} */
@@ -88,7 +89,8 @@ const limits = {
   jira: newLimit(),
 };
 
-// `since`: when the current backoff began (0: none); `calls`: when the calls
+// `since`: when the current backoff began (0: none); `opened`: when the
+// backoff was last opened or extended (a later rate limit repeats it); `calls`: when the calls
 // that reached the program in the last hour started, oldest first.
 /** @returns {Limit} */
 function newLimit() {
@@ -102,6 +104,7 @@ function newLimit() {
     since: 0,
     alerted: false,
     calls: [],
+    opened: 0,
   };
 }
 
@@ -194,11 +197,16 @@ async function limited(l, name, args, opts) {
       counts.rateLimited++;
       if (!l.since) l.since = now;
       checkBackoff(l, name);
+      // Calls in flight together that are all told "rate limited" are one
+      // rate limit: only a backoff opened before this call asked is repeated
+      // (and so doubled), not one another call opened meanwhile (#370).
+      if (l.opened >= now) return r;
       l.backoff = Math.min(
         l.backoff ? l.backoff * 2 : BACKOFF_MS,
         MAX_BACKOFF_MS,
       );
-      l.until = Date.now() + l.backoff;
+      l.opened = Date.now();
+      l.until = l.opened + l.backoff;
     } else if (r.code === 0) {
       l.backoff = 0;
       l.since = 0;

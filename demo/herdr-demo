@@ -8,6 +8,9 @@
 #   herdr-demo --reset            throw the demo (repos, app home, spaces) away
 #   herdr-demo --stop             quit the demo app and its herdr-core session
 #   herdr-demo --prepare          create/refresh the demo without starting the app
+#   herdr-demo --fixture FILE     ... from FILE instead of demo/data-<tracker>.json
+#                                 (when creating it), e.g. a large one from
+#                                 scripts/gen-scale-fixture.mjs
 #
 # Playing the reviewers and CI (KEY: part of a PR's branch or title, e.g.
 # WEB-105 or issue-5, for its newest open PR; or owner/repo#number):
@@ -199,6 +202,7 @@ esac
 
 prepare_only=0
 tracker=jira
+fixture=""
 while [ $# -gt 0 ]; do
   case "$1" in
   --stop)
@@ -216,17 +220,21 @@ while [ $# -gt 0 ]; do
     tracker="${2:?--tracker needs jira or github}"
     shift
     ;;
+  --fixture)
+    fixture="${2:?--fixture needs a file}"
+    shift
+    ;;
   *)
-    echo "usage: herdr-demo [--reset] [--prepare] [--tracker jira|github] | --stop | approve|comment|request-changes|fail-ci|conflict KEY | status" >&2
+    echo "usage: herdr-demo [--reset] [--prepare] [--tracker jira|github] [--fixture FILE] | --stop | approve|comment|request-changes|fail-ci|conflict KEY | status" >&2
     exit 2
     ;;
   esac
   shift
 done
 
-HERDR_DEMO_DATA="$here/data-$tracker.json"
+HERDR_DEMO_DATA="${fixture:-$here/data-$tracker.json}"
 [ -f "$HERDR_DEMO_DATA" ] || {
-  echo "herdr-demo: no fixture for tracker $tracker" >&2
+  echo "herdr-demo: no fixture ${fixture:-for tracker $tracker}" >&2
   exit 2
 }
 [ -d "$HERDR_DEMO/ws" ] || setup
