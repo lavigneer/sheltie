@@ -25,7 +25,7 @@ const CALL_MS = 3_000;
 const LOAD_MS = 60_000;
 // The Work sidebar's lookups still view each worktree's ticket with its own gh
 // call (tracker.view, 1,000 here: ~65 s against the fake). Until those are
-// batched as linkedPRs is, this guards only against it getting worse.
+// batched as linkedPRs is (#382), this guards only against it getting worse.
 const WORK_LOOKUPS_MS = 180_000;
 
 /** @type {Record<string, number>} */
